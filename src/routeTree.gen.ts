@@ -14,6 +14,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as ApiPublicIngestTokenRouteImport } from './routes/api/public/ingest.$token'
+import { Route as AuthenticatedAppOSlugRouteImport } from './routes/_authenticated/app.o.$slug'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -39,17 +40,24 @@ const ApiPublicIngestTokenRoute = ApiPublicIngestTokenRouteImport.update({
   path: '/api/public/ingest/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedAppOSlugRoute = AuthenticatedAppOSlugRouteImport.update({
+  id: '/o/$slug',
+  path: '/o/$slug',
+  getParentRoute: () => AuthenticatedAppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
-  '/app': typeof AuthenticatedAppRoute
+  '/app': typeof AuthenticatedAppRouteWithChildren
+  '/app/o/$slug': typeof AuthenticatedAppOSlugRoute
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
-  '/app': typeof AuthenticatedAppRoute
+  '/app': typeof AuthenticatedAppRouteWithChildren
+  '/app/o/$slug': typeof AuthenticatedAppOSlugRoute
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
 }
 export interface FileRoutesById {
@@ -57,20 +65,27 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
-  '/_authenticated/app': typeof AuthenticatedAppRoute
+  '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
+  '/_authenticated/app/o/$slug': typeof AuthenticatedAppOSlugRoute
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/app' | '/api/public/ingest/$token'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/app'
+    | '/app/o/$slug'
+    | '/api/public/ingest/$token'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/app' | '/api/public/ingest/$token'
+  to: '/' | '/auth' | '/app' | '/app/o/$slug' | '/api/public/ingest/$token'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/auth'
     | '/_authenticated/app'
+    | '/_authenticated/app/o/$slug'
     | '/api/public/ingest/$token'
   fileRoutesById: FileRoutesById
 }
@@ -118,15 +133,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicIngestTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/app/o/$slug': {
+      id: '/_authenticated/app/o/$slug'
+      path: '/o/$slug'
+      fullPath: '/app/o/$slug'
+      preLoaderRoute: typeof AuthenticatedAppOSlugRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
   }
 }
 
+interface AuthenticatedAppRouteChildren {
+  AuthenticatedAppOSlugRoute: typeof AuthenticatedAppOSlugRoute
+}
+
+const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
+  AuthenticatedAppOSlugRoute: AuthenticatedAppOSlugRoute,
+}
+
+const AuthenticatedAppRouteWithChildren =
+  AuthenticatedAppRoute._addFileChildren(AuthenticatedAppRouteChildren)
+
 interface AuthenticatedRouteRouteChildren {
-  AuthenticatedAppRoute: typeof AuthenticatedAppRoute
+  AuthenticatedAppRoute: typeof AuthenticatedAppRouteWithChildren
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
-  AuthenticatedAppRoute: AuthenticatedAppRoute,
+  AuthenticatedAppRoute: AuthenticatedAppRouteWithChildren,
 }
 
 const AuthenticatedRouteRouteWithChildren =
