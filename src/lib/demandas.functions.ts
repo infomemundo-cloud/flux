@@ -109,7 +109,7 @@ export const updateDemanda = createServerFn({ method: "POST" })
     const patch: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(rest)) if (v !== undefined) patch[k] = v;
     const { data: dem, error } = await context.supabase
-      .from("demandas").update(patch).eq("id", id).select("id, state").single();
+      .from("demandas").update(patch as never).eq("id", id).select("id, state").single();
     if (error) throw new Error(error.message);
     return dem;
   });
