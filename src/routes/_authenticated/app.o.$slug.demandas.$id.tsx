@@ -1,0 +1,133 @@
+import { createFileRoute, Link, useParams } from "@tanstack/react-router";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { useState } from "react";
+import { getDemanda, updateDemanda, addComment } from "@/lib/demandas.functions";
+import { StateBadge, STATE_LABEL, PriorityBadge, formatRelative } from "@/components/demandas-ui";
+import { toast } from "sonner";
+import { ArrowLeft, MessageCircle, GitBranch, User, AlertCircle, Send } from "lucide-react";
+
+export const Route = createFileRoute("/_authenticated/app/o/$slug/demandas/$id")({
+  head: () => ({ meta: [{ title: "Demanda — Fluxo" }] }),
+  component: DemandaDetail,
+});
+
+const NEXT_STATES = ["novo", "em_analise", "aguardando_cliente", "resolvido", "fechado"] as const;
+const PRIORITIES = ["baixa", "media", "alta", "urgente"] as const;
+
+function DemandaDetail() {
+  const { slug, id } = useParams({ from: "/_authenticated/app/o/$slug/demandas/$id" });
+  const getFn = useServerFn(getDemanda);
+  const updateFn = useServerFn(updateDemanda);
+  const commentFn = useServerFn(addComment);
+  const qc = useQueryClient();
+  const [comment, setComment] = useState("");
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["demanda", id],
+    queryFn: () => getFn({ data: { id } }),
+  });
+
+  const update = useMutation({
+    mutationFn: (patch: any) => updateFn({ data: { id, ...patch } }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["demanda", id] }); qc.invalidateQueries({ queryKey: ["demandas"] }); toast.success("Atualizado"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const send = useMutation({
+    mutationFn: () => commentFn({ data: { demandaId: id, orgId: data!.demanda.org_id, content: comment } }),
+    onSuccess: () => { setComment(""); qc.invalidateQueries({ queryKey: ["demanda", id] }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  if (isLoading || !data) return <div className="p-6 text-sm text-muted-foreground">Carregando...</div>;
+  const d: any = data.demanda;
+
+  return (
+    <div className="p-6 max-w-5xl mx-auto">
+      <Link to="/app/o/$slug/fila" params={{ slug }} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        <ArrowLeft className="h-4 w-4" /> Voltar para fila
+      </Link>
+
+      <div className="mt-4 grid md:grid-cols-[1fr_280px] gap-6">
+        <div>
+          <div className="flex items-center gap-2 mb-2"><StateBadge state={d.state} /><PriorityBadge priority={d.priority} /></div>
+          <h1 className="text-2xl font-bold tracking-tight">{d.title}</h1>
+          {d.description && <p className="mt-2 text-sm text-muted-foreground whitespace-pre-wrap">{d.description}</p>}
+
+          <h2 className="mt-8 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Histórico</h2>
+          <div className="mt-3 space-y-3">
+            {data.events.map((e: any) => (
+              <div key={e.id} className="flex gap-3 p-3 rounded-md border border-border bg-card">
+                <div className="mt-0.5 text-muted-foreground">
+                  {e.kind === "commented" && <MessageCircle className="h-4 w-4" />}
+                  {e.kind === "state_changed" && <GitBranch className="h-4 w-4" />}
+                  {e.kind === "assigned" && <User className="h-4 w-4" />}
+                  {e.kind === "created" && <AlertCircle className="h-4 w-4" />}
+                  {e.kind === "message_in" && <MessageCircle className="h-4 w-4 text-primary" />}
+                  {!["commented","state_changed","assigned","created","message_in"].includes(e.kind) && <GitBranch className="h-4 w-4" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-muted-foreground">
+                    {e.kind === "state_changed" && <>Estado: <b>{STATE_LABEL[e.from_value] ?? e.from_value}</b> → <b>{STATE_LABEL[e.to_value] ?? e.to_value}</b></>}
+                    {e.kind === "priority_changed" && <>Prioridade: {e.from_value} → {e.to_value}</>}
+                    {e.kind === "created" && <>Demanda criada</>}
+                    {e.kind === "assigned" && <>Responsável alterado</>}
+                    {e.kind === "commented" && <>Comentário</>}
+                    {e.kind === "message_in" && <>Mensagem recebida</>}
+                    <span className="ml-2">· {formatRelative(e.created_at)}</span>
+                  </div>
+                  {e.content && <div className="mt-1 text-sm whitespace-pre-wrap">{e.content}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <form className="mt-4 flex gap-2" onSubmit={(ev) => { ev.preventDefault(); if (comment.trim()) send.mutate(); }}>
+            <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Adicionar comentário..."
+              className="flex-1 h-10 px-3 rounded-md border border-input bg-background" />
+            <button disabled={send.isPending} className="h-10 px-4 rounded-md bg-primary text-primary-foreground inline-flex items-center gap-2 disabled:opacity-60">
+              <Send className="h-4 w-4" /> Enviar
+            </button>
+          </form>
+        </div>
+
+        <aside className="space-y-4">
+          <div className="rounded-lg border border-border bg-card p-4">
+            <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Estado</div>
+            <select value={d.state} onChange={(e) => update.mutate({ state: e.target.value })}
+              className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm">
+              {NEXT_STATES.map((s) => <option key={s} value={s}>{STATE_LABEL[s]}</option>)}
+            </select>
+          </div>
+          <div className="rounded-lg border border-border bg-card p-4">
+            <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Prioridade</div>
+            <select value={d.priority} onChange={(e) => update.mutate({ priority: e.target.value })}
+              className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm">
+              {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+          <div className="rounded-lg border border-border bg-card p-4">
+            <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Prazo</div>
+            <input type="datetime-local"
+              defaultValue={d.due_at ? new Date(d.due_at).toISOString().slice(0, 16) : ""}
+              onBlur={(e) => update.mutate({ due_at: e.target.value ? new Date(e.target.value).toISOString() : null })}
+              className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm" />
+          </div>
+          {d.contacts && (
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Contato</div>
+              <div className="text-sm font-medium">{d.contacts.name ?? "(sem nome)"}</div>
+              {d.contacts.phone && <div className="text-xs text-muted-foreground">{d.contacts.phone}</div>}
+              {d.contacts.email && <div className="text-xs text-muted-foreground">{d.contacts.email}</div>}
+            </div>
+          )}
+          <div className="rounded-lg border border-border bg-card p-4 text-xs text-muted-foreground">
+            Criada {formatRelative(d.created_at)}<br />
+            Atualizada {formatRelative(d.updated_at)}
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}

@@ -9,38 +9,166 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
+import { Route as ApiPublicIngestTokenRouteImport } from './routes/api/public/ingest.$token'
+import { Route as AuthenticatedAppOSlugRouteImport } from './routes/_authenticated/app.o.$slug'
+import { Route as AuthenticatedAppOSlugFilaRouteImport } from './routes/_authenticated/app.o.$slug.fila'
+import { Route as AuthenticatedAppOSlugDashboardRouteImport } from './routes/_authenticated/app.o.$slug.dashboard'
+import { Route as AuthenticatedAppOSlugConfiguracoesRouteImport } from './routes/_authenticated/app.o.$slug.configuracoes'
+import { Route as AuthenticatedAppOSlugDemandasIdRouteImport } from './routes/_authenticated/app.o.$slug.demandas.$id'
 
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
+  id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
+  id: '/app',
+  path: '/app',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const ApiPublicIngestTokenRoute = ApiPublicIngestTokenRouteImport.update({
+  id: '/api/public/ingest/$token',
+  path: '/api/public/ingest/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedAppOSlugRoute = AuthenticatedAppOSlugRouteImport.update({
+  id: '/o/$slug',
+  path: '/o/$slug',
+  getParentRoute: () => AuthenticatedAppRoute,
+} as any)
+const AuthenticatedAppOSlugFilaRoute =
+  AuthenticatedAppOSlugFilaRouteImport.update({
+    id: '/fila',
+    path: '/fila',
+    getParentRoute: () => AuthenticatedAppOSlugRoute,
+  } as any)
+const AuthenticatedAppOSlugDashboardRoute =
+  AuthenticatedAppOSlugDashboardRouteImport.update({
+    id: '/dashboard',
+    path: '/dashboard',
+    getParentRoute: () => AuthenticatedAppOSlugRoute,
+  } as any)
+const AuthenticatedAppOSlugConfiguracoesRoute =
+  AuthenticatedAppOSlugConfiguracoesRouteImport.update({
+    id: '/configuracoes',
+    path: '/configuracoes',
+    getParentRoute: () => AuthenticatedAppOSlugRoute,
+  } as any)
+const AuthenticatedAppOSlugDemandasIdRoute =
+  AuthenticatedAppOSlugDemandasIdRouteImport.update({
+    id: '/demandas/$id',
+    path: '/demandas/$id',
+    getParentRoute: () => AuthenticatedAppOSlugRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/app': typeof AuthenticatedAppRouteWithChildren
+  '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
+  '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
+  '/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRoute
+  '/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
+  '/app/o/$slug/fila': typeof AuthenticatedAppOSlugFilaRoute
+  '/app/o/$slug/demandas/$id': typeof AuthenticatedAppOSlugDemandasIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/app': typeof AuthenticatedAppRouteWithChildren
+  '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
+  '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
+  '/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRoute
+  '/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
+  '/app/o/$slug/fila': typeof AuthenticatedAppOSlugFilaRoute
+  '/app/o/$slug/demandas/$id': typeof AuthenticatedAppOSlugDemandasIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/auth': typeof AuthRoute
+  '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
+  '/_authenticated/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
+  '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
+  '/_authenticated/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRoute
+  '/_authenticated/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
+  '/_authenticated/app/o/$slug/fila': typeof AuthenticatedAppOSlugFilaRoute
+  '/_authenticated/app/o/$slug/demandas/$id': typeof AuthenticatedAppOSlugDemandasIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/app'
+    | '/app/o/$slug'
+    | '/api/public/ingest/$token'
+    | '/app/o/$slug/configuracoes'
+    | '/app/o/$slug/dashboard'
+    | '/app/o/$slug/fila'
+    | '/app/o/$slug/demandas/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/auth'
+    | '/app'
+    | '/app/o/$slug'
+    | '/api/public/ingest/$token'
+    | '/app/o/$slug/configuracoes'
+    | '/app/o/$slug/dashboard'
+    | '/app/o/$slug/fila'
+    | '/app/o/$slug/demandas/$id'
+  id:
+    | '__root__'
+    | '/'
+    | '/_authenticated'
+    | '/auth'
+    | '/_authenticated/app'
+    | '/_authenticated/app/o/$slug'
+    | '/api/public/ingest/$token'
+    | '/_authenticated/app/o/$slug/configuracoes'
+    | '/_authenticated/app/o/$slug/dashboard'
+    | '/_authenticated/app/o/$slug/fila'
+    | '/_authenticated/app/o/$slug/demandas/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  AuthRoute: typeof AuthRoute
+  ApiPublicIngestTokenRoute: typeof ApiPublicIngestTokenRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,11 +176,105 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/app': {
+      id: '/_authenticated/app'
+      path: '/app'
+      fullPath: '/app'
+      preLoaderRoute: typeof AuthenticatedAppRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/api/public/ingest/$token': {
+      id: '/api/public/ingest/$token'
+      path: '/api/public/ingest/$token'
+      fullPath: '/api/public/ingest/$token'
+      preLoaderRoute: typeof ApiPublicIngestTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/app/o/$slug': {
+      id: '/_authenticated/app/o/$slug'
+      path: '/o/$slug'
+      fullPath: '/app/o/$slug'
+      preLoaderRoute: typeof AuthenticatedAppOSlugRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/o/$slug/fila': {
+      id: '/_authenticated/app/o/$slug/fila'
+      path: '/fila'
+      fullPath: '/app/o/$slug/fila'
+      preLoaderRoute: typeof AuthenticatedAppOSlugFilaRouteImport
+      parentRoute: typeof AuthenticatedAppOSlugRoute
+    }
+    '/_authenticated/app/o/$slug/dashboard': {
+      id: '/_authenticated/app/o/$slug/dashboard'
+      path: '/dashboard'
+      fullPath: '/app/o/$slug/dashboard'
+      preLoaderRoute: typeof AuthenticatedAppOSlugDashboardRouteImport
+      parentRoute: typeof AuthenticatedAppOSlugRoute
+    }
+    '/_authenticated/app/o/$slug/configuracoes': {
+      id: '/_authenticated/app/o/$slug/configuracoes'
+      path: '/configuracoes'
+      fullPath: '/app/o/$slug/configuracoes'
+      preLoaderRoute: typeof AuthenticatedAppOSlugConfiguracoesRouteImport
+      parentRoute: typeof AuthenticatedAppOSlugRoute
+    }
+    '/_authenticated/app/o/$slug/demandas/$id': {
+      id: '/_authenticated/app/o/$slug/demandas/$id'
+      path: '/demandas/$id'
+      fullPath: '/app/o/$slug/demandas/$id'
+      preLoaderRoute: typeof AuthenticatedAppOSlugDemandasIdRouteImport
+      parentRoute: typeof AuthenticatedAppOSlugRoute
+    }
   }
 }
 
+interface AuthenticatedAppOSlugRouteChildren {
+  AuthenticatedAppOSlugConfiguracoesRoute: typeof AuthenticatedAppOSlugConfiguracoesRoute
+  AuthenticatedAppOSlugDashboardRoute: typeof AuthenticatedAppOSlugDashboardRoute
+  AuthenticatedAppOSlugFilaRoute: typeof AuthenticatedAppOSlugFilaRoute
+  AuthenticatedAppOSlugDemandasIdRoute: typeof AuthenticatedAppOSlugDemandasIdRoute
+}
+
+const AuthenticatedAppOSlugRouteChildren: AuthenticatedAppOSlugRouteChildren = {
+  AuthenticatedAppOSlugConfiguracoesRoute:
+    AuthenticatedAppOSlugConfiguracoesRoute,
+  AuthenticatedAppOSlugDashboardRoute: AuthenticatedAppOSlugDashboardRoute,
+  AuthenticatedAppOSlugFilaRoute: AuthenticatedAppOSlugFilaRoute,
+  AuthenticatedAppOSlugDemandasIdRoute: AuthenticatedAppOSlugDemandasIdRoute,
+}
+
+const AuthenticatedAppOSlugRouteWithChildren =
+  AuthenticatedAppOSlugRoute._addFileChildren(
+    AuthenticatedAppOSlugRouteChildren,
+  )
+
+interface AuthenticatedAppRouteChildren {
+  AuthenticatedAppOSlugRoute: typeof AuthenticatedAppOSlugRouteWithChildren
+}
+
+const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
+  AuthenticatedAppOSlugRoute: AuthenticatedAppOSlugRouteWithChildren,
+}
+
+const AuthenticatedAppRouteWithChildren =
+  AuthenticatedAppRoute._addFileChildren(AuthenticatedAppRouteChildren)
+
+interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAppRoute: typeof AuthenticatedAppRouteWithChildren
+}
+
+const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAppRoute: AuthenticatedAppRouteWithChildren,
+}
+
+const AuthenticatedRouteRouteWithChildren =
+  AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  AuthRoute: AuthRoute,
+  ApiPublicIngestTokenRoute: ApiPublicIngestTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,0 +1,204 @@
+import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { z } from "zod";
+
+const StateEnum = z.enum(["novo", "em_analise", "aguardando_cliente", "resolvido", "fechado"]);
+const PriorityEnum = z.enum(["baixa", "media", "alta", "urgente"]);
+
+async function assertMember(supabase: any, orgId: string, userId: string) {
+  const { data } = await supabase.from("memberships").select("role").eq("org_id", orgId).eq("user_id", userId).maybeSingle();
+  if (!data) throw new Error("Sem acesso à organização");
+  return data.role as string;
+}
+
+export const listDemandas = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      orgId: z.string().uuid(),
+      state: StateEnum.optional(),
+      assignedToMe: z.boolean().optional(),
+      search: z.string().optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertMember(context.supabase, data.orgId, context.userId);
+    let q = context.supabase
+      .from("demandas")
+      .select("id, title, state, priority, due_at, assignee_id, contact_id, created_at, updated_at, contacts:contact_id(name, phone)")
+      .eq("org_id", data.orgId)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (data.state) q = q.eq("state", data.state);
+    if (data.assignedToMe) q = q.eq("assignee_id", context.userId);
+    if (data.search) q = q.ilike("title", `%${data.search}%`);
+    const { data: rows, error } = await q;
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const getDemanda = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: dem, error } = await context.supabase
+      .from("demandas")
+      .select("*, contacts:contact_id(id, name, phone, email), channels:channel_id(id, kind, name)")
+      .eq("id", data.id).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!dem) throw new Error("Demanda não encontrada");
+    const { data: events } = await context.supabase
+      .from("demanda_events").select("*").eq("demanda_id", data.id).order("created_at");
+    return { demanda: dem, events: events ?? [] };
+  });
+
+export const createDemanda = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      orgId: z.string().uuid(),
+      title: z.string().min(3).max(200),
+      description: z.string().max(5000).optional(),
+      priority: PriorityEnum.default("media"),
+      due_at: z.string().datetime().optional(),
+      contact_name: z.string().max(120).optional(),
+      contact_phone: z.string().max(40).optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const role = await assertMember(context.supabase, data.orgId, context.userId);
+    if (!["owner", "admin", "agent"].includes(role)) throw new Error("Sem permissão para criar");
+    let contactId: string | null = null;
+    if (data.contact_name || data.contact_phone) {
+      const { data: c, error: ce } = await context.supabase
+        .from("contacts").insert({
+          org_id: data.orgId, name: data.contact_name ?? null, phone: data.contact_phone ?? null,
+        }).select("id").single();
+      if (ce) throw new Error(ce.message);
+      contactId = c.id;
+    }
+    const { data: dem, error } = await context.supabase
+      .from("demandas").insert({
+        org_id: data.orgId,
+        title: data.title,
+        description: data.description ?? null,
+        priority: data.priority,
+        due_at: data.due_at ?? null,
+        contact_id: contactId,
+        created_by: context.userId,
+      }).select("id").single();
+    if (error) throw new Error(error.message);
+    return dem;
+  });
+
+export const updateDemanda = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      id: z.string().uuid(),
+      state: StateEnum.optional(),
+      priority: PriorityEnum.optional(),
+      assignee_id: z.string().uuid().nullable().optional(),
+      due_at: z.string().datetime().nullable().optional(),
+      title: z.string().min(3).max(200).optional(),
+      description: z.string().max(5000).nullable().optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { id, ...rest } = data;
+    const patch: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(rest)) if (v !== undefined) patch[k] = v;
+    const { data: dem, error } = await context.supabase
+      .from("demandas").update(patch as never).eq("id", id).select("id, state").single();
+    if (error) throw new Error(error.message);
+    return dem;
+  });
+
+export const addComment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({
+    demandaId: z.string().uuid(),
+    orgId: z.string().uuid(),
+    content: z.string().min(1).max(4000),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase.from("demanda_events").insert({
+      org_id: data.orgId, demanda_id: data.demandaId, kind: "commented",
+      actor_id: context.userId, content: data.content,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const orgDashboard = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ orgId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await assertMember(context.supabase, data.orgId, context.userId);
+    const { data: rows, error } = await context.supabase
+      .from("demandas").select("state, priority, due_at, resolved_at, created_at")
+      .eq("org_id", data.orgId).limit(2000);
+    if (error) throw new Error(error.message);
+    const now = Date.now();
+    const counts: Record<string, number> = { novo: 0, em_analise: 0, aguardando_cliente: 0, resolvido: 0, fechado: 0 };
+    let overdue = 0;
+    let openTotal = 0;
+    const last14: Record<string, { novas: number; resolvidas: number }> = {};
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(now - i * 86400000);
+      const k = d.toISOString().slice(0, 10);
+      last14[k] = { novas: 0, resolvidas: 0 };
+    }
+    for (const r of rows ?? []) {
+      counts[r.state] = (counts[r.state] ?? 0) + 1;
+      const isOpen = r.state !== "resolvido" && r.state !== "fechado";
+      if (isOpen) openTotal++;
+      if (isOpen && r.due_at && new Date(r.due_at).getTime() < now) overdue++;
+      const created = (r.created_at as string).slice(0, 10);
+      if (created in last14) last14[created].novas++;
+      if (r.resolved_at) {
+        const resolved = (r.resolved_at as string).slice(0, 10);
+        if (resolved in last14) last14[resolved].resolvidas++;
+      }
+    }
+    return {
+      counts, overdue, openTotal,
+      timeline: Object.entries(last14).map(([date, v]) => ({ date, ...v })),
+      total: rows?.length ?? 0,
+    };
+  });
+
+export const listWebhookTokens = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ orgId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: rows, error } = await context.supabase
+      .from("webhook_tokens").select("id, name, token, last_used_at, created_at")
+      .eq("org_id", data.orgId).order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const createWebhookToken = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({
+    orgId: z.string().uuid(), name: z.string().min(2).max(80),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    const token = "wht_" + crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+    const { data: row, error } = await context.supabase
+      .from("webhook_tokens").insert({
+        org_id: data.orgId, name: data.name, token, created_by: context.userId,
+      }).select("id, token, name").single();
+    if (error) throw new Error(error.message);
+    return row;
+  });
+
+export const deleteWebhookToken = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase.from("webhook_tokens").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
