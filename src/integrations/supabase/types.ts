@@ -14,16 +14,371 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      channels: {
+        Row: {
+          active: boolean
+          config: Json
+          created_at: string
+          id: string
+          kind: Database["public"]["Enums"]["channel_kind"]
+          name: string
+          org_id: string
+        }
+        Insert: {
+          active?: boolean
+          config?: Json
+          created_at?: string
+          id?: string
+          kind: Database["public"]["Enums"]["channel_kind"]
+          name: string
+          org_id: string
+        }
+        Update: {
+          active?: boolean
+          config?: Json
+          created_at?: string
+          id?: string
+          kind?: Database["public"]["Enums"]["channel_kind"]
+          name?: string
+          org_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "channels_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contacts: {
+        Row: {
+          created_at: string
+          email: string | null
+          external_id: string | null
+          id: string
+          metadata: Json
+          name: string | null
+          org_id: string
+          phone: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          external_id?: string | null
+          id?: string
+          metadata?: Json
+          name?: string | null
+          org_id: string
+          phone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          external_id?: string | null
+          id?: string
+          metadata?: Json
+          name?: string | null
+          org_id?: string
+          phone?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contacts_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      demanda_events: {
+        Row: {
+          actor_id: string | null
+          content: string | null
+          created_at: string
+          demanda_id: string
+          from_value: string | null
+          id: string
+          kind: Database["public"]["Enums"]["event_kind"]
+          metadata: Json
+          org_id: string
+          to_value: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          content?: string | null
+          created_at?: string
+          demanda_id: string
+          from_value?: string | null
+          id?: string
+          kind: Database["public"]["Enums"]["event_kind"]
+          metadata?: Json
+          org_id: string
+          to_value?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          content?: string | null
+          created_at?: string
+          demanda_id?: string
+          from_value?: string | null
+          id?: string
+          kind?: Database["public"]["Enums"]["event_kind"]
+          metadata?: Json
+          org_id?: string
+          to_value?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "demanda_events_demanda_id_fkey"
+            columns: ["demanda_id"]
+            isOneToOne: false
+            referencedRelation: "demandas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "demanda_events_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      demandas: {
+        Row: {
+          assignee_id: string | null
+          category: string | null
+          channel_id: string | null
+          closed_at: string | null
+          contact_id: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          due_at: string | null
+          id: string
+          org_id: string
+          priority: Database["public"]["Enums"]["demanda_priority"]
+          resolved_at: string | null
+          state: Database["public"]["Enums"]["demanda_state"]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assignee_id?: string | null
+          category?: string | null
+          channel_id?: string | null
+          closed_at?: string | null
+          contact_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          due_at?: string | null
+          id?: string
+          org_id: string
+          priority?: Database["public"]["Enums"]["demanda_priority"]
+          resolved_at?: string | null
+          state?: Database["public"]["Enums"]["demanda_state"]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          assignee_id?: string | null
+          category?: string | null
+          channel_id?: string | null
+          closed_at?: string | null
+          contact_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          due_at?: string | null
+          id?: string
+          org_id?: string
+          priority?: Database["public"]["Enums"]["demanda_priority"]
+          resolved_at?: string | null
+          state?: Database["public"]["Enums"]["demanda_state"]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "demandas_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "channels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "demandas_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "demandas_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      memberships: {
+        Row: {
+          created_at: string
+          id: string
+          org_id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          org_id: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          org_id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "memberships_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizations: {
+        Row: {
+          created_at: string
+          created_by: string
+          id: string
+          name: string
+          slug: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          id?: string
+          name: string
+          slug: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          id?: string
+          name?: string
+          slug?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      webhook_tokens: {
+        Row: {
+          channel_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          last_used_at: string | null
+          name: string
+          org_id: string
+          token: string
+        }
+        Insert: {
+          channel_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          last_used_at?: string | null
+          name: string
+          org_id: string
+          token: string
+        }
+        Update: {
+          channel_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          last_used_at?: string | null
+          name?: string
+          org_id?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webhook_tokens_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "channels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "webhook_tokens_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_org_role: {
+        Args: {
+          _org: string
+          _roles: Database["public"]["Enums"]["app_role"][]
+          _user: string
+        }
+        Returns: boolean
+      }
+      is_org_member: { Args: { _org: string; _user: string }; Returns: boolean }
+      user_org_ids: { Args: { _user: string }; Returns: string[] }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "owner" | "admin" | "agent" | "viewer"
+      channel_kind:
+        | "whatsapp"
+        | "instagram"
+        | "telegram"
+        | "email"
+        | "portal"
+        | "api"
+        | "manual"
+      demanda_priority: "baixa" | "media" | "alta" | "urgente"
+      demanda_state:
+        | "novo"
+        | "em_analise"
+        | "aguardando_cliente"
+        | "resolvido"
+        | "fechado"
+      event_kind:
+        | "created"
+        | "state_changed"
+        | "assigned"
+        | "commented"
+        | "message_in"
+        | "message_out"
+        | "due_updated"
+        | "priority_changed"
+        | "closed"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +505,36 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["owner", "admin", "agent", "viewer"],
+      channel_kind: [
+        "whatsapp",
+        "instagram",
+        "telegram",
+        "email",
+        "portal",
+        "api",
+        "manual",
+      ],
+      demanda_priority: ["baixa", "media", "alta", "urgente"],
+      demanda_state: [
+        "novo",
+        "em_analise",
+        "aguardando_cliente",
+        "resolvido",
+        "fechado",
+      ],
+      event_kind: [
+        "created",
+        "state_changed",
+        "assigned",
+        "commented",
+        "message_in",
+        "message_out",
+        "due_updated",
+        "priority_changed",
+        "closed",
+      ],
+    },
   },
 } as const
