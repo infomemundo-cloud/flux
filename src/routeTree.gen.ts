@@ -16,6 +16,7 @@ import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/ap
 import { Route as ApiPublicIngestTokenRouteImport } from './routes/api/public/ingest.$token'
 import { Route as AuthenticatedAppOSlugRouteImport } from './routes/_authenticated/app.o.$slug'
 import { Route as AuthenticatedAppOSlugFilaRouteImport } from './routes/_authenticated/app.o.$slug.fila'
+import { Route as AuthenticatedAppOSlugDemandasIdRouteImport } from './routes/_authenticated/app.o.$slug.demandas.$id'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -52,6 +53,12 @@ const AuthenticatedAppOSlugFilaRoute =
     path: '/fila',
     getParentRoute: () => AuthenticatedAppOSlugRoute,
   } as any)
+const AuthenticatedAppOSlugDemandasIdRoute =
+  AuthenticatedAppOSlugDemandasIdRouteImport.update({
+    id: '/demandas/$id',
+    path: '/demandas/$id',
+    getParentRoute: () => AuthenticatedAppOSlugRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -60,6 +67,7 @@ export interface FileRoutesByFullPath {
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
   '/app/o/$slug/fila': typeof AuthenticatedAppOSlugFilaRoute
+  '/app/o/$slug/demandas/$id': typeof AuthenticatedAppOSlugDemandasIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -68,6 +76,7 @@ export interface FileRoutesByTo {
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
   '/app/o/$slug/fila': typeof AuthenticatedAppOSlugFilaRoute
+  '/app/o/$slug/demandas/$id': typeof AuthenticatedAppOSlugDemandasIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -78,6 +87,7 @@ export interface FileRoutesById {
   '/_authenticated/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
   '/_authenticated/app/o/$slug/fila': typeof AuthenticatedAppOSlugFilaRoute
+  '/_authenticated/app/o/$slug/demandas/$id': typeof AuthenticatedAppOSlugDemandasIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -88,6 +98,7 @@ export interface FileRouteTypes {
     | '/app/o/$slug'
     | '/api/public/ingest/$token'
     | '/app/o/$slug/fila'
+    | '/app/o/$slug/demandas/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -96,6 +107,7 @@ export interface FileRouteTypes {
     | '/app/o/$slug'
     | '/api/public/ingest/$token'
     | '/app/o/$slug/fila'
+    | '/app/o/$slug/demandas/$id'
   id:
     | '__root__'
     | '/'
@@ -105,6 +117,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/o/$slug'
     | '/api/public/ingest/$token'
     | '/_authenticated/app/o/$slug/fila'
+    | '/_authenticated/app/o/$slug/demandas/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -165,15 +178,24 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppOSlugFilaRouteImport
       parentRoute: typeof AuthenticatedAppOSlugRoute
     }
+    '/_authenticated/app/o/$slug/demandas/$id': {
+      id: '/_authenticated/app/o/$slug/demandas/$id'
+      path: '/demandas/$id'
+      fullPath: '/app/o/$slug/demandas/$id'
+      preLoaderRoute: typeof AuthenticatedAppOSlugDemandasIdRouteImport
+      parentRoute: typeof AuthenticatedAppOSlugRoute
+    }
   }
 }
 
 interface AuthenticatedAppOSlugRouteChildren {
   AuthenticatedAppOSlugFilaRoute: typeof AuthenticatedAppOSlugFilaRoute
+  AuthenticatedAppOSlugDemandasIdRoute: typeof AuthenticatedAppOSlugDemandasIdRoute
 }
 
 const AuthenticatedAppOSlugRouteChildren: AuthenticatedAppOSlugRouteChildren = {
   AuthenticatedAppOSlugFilaRoute: AuthenticatedAppOSlugFilaRoute,
+  AuthenticatedAppOSlugDemandasIdRoute: AuthenticatedAppOSlugDemandasIdRoute,
 }
 
 const AuthenticatedAppOSlugRouteWithChildren =
