@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as ApiPublicIngestTokenRouteImport } from './routes/api/public/ingest.$token'
 import { Route as AuthenticatedAppOSlugRouteImport } from './routes/_authenticated/app.o.$slug'
+import { Route as AuthenticatedAppOSlugFilaRouteImport } from './routes/_authenticated/app.o.$slug.fila'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -45,20 +46,28 @@ const AuthenticatedAppOSlugRoute = AuthenticatedAppOSlugRouteImport.update({
   path: '/o/$slug',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
+const AuthenticatedAppOSlugFilaRoute =
+  AuthenticatedAppOSlugFilaRouteImport.update({
+    id: '/fila',
+    path: '/fila',
+    getParentRoute: () => AuthenticatedAppOSlugRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
-  '/app/o/$slug': typeof AuthenticatedAppOSlugRoute
+  '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
+  '/app/o/$slug/fila': typeof AuthenticatedAppOSlugFilaRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
-  '/app/o/$slug': typeof AuthenticatedAppOSlugRoute
+  '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
+  '/app/o/$slug/fila': typeof AuthenticatedAppOSlugFilaRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -66,8 +75,9 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
-  '/_authenticated/app/o/$slug': typeof AuthenticatedAppOSlugRoute
+  '/_authenticated/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
+  '/_authenticated/app/o/$slug/fila': typeof AuthenticatedAppOSlugFilaRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -77,8 +87,15 @@ export interface FileRouteTypes {
     | '/app'
     | '/app/o/$slug'
     | '/api/public/ingest/$token'
+    | '/app/o/$slug/fila'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/app' | '/app/o/$slug' | '/api/public/ingest/$token'
+  to:
+    | '/'
+    | '/auth'
+    | '/app'
+    | '/app/o/$slug'
+    | '/api/public/ingest/$token'
+    | '/app/o/$slug/fila'
   id:
     | '__root__'
     | '/'
@@ -87,6 +104,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app'
     | '/_authenticated/app/o/$slug'
     | '/api/public/ingest/$token'
+    | '/_authenticated/app/o/$slug/fila'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -140,15 +158,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppOSlugRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/_authenticated/app/o/$slug/fila': {
+      id: '/_authenticated/app/o/$slug/fila'
+      path: '/fila'
+      fullPath: '/app/o/$slug/fila'
+      preLoaderRoute: typeof AuthenticatedAppOSlugFilaRouteImport
+      parentRoute: typeof AuthenticatedAppOSlugRoute
+    }
   }
 }
 
+interface AuthenticatedAppOSlugRouteChildren {
+  AuthenticatedAppOSlugFilaRoute: typeof AuthenticatedAppOSlugFilaRoute
+}
+
+const AuthenticatedAppOSlugRouteChildren: AuthenticatedAppOSlugRouteChildren = {
+  AuthenticatedAppOSlugFilaRoute: AuthenticatedAppOSlugFilaRoute,
+}
+
+const AuthenticatedAppOSlugRouteWithChildren =
+  AuthenticatedAppOSlugRoute._addFileChildren(
+    AuthenticatedAppOSlugRouteChildren,
+  )
+
 interface AuthenticatedAppRouteChildren {
-  AuthenticatedAppOSlugRoute: typeof AuthenticatedAppOSlugRoute
+  AuthenticatedAppOSlugRoute: typeof AuthenticatedAppOSlugRouteWithChildren
 }
 
 const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
-  AuthenticatedAppOSlugRoute: AuthenticatedAppOSlugRoute,
+  AuthenticatedAppOSlugRoute: AuthenticatedAppOSlugRouteWithChildren,
 }
 
 const AuthenticatedAppRouteWithChildren =
