@@ -38,6 +38,10 @@ export const createOrg = createServerFn({ method: "POST" })
       .select("id, name, slug")
       .single();
     if (error) throw new Error(error.message);
+    const { error: memErr } = await supabaseAdmin
+      .from("memberships")
+      .insert({ org_id: org.id, user_id: context.userId, role: "owner" });
+    if (memErr) throw new Error(memErr.message);
     return org;
   });
 
