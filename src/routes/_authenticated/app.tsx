@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
@@ -12,6 +12,7 @@ export const Route = createFileRoute("/_authenticated/app")({
 });
 
 function OrgPicker() {
+  const location = useLocation();
   const navigate = useNavigate();
   const list = useServerFn(listMyOrgs);
   const create = useServerFn(createOrg);
@@ -27,6 +28,10 @@ function OrgPicker() {
     },
     onError: (e: any) => toast.error(e.message ?? "Erro"),
   });
+
+  if (location.pathname.replace(/\/$/, "") !== "/app") {
+    return <Outlet />;
+  }
 
   return (
     <div className="min-h-screen bg-background p-6">
