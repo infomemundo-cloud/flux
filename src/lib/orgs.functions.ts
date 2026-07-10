@@ -26,12 +26,13 @@ export const createOrg = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const base = slugify(data.name);
     let slug = base;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     for (let i = 0; i < 8; i++) {
-      const { data: existing } = await context.supabase.from("organizations").select("id").eq("slug", slug).maybeSingle();
+      const { data: existing } = await supabaseAdmin.from("organizations").select("id").eq("slug", slug).maybeSingle();
       if (!existing) break;
       slug = `${base}-${Math.random().toString(36).slice(2, 6)}`;
     }
-    const { data: org, error } = await context.supabase
+    const { data: org, error } = await supabaseAdmin
       .from("organizations")
       .insert({ name: data.name, slug, created_by: context.userId })
       .select("id, name, slug")
