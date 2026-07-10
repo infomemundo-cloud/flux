@@ -1,11 +1,13 @@
-import { createFileRoute, Link, useParams } from "@tanstack/react-router";
+import { createFileRoute, Link, useParams, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { getDemanda, updateDemanda, addComment } from "@/lib/demandas.functions";
+import { getDemanda, updateDemanda, addComment, deleteDemanda } from "@/lib/demandas.functions";
+import { getOrgBySlug } from "@/lib/orgs.functions";
 import { StateBadge, STATE_LABEL, PriorityBadge, formatRelative } from "@/components/demandas-ui";
 import { toast } from "sonner";
-import { ArrowLeft, MessageCircle, GitBranch, User, AlertCircle, Send } from "lucide-react";
+import { friendlyError } from "@/lib/friendly-error";
+import { ArrowLeft, MessageCircle, GitBranch, User, AlertCircle, Send, Trash2 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/demandas/$id")({
   head: () => ({ meta: [{ title: "Demanda — Fluxo" }] }),
@@ -17,11 +19,18 @@ const PRIORITIES = ["baixa", "media", "alta", "urgente"] as const;
 
 function DemandaDetail() {
   const { slug, id } = useParams({ from: "/_authenticated/app/o/$slug/demandas/$id" });
+  const navigate = useNavigate();
   const getFn = useServerFn(getDemanda);
   const updateFn = useServerFn(updateDemanda);
   const commentFn = useServerFn(addComment);
+  const deleteFn = useServerFn(deleteDemanda);
+  const orgFn = useServerFn(getOrgBySlug);
   const qc = useQueryClient();
   const [comment, setComment] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const { data: org } = useQuery({ queryKey: ["org", slug], queryFn: () => orgFn({ data: { slug } }) });
+  const canDelete = org?.role === "owner" || org?.role === "admin";
 
   const { data, isLoading } = useQuery({
     queryKey: ["demanda", id],
@@ -31,13 +40,23 @@ function DemandaDetail() {
   const update = useMutation({
     mutationFn: (patch: any) => updateFn({ data: { id, ...patch } }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["demanda", id] }); qc.invalidateQueries({ queryKey: ["demandas"] }); toast.success("Atualizado"); },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   const send = useMutation({
     mutationFn: () => commentFn({ data: { demandaId: id, orgId: data!.demanda.org_id, content: comment } }),
     onSuccess: () => { setComment(""); qc.invalidateQueries({ queryKey: ["demanda", id] }); },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e) => toast.error(friendlyError(e)),
+  });
+
+  const remove = useMutation({
+    mutationFn: () => deleteFn({ data: { id } }),
+    onSuccess: () => {
+      toast.success("Demanda excluída");
+      qc.invalidateQueries({ queryKey: ["demandas"] });
+      navigate({ to: "/app/o/$slug/fila", params: { slug } });
+    },
+    onError: (e) => toast.error(friendlyError(e)),
   });
 
   if (isLoading || !data) return <div className="p-6 text-sm text-muted-foreground">Carregando...</div>;
@@ -126,6 +145,39 @@ function DemandaDetail() {
             Criada {formatRelative(d.created_at)}<br />
             Atualizada {formatRelative(d.updated_at)}
           </div>
+          {canDelete && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+              <div className="text-xs uppercase tracking-wide text-destructive mb-2">Zona de perigo</div>
+              {!confirmDelete ? (
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="w-full h-9 rounded-md border border-destructive/40 text-destructive text-sm inline-flex items-center justify-center gap-2 hover:bg-destructive/10"
+                >
+                  <Trash2 className="h-4 w-4" /> Excluir demanda
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">Esta ação não pode ser desfeita. Todo o histórico será removido.</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setConfirmDelete(false)}
+                      disabled={remove.isPending}
+                      className="flex-1 h-9 rounded-md border border-input bg-background text-sm"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => remove.mutate()}
+                      disabled={remove.isPending}
+                      className="flex-1 h-9 rounded-md bg-destructive text-destructive-foreground text-sm font-medium disabled:opacity-60"
+                    >
+                      {remove.isPending ? "Excluindo..." : "Confirmar"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </aside>
       </div>
     </div>
