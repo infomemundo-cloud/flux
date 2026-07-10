@@ -57,12 +57,15 @@ export const createDemanda = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
       orgId: z.string().uuid(),
-      title: z.string().min(3).max(200),
-      description: z.string().max(5000).optional(),
+      title: z.string({ required_error: "Informe um título para a demanda." })
+        .trim()
+        .min(3, { message: "O título precisa ter pelo menos 3 caracteres." })
+        .max(200, { message: "O título pode ter no máximo 200 caracteres." }),
+      description: z.string().max(5000, { message: "A descrição pode ter no máximo 5000 caracteres." }).optional(),
       priority: PriorityEnum.default("media"),
       due_at: z.string().datetime().optional(),
-      contact_name: z.string().max(120).optional(),
-      contact_phone: z.string().max(40).optional(),
+      contact_name: z.string().max(120, { message: "O nome do contato pode ter no máximo 120 caracteres." }).optional(),
+      contact_phone: z.string().max(40, { message: "O telefone pode ter no máximo 40 caracteres." }).optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -100,8 +103,12 @@ export const updateDemanda = createServerFn({ method: "POST" })
       priority: PriorityEnum.optional(),
       assignee_id: z.string().uuid().nullable().optional(),
       due_at: z.string().datetime().nullable().optional(),
-      title: z.string().min(3).max(200).optional(),
-      description: z.string().max(5000).nullable().optional(),
+      title: z.string()
+        .trim()
+        .min(3, { message: "O título precisa ter pelo menos 3 caracteres." })
+        .max(200, { message: "O título pode ter no máximo 200 caracteres." })
+        .optional(),
+      description: z.string().max(5000, { message: "A descrição pode ter no máximo 5000 caracteres." }).nullable().optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -119,13 +126,31 @@ export const addComment = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({
     demandaId: z.string().uuid(),
     orgId: z.string().uuid(),
-    content: z.string().min(1).max(4000),
+    content: z.string()
+      .trim()
+      .min(1, { message: "Escreva um comentário antes de enviar." })
+      .max(4000, { message: "O comentário pode ter no máximo 4000 caracteres." }),
   }).parse(d))
   .handler(async ({ data, context }) => {
     const { error } = await context.supabase.from("demanda_events").insert({
       org_id: data.orgId, demanda_id: data.demandaId, kind: "commented",
       actor_id: context.userId, content: data.content,
     });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const deleteDemanda = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: dem, error: fetchErr } = await context.supabase
+      .from("demandas").select("org_id").eq("id", data.id).maybeSingle();
+    if (fetchErr) throw new Error(fetchErr.message);
+    if (!dem) throw new Error("Demanda não encontrada");
+    const role = await assertMember(context.supabase, dem.org_id, context.userId);
+    if (!["owner", "admin"].includes(role)) throw new Error("Apenas owners e admins podem excluir demandas.");
+    const { error } = await context.supabase.from("demandas").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
