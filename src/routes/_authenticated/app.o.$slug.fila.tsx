@@ -5,6 +5,7 @@ import { useState } from "react";
 import { listDemandas, createDemanda } from "@/lib/demandas.functions";
 import { getOrgBySlug } from "@/lib/orgs.functions";
 import { toast } from "sonner";
+import { friendlyError } from "@/lib/friendly-error";
 import { Plus, Search, X } from "lucide-react";
 import { StateBadge, PriorityBadge, formatRelative } from "@/components/demandas-ui";
 
@@ -108,7 +109,7 @@ function NewDemandaModal({ orgId, onClose }: { orgId: string; onClose: () => voi
       due_at: dueAt ? new Date(dueAt).toISOString() : undefined,
     }}),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["demandas"] }); toast.success("Demanda criada"); onClose(); },
-    onError: (e: any) => toast.error(e.message ?? "Erro"),
+    onError: (e) => toast.error(friendlyError(e)),
   });
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
