@@ -204,6 +204,48 @@ export const listWebhookTokens = createServerFn({ method: "GET" })
     return rows ?? [];
   });
 
+export const slaAlerts = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      orgId: z.string().uuid(),
+      staleDays: z.number().int().min(1).max(30).default(2),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertMember(context.supabase, data.orgId, context.userId);
+    const cutoff = new Date(Date.now() - data.staleDays * 86400000).toISOString();
+    // Open (pending) demandas: not resolvido/fechado
+    const { data: rows, error } = await context.supabase
+      .from("demandas")
+      .select("id, title, state, priority, due_at, created_at, updated_at, contacts:contact_id(name, phone)")
+      .eq("org_id", data.orgId)
+      .not("state", "in", "(resolvido,fechado)")
+      .limit(500);
+    if (error) throw new Error(error.message);
+    const list = rows ?? [];
+    if (list.length === 0) return [];
+    // Latest event per demanda
+    const ids = list.map((r: any) => r.id);
+    const { data: events } = await context.supabase
+      .from("demanda_events")
+      .select("demanda_id, created_at")
+      .in("demanda_id", ids)
+      .order("created_at", { ascending: false });
+    const lastByDemanda = new Map<string, string>();
+    for (const e of events ?? []) {
+      if (!lastByDemanda.has(e.demanda_id)) lastByDemanda.set(e.demanda_id, e.created_at);
+    }
+    const stale = list
+      .map((r: any) => {
+        const last = lastByDemanda.get(r.id) ?? r.updated_at ?? r.created_at;
+        return { ...r, last_activity_at: last };
+      })
+      .filter((r: any) => r.last_activity_at < cutoff)
+      .sort((a: any, b: any) => a.last_activity_at.localeCompare(b.last_activity_at));
+    return stale;
+  });
+
 export const createWebhookToken = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({
