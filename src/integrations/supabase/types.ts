@@ -150,6 +150,51 @@ export type Database = {
           },
         ]
       }
+      demanda_status_audit: {
+        Row: {
+          actor_id: string | null
+          changed_at: string
+          demanda_id: string
+          from_state: string | null
+          id: string
+          org_id: string
+          to_state: string
+        }
+        Insert: {
+          actor_id?: string | null
+          changed_at?: string
+          demanda_id: string
+          from_state?: string | null
+          id?: string
+          org_id: string
+          to_state: string
+        }
+        Update: {
+          actor_id?: string | null
+          changed_at?: string
+          demanda_id?: string
+          from_state?: string | null
+          id?: string
+          org_id?: string
+          to_state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "demanda_status_audit_demanda_id_fkey"
+            columns: ["demanda_id"]
+            isOneToOne: false
+            referencedRelation: "demandas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "demanda_status_audit_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       demandas: {
         Row: {
           assignee_id: string | null
