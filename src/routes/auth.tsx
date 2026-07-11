@@ -15,10 +15,15 @@ function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(true);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate({ to: "/app" });
+      if (data.session) {
+        navigate({ to: "/app", replace: true });
+      } else {
+        setChecking(false);
+      }
     });
   }, [navigate]);
 
@@ -49,6 +54,17 @@ function AuthPage() {
     const res = await lovable.auth.signInWithOAuth("google", { redirect_uri: `${window.location.origin}/auth` });
     if (res.error) toast.error(res.error.message ?? "Erro Google");
     else if (!res.redirected) navigate({ to: "/app" });
+  }
+
+  if (checking) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background gap-4">
+        <div className="flex items-center gap-2 font-semibold">
+          <span className="inline-block h-7 w-7 rounded-md bg-primary animate-pulse" /> Fluxo
+        </div>
+        <div className="text-sm text-muted-foreground">Carregando…</div>
+      </div>
+    );
   }
 
   return (
