@@ -1,9 +1,28 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight, CheckCircle2, Clock, GitBranch, MessageSquare, Shield, Zap } from "lucide-react";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/")({ component: Landing });
 
 function Landing() {
+  const [user, setUser] = useState<{ email?: string | null; name?: string | null } | null | undefined>(undefined);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      const u = data.session?.user;
+      setUser(u ? { email: u.email, name: (u.user_metadata as any)?.full_name ?? (u.user_metadata as any)?.name ?? null } : null);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      const u = session?.user;
+      setUser(u ? { email: u.email, name: (u.user_metadata as any)?.full_name ?? (u.user_metadata as any)?.name ?? null } : null);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  const isAuthed = !!user;
+  const displayName = user?.name || user?.email || "";
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border/60 backdrop-blur sticky top-0 z-10 bg-background/80">
@@ -13,8 +32,23 @@ function Landing() {
             Fluxo
           </div>
           <nav className="flex items-center gap-2 text-sm">
-            <Link to="/auth" className="px-3 py-2 rounded-md hover:bg-secondary">Entrar</Link>
-            <Link to="/auth" className="px-3 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90">Começar grátis</Link>
+            {isAuthed ? (
+              <>
+                <span className="hidden sm:inline text-muted-foreground px-2">Olá, {displayName}</span>
+                <Link to="/app" className="px-3 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90">Abrir painel</Link>
+                <button
+                  onClick={async () => { await supabase.auth.signOut(); }}
+                  className="px-3 py-2 rounded-md hover:bg-secondary"
+                >
+                  Sair
+                </button>
+              </>
+            ) : (
+              <>
+                <Link to="/auth" className="px-3 py-2 rounded-md hover:bg-secondary">Entrar</Link>
+                <Link to="/auth" className="px-3 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90">Começar grátis</Link>
+              </>
+            )}
           </nav>
         </div>
       </header>
@@ -31,7 +65,7 @@ function Landing() {
             Fluxo é o motor que transforma conversas de WhatsApp, e‑mail, formulários e APIs em demandas com estado, prazo, responsável e histórico completo.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link to="/auth" className="inline-flex items-center gap-2 px-5 py-3 rounded-md bg-primary text-primary-foreground font-medium hover:opacity-90">
+            <Link to={isAuthed ? "/app" : "/auth"} className="inline-flex items-center gap-2 px-5 py-3 rounded-md bg-primary text-primary-foreground font-medium hover:opacity-90">
               Abrir painel <ArrowRight className="h-4 w-4" />
             </Link>
             <a href="#como-funciona" className="inline-flex items-center gap-2 px-5 py-3 rounded-md border border-border hover:bg-secondary">
@@ -67,7 +101,7 @@ function Landing() {
         <div className="rounded-2xl bg-sidebar text-sidebar-foreground p-10 md:p-14">
           <h2 className="text-3xl font-bold tracking-tight">Pronto para operacionalizar sua operação?</h2>
           <p className="mt-3 text-sidebar-foreground/70 max-w-xl">Crie uma organização, gere um token de webhook e comece a receber demandas hoje.</p>
-          <Link to="/auth" className="mt-6 inline-flex items-center gap-2 px-5 py-3 rounded-md bg-primary text-primary-foreground font-medium">
+          <Link to={isAuthed ? "/app" : "/auth"} className="mt-6 inline-flex items-center gap-2 px-5 py-3 rounded-md bg-primary text-primary-foreground font-medium">
             Entrar no painel <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
