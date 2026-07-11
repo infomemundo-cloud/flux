@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getOrgBySlug } from "@/lib/orgs.functions";
 import { supabase } from "@/integrations/supabase/client";
-import { Inbox, LayoutDashboard, Settings, LogOut, ChevronDown } from "lucide-react";
+import { Inbox, LayoutDashboard, Settings, LogOut, ChevronDown, AlertTriangle } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug")({
   component: OrgLayout,
@@ -28,6 +28,7 @@ function OrgLayout() {
 
   const nav = [
     { to: `/app/o/${slug}/fila`, label: "Fila", icon: Inbox },
+    { to: `/app/o/${slug}/alertas`, label: "Alertas SLA", icon: AlertTriangle },
     { to: `/app/o/${slug}/dashboard`, label: "Dashboard", icon: LayoutDashboard },
     { to: `/app/o/${slug}/configuracoes`, label: "Configurações", icon: Settings },
   ];
