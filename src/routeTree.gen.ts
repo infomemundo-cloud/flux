@@ -18,6 +18,7 @@ import { Route as AuthenticatedAppOSlugRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedAppOSlugFilaRouteImport } from './routes/_authenticated/app.o.$slug.fila'
 import { Route as AuthenticatedAppOSlugDashboardRouteImport } from './routes/_authenticated/app.o.$slug.dashboard'
 import { Route as AuthenticatedAppOSlugConfiguracoesRouteImport } from './routes/_authenticated/app.o.$slug.configuracoes'
+import { Route as AuthenticatedAppOSlugAlertasRouteImport } from './routes/_authenticated/app.o.$slug.alertas'
 import { Route as AuthenticatedAppOSlugDemandasIdRouteImport } from './routes/_authenticated/app.o.$slug.demandas.$id'
 
 const AuthRoute = AuthRouteImport.update({
@@ -67,6 +68,12 @@ const AuthenticatedAppOSlugConfiguracoesRoute =
     path: '/configuracoes',
     getParentRoute: () => AuthenticatedAppOSlugRoute,
   } as any)
+const AuthenticatedAppOSlugAlertasRoute =
+  AuthenticatedAppOSlugAlertasRouteImport.update({
+    id: '/alertas',
+    path: '/alertas',
+    getParentRoute: () => AuthenticatedAppOSlugRoute,
+  } as any)
 const AuthenticatedAppOSlugDemandasIdRoute =
   AuthenticatedAppOSlugDemandasIdRouteImport.update({
     id: '/demandas/$id',
@@ -80,6 +87,7 @@ export interface FileRoutesByFullPath {
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
+  '/app/o/$slug/alertas': typeof AuthenticatedAppOSlugAlertasRoute
   '/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRoute
   '/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
   '/app/o/$slug/fila': typeof AuthenticatedAppOSlugFilaRoute
@@ -91,6 +99,7 @@ export interface FileRoutesByTo {
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
+  '/app/o/$slug/alertas': typeof AuthenticatedAppOSlugAlertasRoute
   '/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRoute
   '/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
   '/app/o/$slug/fila': typeof AuthenticatedAppOSlugFilaRoute
@@ -104,6 +113,7 @@ export interface FileRoutesById {
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
   '/_authenticated/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
+  '/_authenticated/app/o/$slug/alertas': typeof AuthenticatedAppOSlugAlertasRoute
   '/_authenticated/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRoute
   '/_authenticated/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
   '/_authenticated/app/o/$slug/fila': typeof AuthenticatedAppOSlugFilaRoute
@@ -117,6 +127,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/app/o/$slug'
     | '/api/public/ingest/$token'
+    | '/app/o/$slug/alertas'
     | '/app/o/$slug/configuracoes'
     | '/app/o/$slug/dashboard'
     | '/app/o/$slug/fila'
@@ -128,6 +139,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/app/o/$slug'
     | '/api/public/ingest/$token'
+    | '/app/o/$slug/alertas'
     | '/app/o/$slug/configuracoes'
     | '/app/o/$slug/dashboard'
     | '/app/o/$slug/fila'
@@ -140,6 +152,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app'
     | '/_authenticated/app/o/$slug'
     | '/api/public/ingest/$token'
+    | '/_authenticated/app/o/$slug/alertas'
     | '/_authenticated/app/o/$slug/configuracoes'
     | '/_authenticated/app/o/$slug/dashboard'
     | '/_authenticated/app/o/$slug/fila'
@@ -218,6 +231,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppOSlugConfiguracoesRouteImport
       parentRoute: typeof AuthenticatedAppOSlugRoute
     }
+    '/_authenticated/app/o/$slug/alertas': {
+      id: '/_authenticated/app/o/$slug/alertas'
+      path: '/alertas'
+      fullPath: '/app/o/$slug/alertas'
+      preLoaderRoute: typeof AuthenticatedAppOSlugAlertasRouteImport
+      parentRoute: typeof AuthenticatedAppOSlugRoute
+    }
     '/_authenticated/app/o/$slug/demandas/$id': {
       id: '/_authenticated/app/o/$slug/demandas/$id'
       path: '/demandas/$id'
@@ -229,6 +249,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedAppOSlugRouteChildren {
+  AuthenticatedAppOSlugAlertasRoute: typeof AuthenticatedAppOSlugAlertasRoute
   AuthenticatedAppOSlugConfiguracoesRoute: typeof AuthenticatedAppOSlugConfiguracoesRoute
   AuthenticatedAppOSlugDashboardRoute: typeof AuthenticatedAppOSlugDashboardRoute
   AuthenticatedAppOSlugFilaRoute: typeof AuthenticatedAppOSlugFilaRoute
@@ -236,6 +257,7 @@ interface AuthenticatedAppOSlugRouteChildren {
 }
 
 const AuthenticatedAppOSlugRouteChildren: AuthenticatedAppOSlugRouteChildren = {
+  AuthenticatedAppOSlugAlertasRoute: AuthenticatedAppOSlugAlertasRoute,
   AuthenticatedAppOSlugConfiguracoesRoute:
     AuthenticatedAppOSlugConfiguracoesRoute,
   AuthenticatedAppOSlugDashboardRoute: AuthenticatedAppOSlugDashboardRoute,
