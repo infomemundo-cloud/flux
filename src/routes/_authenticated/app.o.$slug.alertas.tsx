@@ -37,18 +37,18 @@ function AlertasPage() {
   });
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="flex items-center gap-3 mb-1">
-        <AlertTriangle className="h-6 w-6 text-destructive" />
-        <h1 className="text-2xl font-bold tracking-tight">Alertas de SLA</h1>
+    <div className="p-4 sm:p-6 pb-24 sm:pb-6 max-w-5xl mx-auto">
+      <div className="flex items-center gap-2 sm:gap-3 mb-1">
+        <AlertTriangle className="h-5 w-5 sm:h-6 sm:w-6 text-destructive shrink-0" />
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight truncate">Alertas de SLA</h1>
       </div>
-      <p className="text-sm text-muted-foreground mb-6">
+      <p className="text-xs sm:text-sm text-muted-foreground mb-4 sm:mb-6">
         Demandas pendentes sem qualquer atualização no histórico nos últimos 2 dias.
       </p>
 
       {isLoading && <div className="text-sm text-muted-foreground">Carregando...</div>}
       {!isLoading && data && data.length === 0 && (
-        <div className="rounded-lg border border-border bg-card p-8 text-center">
+        <div className="rounded-lg border border-border bg-card p-6 sm:p-8 text-center">
           <div className="text-4xl mb-2">✅</div>
           <p className="text-sm text-muted-foreground">Nenhuma demanda parada. Tudo em dia!</p>
         </div>
@@ -62,22 +62,22 @@ function AlertasPage() {
               key={d.id}
               to="/app/o/$slug/demandas/$id"
               params={{ slug, id: d.id }}
-              className={`block rounded-lg border p-4 hover:shadow-sm transition-shadow ${sev.ring}`}
+              className={`block rounded-lg border p-3 sm:p-4 hover:shadow-sm transition-shadow ${sev.ring}`}
             >
-              <div className="flex items-start gap-3">
-                <AlertTriangle className={`h-5 w-5 mt-0.5 shrink-0 ${sev.cls}`} />
+              <div className="flex items-start gap-2 sm:gap-3">
+                <AlertTriangle className={`h-5 w-5 sm:h-6 sm:w-6 mt-0.5 shrink-0 ${sev.cls}`} />
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-xs font-semibold uppercase tracking-wide ${sev.cls}`}>{sev.label}</span>
+                  <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                    <span className={`text-[11px] sm:text-xs font-semibold uppercase tracking-wide ${sev.cls}`}>{sev.label}</span>
                     <StateBadge state={d.state} />
                     <PriorityBadge priority={d.priority} />
                   </div>
-                  <div className="mt-1 font-medium truncate">{d.title}</div>
-                  <div className="mt-1 flex items-center gap-4 text-xs text-muted-foreground">
+                  <div className="mt-1 font-medium truncate text-sm sm:text-base">{d.title}</div>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <span className="inline-flex items-center gap-1">
                       <Clock className="h-3 w-3" /> Sem atualização {formatRelative(d.last_activity_at)}
                     </span>
-                    {d.contacts?.name && <span>Contato: {d.contacts.name}</span>}
+                    {d.contacts?.name && <span className="truncate max-w-[60vw]">Contato: {d.contacts.name}</span>}
                     {d.due_at && <span>Prazo: {new Date(d.due_at).toLocaleDateString("pt-BR")}</span>}
                   </div>
                 </div>
