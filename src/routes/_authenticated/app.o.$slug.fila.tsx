@@ -40,28 +40,28 @@ function FilaPage() {
   });
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Fila de demandas</h1>
-          <p className="text-sm text-muted-foreground">Tudo que precisa de acompanhamento.</p>
+    <div className="p-4 sm:p-6 pb-24 sm:pb-6">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:flex sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight truncate">Fila de demandas</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">Tudo que precisa de acompanhamento.</p>
         </div>
-        <button onClick={() => setShowNew(true)} className="h-10 px-4 rounded-md bg-primary text-primary-foreground font-medium inline-flex items-center gap-2">
-          <Plus className="h-4 w-4" /> Nova demanda
+        <button onClick={() => setShowNew(true)} className="shrink-0 h-10 px-3 sm:px-4 rounded-md bg-primary text-primary-foreground font-medium inline-flex items-center gap-2 text-sm">
+          <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Nova demanda</span><span className="sm:hidden">Nova</span>
         </button>
       </div>
 
-      <div className="mt-6 flex flex-wrap gap-2 items-center">
+      <div className="mt-4 sm:mt-6 flex gap-2 items-center overflow-x-auto sm:flex-wrap -mx-4 px-4 sm:mx-0 sm:px-0 pb-1">
         {STATES.map((s) => (
           <button key={s.label} onClick={() => setState(s.v)}
-            className={`px-3 py-1.5 rounded-full text-xs border ${state === s.v ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-secondary"}`}>
+            className={`shrink-0 px-3 py-1.5 rounded-full text-xs border ${state === s.v ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-secondary"}`}>
             {s.label}
           </button>
         ))}
-        <div className="ml-auto relative">
+        <div className="sm:ml-auto relative shrink-0">
           <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar título..."
-            className="h-9 pl-9 pr-3 rounded-md border border-input bg-background text-sm w-64" />
+            className="h-9 pl-9 pr-3 rounded-md border border-input bg-background text-sm w-44 sm:w-64" />
         </div>
       </div>
 
@@ -70,20 +70,22 @@ function FilaPage() {
         {data?.length === 0 && <div className="p-10 text-center text-sm text-muted-foreground">Nenhuma demanda encontrada.</div>}
         {data?.map((d: any) => (
           <Link key={d.id} to="/app/o/$slug/demandas/$id" params={{ slug, id: d.id }}
-            className="flex items-center gap-4 px-4 py-3 border-b border-border last:border-0 hover:bg-secondary/50 transition">
-            <StateBadge state={d.state} />
-            <div className="flex-1 min-w-0">
-              <div className="font-medium truncate">{d.title}</div>
+            className="grid grid-cols-[minmax(0,1fr)_auto] sm:flex sm:items-center gap-x-3 gap-y-1 sm:gap-4 px-3 sm:px-4 py-3 border-b border-border last:border-0 hover:bg-secondary/50 transition">
+            <div className="min-w-0 sm:order-2 sm:flex-1">
+              <div className="font-medium truncate text-sm sm:text-base">{d.title}</div>
               <div className="text-xs text-muted-foreground truncate">
                 {d.contacts?.name || d.contacts?.phone || "Sem contato"} · atualizada {formatRelative(d.updated_at)}
               </div>
             </div>
-            <PriorityBadge priority={d.priority} />
-            {d.due_at && (
-              <span className={`text-xs ${new Date(d.due_at) < new Date() && d.state !== "resolvido" && d.state !== "fechado" ? "text-destructive font-medium" : "text-muted-foreground"}`}>
-                venc. {new Date(d.due_at).toLocaleDateString("pt-BR")}
-              </span>
-            )}
+            <div className="shrink-0 sm:order-1"><StateBadge state={d.state} /></div>
+            <div className="col-span-2 flex items-center gap-3 sm:col-auto sm:order-3 sm:contents">
+              <PriorityBadge priority={d.priority} />
+              {d.due_at && (
+                <span className={`text-xs ${new Date(d.due_at) < new Date() && d.state !== "resolvido" && d.state !== "fechado" ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                  venc. {new Date(d.due_at).toLocaleDateString("pt-BR")}
+                </span>
+              )}
+            </div>
           </Link>
         ))}
       </div>
