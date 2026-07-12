@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { slaAlerts } from "@/lib/demandas.functions";
 import { StateBadge, PriorityBadge, formatRelative } from "@/components/demandas-ui";
 import { AlertTriangle, Clock } from "lucide-react";
@@ -36,6 +37,29 @@ function AlertasPage() {
     refetchInterval: 60000,
   });
 
+  const PAGE_SIZE = 20;
+  const [visible, setVisible] = useState(PAGE_SIZE);
+  const total = data?.length ?? 0;
+  const items = useMemo(() => (data ?? []).slice(0, visible), [data, visible]);
+  const hasMore = visible < total;
+
+  // Reset when dataset changes size (refetch, filter changes)
+  useEffect(() => { setVisible(PAGE_SIZE); }, [total]);
+
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!hasMore) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting) {
+        setVisible((v) => Math.min(v + PAGE_SIZE, total));
+      }
+    }, { rootMargin: "200px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasMore, total]);
+
   return (
     <div className="p-4 sm:p-6 pb-24 sm:pb-6 max-w-5xl mx-auto">
       <div className="flex items-center gap-2 sm:gap-3 mb-1">
@@ -44,6 +68,9 @@ function AlertasPage() {
       </div>
       <p className="text-xs sm:text-sm text-muted-foreground mb-4 sm:mb-6">
         Demandas pendentes sem qualquer atualização no histórico nos últimos 2 dias.
+        {total > 0 && (
+          <span className="ml-1">Mostrando <b>{items.length}</b> de <b>{total}</b>.</span>
+        )}
       </p>
 
       {isLoading && <div className="text-sm text-muted-foreground">Carregando...</div>}
@@ -55,7 +82,7 @@ function AlertasPage() {
       )}
 
       <div className="space-y-2">
-        {data?.map((d: any) => {
+        {items.map((d: any) => {
           const sev = severity(d.last_activity_at);
           return (
             <Link
@@ -86,6 +113,23 @@ function AlertasPage() {
           );
         })}
       </div>
+
+      {hasMore && (
+        <>
+          <div ref={sentinelRef} aria-hidden className="h-8" />
+          <div className="mt-2 flex justify-center">
+            <button
+              onClick={() => setVisible((v) => Math.min(v + PAGE_SIZE, total))}
+              className="h-9 px-4 rounded-md border border-border bg-card text-sm hover:bg-secondary"
+            >
+              Carregar mais ({total - items.length} restantes)
+            </button>
+          </div>
+        </>
+      )}
+      {!hasMore && total > PAGE_SIZE && (
+        <p className="mt-4 text-center text-xs text-muted-foreground">Fim da lista</p>
+      )}
     </div>
   );
 }
