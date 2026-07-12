@@ -63,22 +63,22 @@ function DemandaDetail() {
   const d: any = data.demanda;
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="p-4 sm:p-6 pb-24 sm:pb-6 max-w-5xl mx-auto">
       <Link to="/app/o/$slug/fila" params={{ slug }} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="h-4 w-4" /> Voltar para fila
       </Link>
 
-      <div className="mt-4 grid md:grid-cols-[1fr_280px] gap-6">
-        <div>
-          <div className="flex items-center gap-2 mb-2"><StateBadge state={d.state} /><PriorityBadge priority={d.priority} /></div>
-          <h1 className="text-2xl font-bold tracking-tight">{d.title}</h1>
+      <div className="mt-4 grid md:grid-cols-[minmax(0,1fr)_280px] gap-4 md:gap-6">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 mb-2 flex-wrap"><StateBadge state={d.state} /><PriorityBadge priority={d.priority} /></div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight break-words">{d.title}</h1>
           {d.description && <p className="mt-2 text-sm text-muted-foreground whitespace-pre-wrap">{d.description}</p>}
 
-          <h2 className="mt-8 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Histórico</h2>
+          <h2 className="mt-6 sm:mt-8 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Histórico</h2>
           <div className="mt-3 space-y-3">
             {data.events.map((e: any) => (
               <div key={e.id} className="flex gap-3 p-3 rounded-md border border-border bg-card">
-                <div className="mt-0.5 text-muted-foreground">
+                <div className="mt-0.5 text-muted-foreground shrink-0">
                   {e.kind === "commented" && <MessageCircle className="h-4 w-4" />}
                   {e.kind === "state_changed" && <GitBranch className="h-4 w-4" />}
                   {e.kind === "assigned" && <User className="h-4 w-4" />}
@@ -87,16 +87,16 @@ function DemandaDetail() {
                   {!["commented","state_changed","assigned","created","message_in"].includes(e.kind) && <GitBranch className="h-4 w-4" />}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-1">
                     {e.kind === "state_changed" && <>Estado: <b>{STATE_LABEL[e.from_value] ?? e.from_value}</b> → <b>{STATE_LABEL[e.to_value] ?? e.to_value}</b></>}
                     {e.kind === "priority_changed" && <>Prioridade: {e.from_value} → {e.to_value}</>}
                     {e.kind === "created" && <>Demanda criada</>}
                     {e.kind === "assigned" && <>Responsável alterado</>}
                     {e.kind === "commented" && <>Comentário</>}
                     {e.kind === "message_in" && <>Mensagem recebida</>}
-                    <span className="ml-2">· {formatRelative(e.created_at)}</span>
+                    <span>· {formatRelative(e.created_at)}</span>
                   </div>
-                  {e.content && <div className="mt-1 text-sm whitespace-pre-wrap">{e.content}</div>}
+                  {e.content && <div className="mt-1 text-sm whitespace-pre-wrap break-words">{e.content}</div>}
                 </div>
               </div>
             ))}
@@ -104,14 +104,14 @@ function DemandaDetail() {
 
           <form className="mt-4 flex gap-2" onSubmit={(ev) => { ev.preventDefault(); if (comment.trim()) send.mutate(); }}>
             <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Adicionar comentário..."
-              className="flex-1 h-10 px-3 rounded-md border border-input bg-background" />
-            <button disabled={send.isPending} className="h-10 px-4 rounded-md bg-primary text-primary-foreground inline-flex items-center gap-2 disabled:opacity-60">
-              <Send className="h-4 w-4" /> Enviar
+              className="flex-1 min-w-0 h-10 px-3 rounded-md border border-input bg-background text-sm" />
+            <button disabled={send.isPending} className="shrink-0 h-10 px-3 sm:px-4 rounded-md bg-primary text-primary-foreground inline-flex items-center gap-2 disabled:opacity-60 text-sm">
+              <Send className="h-4 w-4" /> <span className="hidden sm:inline">Enviar</span>
             </button>
           </form>
         </div>
 
-        <aside className="space-y-4">
+        <aside className="space-y-3 sm:space-y-4 min-w-0">
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Estado</div>
             <select value={d.state} onChange={(e) => update.mutate({ state: e.target.value })}
