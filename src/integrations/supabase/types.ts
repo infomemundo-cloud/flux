@@ -157,6 +157,7 @@ export type Database = {
           demanda_id: string
           from_state: string | null
           id: string
+          is_ai_generated: boolean
           org_id: string
           to_state: string
         }
@@ -166,6 +167,7 @@ export type Database = {
           demanda_id: string
           from_state?: string | null
           id?: string
+          is_ai_generated?: boolean
           org_id: string
           to_state: string
         }
@@ -175,6 +177,7 @@ export type Database = {
           demanda_id?: string
           from_state?: string | null
           id?: string
+          is_ai_generated?: boolean
           org_id?: string
           to_state?: string
         }
@@ -274,26 +277,82 @@ export type Database = {
           },
         ]
       }
+      invites: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          approved_role: string | null
+          created_at: string
+          email: string | null
+          id: string
+          invited_by: string | null
+          org_id: string
+          requested_by: string | null
+          status: string
+          suggested_role: string
+          token: string
+          updated_at: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          approved_role?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          invited_by?: string | null
+          org_id: string
+          requested_by?: string | null
+          status?: string
+          suggested_role?: string
+          token: string
+          updated_at?: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          approved_role?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          invited_by?: string | null
+          org_id?: string
+          requested_by?: string | null
+          status?: string
+          suggested_role?: string
+          token?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invites_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       memberships: {
         Row: {
           created_at: string
           id: string
           org_id: string
-          role: Database["public"]["Enums"]["app_role"]
+          role: string
           user_id: string
         }
         Insert: {
           created_at?: string
           id?: string
           org_id: string
-          role?: Database["public"]["Enums"]["app_role"]
+          role?: string
           user_id: string
         }
         Update: {
           created_at?: string
           id?: string
           org_id?: string
-          role?: Database["public"]["Enums"]["app_role"]
+          role?: string
           user_id?: string
         }
         Relationships: [
@@ -403,8 +462,8 @@ export type Database = {
         | "novo"
         | "em_analise"
         | "aguardando_cliente"
-        | "resolvido"
-        | "fechado"
+        | "aguardando_revisao_humana"
+        | "concluido"
       event_kind:
         | "created"
         | "state_changed"
@@ -557,8 +616,8 @@ export const Constants = {
         "novo",
         "em_analise",
         "aguardando_cliente",
-        "resolvido",
-        "fechado",
+        "aguardando_revisao_humana",
+        "concluido",
       ],
       event_kind: [
         "created",
