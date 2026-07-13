@@ -20,7 +20,8 @@ function AuthPage() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) {
-        navigate({ to: "/app", replace: true });
+        const dest = safeRedirect();
+        navigate({ to: dest, replace: true });
       } else {
         setChecking(false);
       }
@@ -42,7 +43,7 @@ function AuthPage() {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       }
-      navigate({ to: "/app" });
+      navigate({ to: safeRedirect() });
     } catch (err: any) {
       toast.error(err.message ?? "Falha na autenticação");
     } finally {
@@ -53,7 +54,18 @@ function AuthPage() {
   async function handleGoogle() {
     const res = await lovable.auth.signInWithOAuth("google", { redirect_uri: `${window.location.origin}/auth` });
     if (res.error) toast.error(res.error.message ?? "Erro Google");
-    else if (!res.redirected) navigate({ to: "/app" });
+    else if (!res.redirected) navigate({ to: safeRedirect() });
+  }
+
+  function safeRedirect(): string {
+    try {
+      const dest = sessionStorage.getItem("post-login-redirect");
+      if (dest && dest.startsWith("/")) {
+        sessionStorage.removeItem("post-login-redirect");
+        return dest;
+      }
+    } catch {}
+    return "/app";
   }
 
   if (checking) {
