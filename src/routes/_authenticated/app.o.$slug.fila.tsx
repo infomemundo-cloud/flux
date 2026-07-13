@@ -19,8 +19,8 @@ const STATES = [
   { v: "novo", label: "Novo" },
   { v: "em_analise", label: "Em análise" },
   { v: "aguardando_cliente", label: "Aguardando cliente" },
-  { v: "resolvido", label: "Resolvido" },
-  { v: "fechado", label: "Fechado" },
+  { v: "aguardando_revisao_humana", label: "Aguard. revisão" },
+  { v: "concluido", label: "Concluído" },
 ] as const;
 
 function FilaPage() {
