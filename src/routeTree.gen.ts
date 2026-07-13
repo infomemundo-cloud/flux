@@ -12,10 +12,12 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ConviteTokenRouteImport } from './routes/convite.$token'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as ApiPublicIngestTokenRouteImport } from './routes/api/public/ingest.$token'
 import { Route as AuthenticatedAppOSlugRouteImport } from './routes/_authenticated/app.o.$slug'
 import { Route as AuthenticatedAppOSlugFilaRouteImport } from './routes/_authenticated/app.o.$slug.fila'
+import { Route as AuthenticatedAppOSlugEquipeRouteImport } from './routes/_authenticated/app.o.$slug.equipe'
 import { Route as AuthenticatedAppOSlugDashboardRouteImport } from './routes/_authenticated/app.o.$slug.dashboard'
 import { Route as AuthenticatedAppOSlugConfiguracoesRouteImport } from './routes/_authenticated/app.o.$slug.configuracoes'
 import { Route as AuthenticatedAppOSlugAlertasRouteImport } from './routes/_authenticated/app.o.$slug.alertas'
@@ -33,6 +35,11 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConviteTokenRoute = ConviteTokenRouteImport.update({
+  id: '/convite/$token',
+  path: '/convite/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
@@ -54,6 +61,12 @@ const AuthenticatedAppOSlugFilaRoute =
   AuthenticatedAppOSlugFilaRouteImport.update({
     id: '/fila',
     path: '/fila',
+    getParentRoute: () => AuthenticatedAppOSlugRoute,
+  } as any)
+const AuthenticatedAppOSlugEquipeRoute =
+  AuthenticatedAppOSlugEquipeRouteImport.update({
+    id: '/equipe',
+    path: '/equipe',
     getParentRoute: () => AuthenticatedAppOSlugRoute,
   } as any)
 const AuthenticatedAppOSlugDashboardRoute =
@@ -85,11 +98,13 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
+  '/convite/$token': typeof ConviteTokenRoute
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
   '/app/o/$slug/alertas': typeof AuthenticatedAppOSlugAlertasRoute
   '/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRoute
   '/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
+  '/app/o/$slug/equipe': typeof AuthenticatedAppOSlugEquipeRoute
   '/app/o/$slug/fila': typeof AuthenticatedAppOSlugFilaRoute
   '/app/o/$slug/demandas/$id': typeof AuthenticatedAppOSlugDemandasIdRoute
 }
@@ -97,11 +112,13 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
+  '/convite/$token': typeof ConviteTokenRoute
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
   '/app/o/$slug/alertas': typeof AuthenticatedAppOSlugAlertasRoute
   '/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRoute
   '/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
+  '/app/o/$slug/equipe': typeof AuthenticatedAppOSlugEquipeRoute
   '/app/o/$slug/fila': typeof AuthenticatedAppOSlugFilaRoute
   '/app/o/$slug/demandas/$id': typeof AuthenticatedAppOSlugDemandasIdRoute
 }
@@ -111,11 +128,13 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
+  '/convite/$token': typeof ConviteTokenRoute
   '/_authenticated/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
   '/_authenticated/app/o/$slug/alertas': typeof AuthenticatedAppOSlugAlertasRoute
   '/_authenticated/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRoute
   '/_authenticated/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
+  '/_authenticated/app/o/$slug/equipe': typeof AuthenticatedAppOSlugEquipeRoute
   '/_authenticated/app/o/$slug/fila': typeof AuthenticatedAppOSlugFilaRoute
   '/_authenticated/app/o/$slug/demandas/$id': typeof AuthenticatedAppOSlugDemandasIdRoute
 }
@@ -125,11 +144,13 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/app'
+    | '/convite/$token'
     | '/app/o/$slug'
     | '/api/public/ingest/$token'
     | '/app/o/$slug/alertas'
     | '/app/o/$slug/configuracoes'
     | '/app/o/$slug/dashboard'
+    | '/app/o/$slug/equipe'
     | '/app/o/$slug/fila'
     | '/app/o/$slug/demandas/$id'
   fileRoutesByTo: FileRoutesByTo
@@ -137,11 +158,13 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/app'
+    | '/convite/$token'
     | '/app/o/$slug'
     | '/api/public/ingest/$token'
     | '/app/o/$slug/alertas'
     | '/app/o/$slug/configuracoes'
     | '/app/o/$slug/dashboard'
+    | '/app/o/$slug/equipe'
     | '/app/o/$slug/fila'
     | '/app/o/$slug/demandas/$id'
   id:
@@ -150,11 +173,13 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/auth'
     | '/_authenticated/app'
+    | '/convite/$token'
     | '/_authenticated/app/o/$slug'
     | '/api/public/ingest/$token'
     | '/_authenticated/app/o/$slug/alertas'
     | '/_authenticated/app/o/$slug/configuracoes'
     | '/_authenticated/app/o/$slug/dashboard'
+    | '/_authenticated/app/o/$slug/equipe'
     | '/_authenticated/app/o/$slug/fila'
     | '/_authenticated/app/o/$slug/demandas/$id'
   fileRoutesById: FileRoutesById
@@ -163,6 +188,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  ConviteTokenRoute: typeof ConviteTokenRoute
   ApiPublicIngestTokenRoute: typeof ApiPublicIngestTokenRoute
 }
 
@@ -187,6 +213,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/convite/$token': {
+      id: '/convite/$token'
+      path: '/convite/$token'
+      fullPath: '/convite/$token'
+      preLoaderRoute: typeof ConviteTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/app': {
@@ -215,6 +248,13 @@ declare module '@tanstack/react-router' {
       path: '/fila'
       fullPath: '/app/o/$slug/fila'
       preLoaderRoute: typeof AuthenticatedAppOSlugFilaRouteImport
+      parentRoute: typeof AuthenticatedAppOSlugRoute
+    }
+    '/_authenticated/app/o/$slug/equipe': {
+      id: '/_authenticated/app/o/$slug/equipe'
+      path: '/equipe'
+      fullPath: '/app/o/$slug/equipe'
+      preLoaderRoute: typeof AuthenticatedAppOSlugEquipeRouteImport
       parentRoute: typeof AuthenticatedAppOSlugRoute
     }
     '/_authenticated/app/o/$slug/dashboard': {
@@ -252,6 +292,7 @@ interface AuthenticatedAppOSlugRouteChildren {
   AuthenticatedAppOSlugAlertasRoute: typeof AuthenticatedAppOSlugAlertasRoute
   AuthenticatedAppOSlugConfiguracoesRoute: typeof AuthenticatedAppOSlugConfiguracoesRoute
   AuthenticatedAppOSlugDashboardRoute: typeof AuthenticatedAppOSlugDashboardRoute
+  AuthenticatedAppOSlugEquipeRoute: typeof AuthenticatedAppOSlugEquipeRoute
   AuthenticatedAppOSlugFilaRoute: typeof AuthenticatedAppOSlugFilaRoute
   AuthenticatedAppOSlugDemandasIdRoute: typeof AuthenticatedAppOSlugDemandasIdRoute
 }
@@ -261,6 +302,7 @@ const AuthenticatedAppOSlugRouteChildren: AuthenticatedAppOSlugRouteChildren = {
   AuthenticatedAppOSlugConfiguracoesRoute:
     AuthenticatedAppOSlugConfiguracoesRoute,
   AuthenticatedAppOSlugDashboardRoute: AuthenticatedAppOSlugDashboardRoute,
+  AuthenticatedAppOSlugEquipeRoute: AuthenticatedAppOSlugEquipeRoute,
   AuthenticatedAppOSlugFilaRoute: AuthenticatedAppOSlugFilaRoute,
   AuthenticatedAppOSlugDemandasIdRoute: AuthenticatedAppOSlugDemandasIdRoute,
 }
@@ -296,6 +338,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  ConviteTokenRoute: ConviteTokenRoute,
   ApiPublicIngestTokenRoute: ApiPublicIngestTokenRoute,
 }
 export const routeTree = rootRouteImport

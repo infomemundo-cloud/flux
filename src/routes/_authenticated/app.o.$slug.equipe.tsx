@@ -206,6 +206,3 @@ function ApproveControls({ onApprove, defaultRole }: { onApprove: (role: (typeof
     </div>
   );
 }
-
-const ROLE_LABEL_EXPORT = ROLE_LABEL;
-export { ROLE_LABEL_EXPORT as ROLE_LABEL };
