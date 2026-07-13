@@ -19,8 +19,8 @@ const STATES = [
   { v: "novo", label: "Novo" },
   { v: "em_analise", label: "Em análise" },
   { v: "aguardando_cliente", label: "Aguardando cliente" },
-  { v: "resolvido", label: "Resolvido" },
-  { v: "fechado", label: "Fechado" },
+  { v: "aguardando_revisao_humana", label: "Aguard. revisão" },
+  { v: "concluido", label: "Concluído" },
 ] as const;
 
 function FilaPage() {
@@ -81,7 +81,7 @@ function FilaPage() {
             <div className="col-span-2 flex items-center gap-3 sm:col-auto sm:order-3 sm:contents">
               <PriorityBadge priority={d.priority} />
               {d.due_at && (
-                <span className={`text-xs ${new Date(d.due_at) < new Date() && d.state !== "resolvido" && d.state !== "fechado" ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                <span className={`text-xs ${new Date(d.due_at) < new Date() && d.state !== "aguardando_revisao_humana" && d.state !== "concluido" ? "text-destructive font-medium" : "text-muted-foreground"}`}>
                   venc. {new Date(d.due_at).toLocaleDateString("pt-BR")}
                 </span>
               )}

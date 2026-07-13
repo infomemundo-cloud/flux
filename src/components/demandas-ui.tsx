@@ -2,16 +2,16 @@ export const STATE_LABEL: Record<string, string> = {
   novo: "Novo",
   em_analise: "Em análise",
   aguardando_cliente: "Aguardando cliente",
-  resolvido: "Resolvido",
-  fechado: "Fechado",
+  aguardando_revisao_humana: "Aguardando revisão humana",
+  concluido: "Concluído",
 };
 
 const STATE_COLOR: Record<string, string> = {
   novo: "bg-[oklch(0.55_0.18_250/0.15)] text-[oklch(0.4_0.18_250)] border-[oklch(0.55_0.18_250/0.3)]",
   em_analise: "bg-[oklch(0.65_0.18_80/0.15)] text-[oklch(0.42_0.15_80)] border-[oklch(0.65_0.18_80/0.3)]",
   aguardando_cliente: "bg-[oklch(0.65_0.18_40/0.15)] text-[oklch(0.5_0.18_40)] border-[oklch(0.65_0.18_40/0.3)]",
-  resolvido: "bg-[oklch(0.6_0.17_160/0.15)] text-[oklch(0.4_0.17_160)] border-[oklch(0.6_0.17_160/0.3)]",
-  fechado: "bg-muted text-muted-foreground border-border",
+  aguardando_revisao_humana: "bg-[oklch(0.65_0.16_290/0.15)] text-[oklch(0.42_0.16_290)] border-[oklch(0.65_0.16_290/0.3)]",
+  concluido: "bg-[oklch(0.6_0.17_160/0.15)] text-[oklch(0.4_0.17_160)] border-[oklch(0.6_0.17_160/0.3)]",
 };
 
 export function StateBadge({ state }: { state: string }) {

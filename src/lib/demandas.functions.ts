@@ -2,8 +2,10 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
-const StateEnum = z.enum(["novo", "em_analise", "aguardando_cliente", "resolvido", "fechado"]);
+const StateEnum = z.enum(["novo", "em_analise", "aguardando_cliente", "aguardando_revisao_humana", "concluido"]);
 const PriorityEnum = z.enum(["baixa", "media", "alta", "urgente"]);
+
+const OP_ROLES = ["owner", "admin", "gerente", "operador", "agente_ia"] as const;
 
 async function assertMember(supabase: any, orgId: string, userId: string) {
   const { data } = await supabase.from("memberships").select("role").eq("org_id", orgId).eq("user_id", userId).maybeSingle();
@@ -70,7 +72,7 @@ export const createDemanda = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const role = await assertMember(context.supabase, data.orgId, context.userId);
-    if (!["owner", "admin", "agent"].includes(role)) throw new Error("Sem permissão para criar");
+    if (!OP_ROLES.includes(role as (typeof OP_ROLES)[number])) throw new Error("Sem permissão para criar");
     let contactId: string | null = null;
     if (data.contact_name || data.contact_phone) {
       const { data: c, error: ce } = await context.supabase
@@ -165,7 +167,7 @@ export const orgDashboard = createServerFn({ method: "GET" })
       .eq("org_id", data.orgId).limit(2000);
     if (error) throw new Error(error.message);
     const now = Date.now();
-    const counts: Record<string, number> = { novo: 0, em_analise: 0, aguardando_cliente: 0, resolvido: 0, fechado: 0 };
+    const counts: Record<string, number> = { novo: 0, em_analise: 0, aguardando_cliente: 0, aguardando_revisao_humana: 0, concluido: 0 };
     let overdue = 0;
     let openTotal = 0;
     const last14: Record<string, { novas: number; resolvidas: number }> = {};
@@ -176,7 +178,7 @@ export const orgDashboard = createServerFn({ method: "GET" })
     }
     for (const r of rows ?? []) {
       counts[r.state] = (counts[r.state] ?? 0) + 1;
-      const isOpen = r.state !== "resolvido" && r.state !== "fechado";
+      const isOpen = r.state !== "aguardando_revisao_humana" && r.state !== "concluido";
       if (isOpen) openTotal++;
       if (isOpen && r.due_at && new Date(r.due_at).getTime() < now) overdue++;
       const created = (r.created_at as string).slice(0, 10);
@@ -220,7 +222,7 @@ export const slaAlerts = createServerFn({ method: "GET" })
       .from("demandas")
       .select("id, title, state, priority, due_at, created_at, updated_at, contacts:contact_id(name, phone)")
       .eq("org_id", data.orgId)
-      .not("state", "in", "(resolvido,fechado)")
+      .not("state", "in", "(aguardando_revisao_humana,concluido)")
       .limit(500);
     if (error) throw new Error(error.message);
     const list = rows ?? [];

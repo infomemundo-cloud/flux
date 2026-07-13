@@ -14,7 +14,7 @@ export const Route = createFileRoute("/_authenticated/app/o/$slug/demandas/$id")
   component: DemandaDetail,
 });
 
-const NEXT_STATES = ["novo", "em_analise", "aguardando_cliente", "resolvido", "fechado"] as const;
+const NEXT_STATES = ["novo", "em_analise", "aguardando_cliente", "aguardando_revisao_humana", "concluido"] as const;
 const PRIORITIES = ["baixa", "media", "alta", "urgente"] as const;
 
 function DemandaDetail() {
