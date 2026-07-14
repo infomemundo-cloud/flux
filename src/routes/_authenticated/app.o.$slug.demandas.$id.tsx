@@ -3,11 +3,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { getDemanda, updateDemanda, addComment, deleteDemanda } from "@/lib/demandas.functions";
-import { getOrgBySlug } from "@/lib/orgs.functions";
+import { getOrgBySlug, listOperators } from "@/lib/orgs.functions";
 import { StateBadge, STATE_LABEL, PriorityBadge, formatRelative } from "@/components/demandas-ui";
 import { toast } from "sonner";
 import { friendlyError } from "@/lib/friendly-error";
-import { ArrowLeft, MessageCircle, GitBranch, User, AlertCircle, Send, Trash2 } from "lucide-react";
+import { ArrowLeft, MessageCircle, GitBranch, User, AlertCircle, Send, Trash2, UserCheck } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/demandas/$id")({
   head: () => ({ meta: [{ title: "Demanda — Fluxo" }] }),
@@ -16,6 +16,7 @@ export const Route = createFileRoute("/_authenticated/app/o/$slug/demandas/$id")
 
 const NEXT_STATES = ["novo", "em_analise", "aguardando_cliente", "aguardando_revisao_humana", "concluido"] as const;
 const PRIORITIES = ["baixa", "media", "alta", "urgente"] as const;
+const MANAGER_ROLES = new Set(["owner", "admin", "gerente"]);
 
 function DemandaDetail() {
   const { slug, id } = useParams({ from: "/_authenticated/app/o/$slug/demandas/$id" });
@@ -31,6 +32,14 @@ function DemandaDetail() {
 
   const { data: org } = useQuery({ queryKey: ["org", slug], queryFn: () => orgFn({ data: { slug } }) });
   const canDelete = org?.role === "owner" || org?.role === "admin";
+  const isManager = !!org && MANAGER_ROLES.has(org.role);
+
+  const opsFn = useServerFn(listOperators);
+  const { data: operators } = useQuery({
+    queryKey: ["operators", org?.id],
+    enabled: !!org?.id && isManager,
+    queryFn: () => opsFn({ data: { orgId: org!.id } }),
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ["demanda", id],
@@ -133,6 +142,43 @@ function DemandaDetail() {
               onBlur={(e) => update.mutate({ due_at: e.target.value ? new Date(e.target.value).toISOString() : null })}
               className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm" />
           </div>
+          {org && (
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Responsável</div>
+              <div className="text-sm mb-2 truncate">
+                {d.assignee_id
+                  ? (d.assignee_id === org.userId
+                      ? "Você"
+                      : (operators?.find((o) => o.user_id === d.assignee_id)?.email ?? "Outro operador"))
+                  : <span className="text-muted-foreground">Sem responsável</span>}
+              </div>
+              {d.assignee_id !== org.userId && (
+                <button
+                  onClick={() => update.mutate({ assignee_id: org.userId })}
+                  className="w-full h-9 rounded-md bg-primary text-primary-foreground text-sm inline-flex items-center justify-center gap-2"
+                >
+                  <UserCheck className="h-4 w-4" /> Atribuir para mim
+                </button>
+              )}
+              {isManager && (
+                <div className="mt-2 space-y-2">
+                  <select
+                    value={d.assignee_id ?? ""}
+                    onChange={(e) => update.mutate({ assignee_id: e.target.value || null })}
+                    className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                  >
+                    <option value="">— Sem responsável —</option>
+                    {(operators ?? []).map((o) => (
+                      <option key={o.user_id} value={o.user_id}>
+                        {o.email ?? o.user_id.slice(0, 8)} · {o.role}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-muted-foreground">Gerentes/Admins podem mover a demanda entre operadores.</p>
+                </div>
+              )}
+            </div>
+          )}
           {d.contacts && (
             <div className="rounded-lg border border-border bg-card p-4">
               <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Contato</div>
