@@ -20,6 +20,7 @@ export const listDemandas = createServerFn({ method: "GET" })
       orgId: z.string().uuid(),
       state: StateEnum.optional(),
       assignedToMe: z.boolean().optional(),
+      assigneeId: z.string().uuid().nullable().optional(),
       search: z.string().optional(),
     }).parse(d),
   )
@@ -33,6 +34,8 @@ export const listDemandas = createServerFn({ method: "GET" })
       .limit(200);
     if (data.state) q = q.eq("state", data.state);
     if (data.assignedToMe) q = q.eq("assignee_id", context.userId);
+    if (data.assigneeId === null) q = q.is("assignee_id", null);
+    else if (typeof data.assigneeId === "string") q = q.eq("assignee_id", data.assigneeId);
     if (data.search) q = q.ilike("title", `%${data.search}%`);
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
@@ -159,12 +162,20 @@ export const deleteDemanda = createServerFn({ method: "POST" })
 
 export const orgDashboard = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ orgId: z.string().uuid() }).parse(d))
+  .inputValidator((d: unknown) =>
+    z.object({
+      orgId: z.string().uuid(),
+      assigneeId: z.string().uuid().nullable().optional(),
+    }).parse(d),
+  )
   .handler(async ({ data, context }) => {
     await assertMember(context.supabase, data.orgId, context.userId);
-    const { data: rows, error } = await context.supabase
+    let q = context.supabase
       .from("demandas").select("state, priority, due_at, resolved_at, created_at")
       .eq("org_id", data.orgId).limit(2000);
+    if (data.assigneeId === null) q = q.is("assignee_id", null);
+    else if (typeof data.assigneeId === "string") q = q.eq("assignee_id", data.assigneeId);
+    const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
     const now = Date.now();
     const counts: Record<string, number> = { novo: 0, em_analise: 0, aguardando_cliente: 0, aguardando_revisao_humana: 0, concluido: 0 };
