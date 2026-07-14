@@ -56,7 +56,7 @@ export const getOrgBySlug = createServerFn({ method: "GET" })
     const { data: mem } = await context.supabase
       .from("memberships").select("role").eq("org_id", org.id).eq("user_id", context.userId).maybeSingle();
     if (!mem) throw new Error("Sem acesso");
-    return { ...org, role: mem.role as string };
+    return { ...org, role: mem.role as string, userId: context.userId };
   });
 
 export const listMembers = createServerFn({ method: "GET" })
@@ -75,6 +75,33 @@ export const listMembers = createServerFn({ method: "GET" })
       (rows ?? []).map(async (r) => {
         const { data: u } = await supabaseAdmin.auth.admin.getUserById(r.user_id);
         return { ...r, email: u.user?.email ?? null };
+      }),
+    );
+    return enriched;
+  });
+
+export const listOperators = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ orgId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: mem } = await context.supabase
+      .from("memberships")
+      .select("role")
+      .eq("org_id", data.orgId)
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (!mem) throw new Error("Sem acesso");
+    const { data: rows, error } = await context.supabase
+      .from("memberships")
+      .select("user_id, role")
+      .eq("org_id", data.orgId)
+      .in("role", ["owner", "admin", "gerente", "operador", "agente_ia"]);
+    if (error) throw new Error(error.message);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const enriched = await Promise.all(
+      (rows ?? []).map(async (r: any) => {
+        const { data: u } = await supabaseAdmin.auth.admin.getUserById(r.user_id);
+        return { user_id: r.user_id, role: r.role as string, email: u.user?.email ?? null };
       }),
     );
     return enriched;
