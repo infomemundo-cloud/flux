@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SimularRouteImport } from './routes/simular'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
@@ -23,6 +24,11 @@ import { Route as AuthenticatedAppOSlugConfiguracoesRouteImport } from './routes
 import { Route as AuthenticatedAppOSlugAlertasRouteImport } from './routes/_authenticated/app.o.$slug.alertas'
 import { Route as AuthenticatedAppOSlugDemandasIdRouteImport } from './routes/_authenticated/app.o.$slug.demandas.$id'
 
+const SimularRoute = SimularRouteImport.update({
+  id: '/simular',
+  path: '/simular',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
@@ -97,6 +103,7 @@ const AuthenticatedAppOSlugDemandasIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/simular': typeof SimularRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/convite/$token': typeof ConviteTokenRoute
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
@@ -111,6 +118,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/simular': typeof SimularRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/convite/$token': typeof ConviteTokenRoute
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
@@ -127,6 +135,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/simular': typeof SimularRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
   '/convite/$token': typeof ConviteTokenRoute
   '/_authenticated/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
@@ -143,6 +152,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/simular'
     | '/app'
     | '/convite/$token'
     | '/app/o/$slug'
@@ -157,6 +167,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/simular'
     | '/app'
     | '/convite/$token'
     | '/app/o/$slug'
@@ -172,6 +183,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/auth'
+    | '/simular'
     | '/_authenticated/app'
     | '/convite/$token'
     | '/_authenticated/app/o/$slug'
@@ -188,12 +200,20 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  SimularRoute: typeof SimularRoute
   ConviteTokenRoute: typeof ConviteTokenRoute
   ApiPublicIngestTokenRoute: typeof ApiPublicIngestTokenRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/simular': {
+      id: '/simular'
+      path: '/simular'
+      fullPath: '/simular'
+      preLoaderRoute: typeof SimularRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth': {
       id: '/auth'
       path: '/auth'
@@ -338,6 +358,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  SimularRoute: SimularRoute,
   ConviteTokenRoute: ConviteTokenRoute,
   ApiPublicIngestTokenRoute: ApiPublicIngestTokenRoute,
 }
