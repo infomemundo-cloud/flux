@@ -212,6 +212,7 @@ export type Database = {
           id: string
           org_id: string
           priority: Database["public"]["Enums"]["demanda_priority"]
+          protocol: string | null
           resolved_at: string | null
           state: Database["public"]["Enums"]["demanda_state"]
           title: string
@@ -230,6 +231,7 @@ export type Database = {
           id?: string
           org_id: string
           priority?: Database["public"]["Enums"]["demanda_priority"]
+          protocol?: string | null
           resolved_at?: string | null
           state?: Database["public"]["Enums"]["demanda_state"]
           title: string
@@ -248,6 +250,7 @@ export type Database = {
           id?: string
           org_id?: string
           priority?: Database["public"]["Enums"]["demanda_priority"]
+          protocol?: string | null
           resolved_at?: string | null
           state?: Database["public"]["Enums"]["demanda_state"]
           title?: string
@@ -445,7 +448,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      gen_demanda_protocol: { Args: never; Returns: string }
     }
     Enums: {
       app_role: "owner" | "admin" | "agent" | "viewer"
