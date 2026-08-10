@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SimularRouteImport } from './routes/simular'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AcompanharRouteImport } from './routes/acompanhar'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ConviteTokenRouteImport } from './routes/convite.$token'
@@ -33,6 +34,11 @@ const SimularRoute = SimularRouteImport.update({
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AcompanharRoute = AcompanharRouteImport.update({
+  id: '/acompanhar',
+  path: '/acompanhar',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
@@ -108,6 +114,7 @@ const AuthenticatedAppOSlugDemandasIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/acompanhar': typeof AcompanharRoute
   '/auth': typeof AuthRoute
   '/simular': typeof SimularRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
@@ -124,6 +131,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/acompanhar': typeof AcompanharRoute
   '/auth': typeof AuthRoute
   '/simular': typeof SimularRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
@@ -142,6 +150,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/acompanhar': typeof AcompanharRoute
   '/auth': typeof AuthRoute
   '/simular': typeof SimularRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
@@ -160,6 +169,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/acompanhar'
     | '/auth'
     | '/simular'
     | '/app'
@@ -176,6 +186,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/acompanhar'
     | '/auth'
     | '/simular'
     | '/app'
@@ -193,6 +204,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_authenticated'
+    | '/acompanhar'
     | '/auth'
     | '/simular'
     | '/_authenticated/app'
@@ -211,6 +223,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  AcompanharRoute: typeof AcompanharRoute
   AuthRoute: typeof AuthRoute
   SimularRoute: typeof SimularRoute
   ConviteTokenRoute: typeof ConviteTokenRoute
@@ -232,6 +245,13 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/acompanhar': {
+      id: '/acompanhar'
+      path: '/acompanhar'
+      fullPath: '/acompanhar'
+      preLoaderRoute: typeof AcompanharRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated': {
@@ -377,6 +397,7 @@ const AuthenticatedRouteRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  AcompanharRoute: AcompanharRoute,
   AuthRoute: AuthRoute,
   SimularRoute: SimularRoute,
   ConviteTokenRoute: ConviteTokenRoute,
