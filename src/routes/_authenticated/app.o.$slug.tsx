@@ -22,6 +22,8 @@ function OrgLayout() {
   });
   const [newCount, setNewCount] = useState(0);
 
+  useEffect(() => { if (location.pathname.endsWith("/fila")) setNewCount(0); }, [location.pathname]);
+
   // Live alert whenever a demand enters this organization (external channel, API or manual).
   useEffect(() => {
     if (!org?.id) return;
