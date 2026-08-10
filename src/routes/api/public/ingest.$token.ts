@@ -22,7 +22,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
       POST: async ({ request, params }) => {
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const { data: tok, error: te } = await supabaseAdmin
-          .from("webhook_tokens").select("id, org_id, channel_id").eq("token", params.token).maybeSingle();
+          .from("webhook_tokens").select("id, org_id, channel_id, organizations:org_id(name)").eq("token", params.token).maybeSingle();
         if (te || !tok) return new Response(JSON.stringify({ error: "invalid_token" }), { status: 401, headers: { "content-type": "application/json" } });
         let payload: unknown;
         try { payload = await request.json(); } catch { return new Response(JSON.stringify({ error: "invalid_json" }), { status: 400 }); }
@@ -49,6 +49,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
         }
         // Reopen: if there's an open demanda for the same contact, append message; otherwise create
         let demandaId: string | null = null;
+        let protocol: string | null = null;
         if (contactId && b.reopen_if_open !== false) {
           const { data: open } = await supabaseAdmin.from("demandas").select("id")
             .eq("org_id", tok.org_id).eq("contact_id", contactId)
@@ -61,16 +62,26 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             org_id: tok.org_id, title, description: b.message,
             priority: b.priority ?? "media",
             contact_id: contactId, channel_id: tok.channel_id,
-          }).select("id").single();
+          }).select("id, protocol").single();
           if (de || !dem) return new Response(JSON.stringify({ error: de?.message }), { status: 500, headers: { "content-type": "application/json" } });
           demandaId = dem.id;
+          protocol = dem.protocol as string | null;
+        }
+        if (!protocol && demandaId) {
+          const { data: p } = await supabaseAdmin.from("demandas").select("protocol").eq("id", demandaId).maybeSingle();
+          protocol = (p?.protocol as string | null) ?? null;
         }
         await supabaseAdmin.from("demanda_events").insert({
           org_id: tok.org_id, demanda_id: demandaId, kind: "message_in",
           content: b.message, metadata: { external_ref: b.external_ref ?? null, channel_kind: b.channel_kind ?? null },
         });
         await supabaseAdmin.from("webhook_tokens").update({ last_used_at: new Date().toISOString() }).eq("id", tok.id);
-        return new Response(JSON.stringify({ ok: true, demanda_id: demandaId }), { status: 200, headers: { "content-type": "application/json" } });
+        return new Response(JSON.stringify({
+          ok: true,
+          demanda_id: demandaId,
+          protocol,
+          org: (tok as any).organizations?.name ?? null,
+        }), { status: 200, headers: { "content-type": "application/json" } });
       },
     },
   },

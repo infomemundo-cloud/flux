@@ -15,6 +15,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ConviteTokenRouteImport } from './routes/convite.$token'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
+import { Route as ApiPublicStatusTokenRouteImport } from './routes/api/public/status.$token'
 import { Route as ApiPublicIngestTokenRouteImport } from './routes/api/public/ingest.$token'
 import { Route as AuthenticatedAppOSlugRouteImport } from './routes/_authenticated/app.o.$slug'
 import { Route as AuthenticatedAppOSlugFilaRouteImport } from './routes/_authenticated/app.o.$slug.fila'
@@ -52,6 +53,11 @@ const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
   id: '/app',
   path: '/app',
   getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const ApiPublicStatusTokenRoute = ApiPublicStatusTokenRouteImport.update({
+  id: '/api/public/status/$token',
+  path: '/api/public/status/$token',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicIngestTokenRoute = ApiPublicIngestTokenRouteImport.update({
   id: '/api/public/ingest/$token',
@@ -108,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/convite/$token': typeof ConviteTokenRoute
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
+  '/api/public/status/$token': typeof ApiPublicStatusTokenRoute
   '/app/o/$slug/alertas': typeof AuthenticatedAppOSlugAlertasRoute
   '/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRoute
   '/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
@@ -123,6 +130,7 @@ export interface FileRoutesByTo {
   '/convite/$token': typeof ConviteTokenRoute
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
+  '/api/public/status/$token': typeof ApiPublicStatusTokenRoute
   '/app/o/$slug/alertas': typeof AuthenticatedAppOSlugAlertasRoute
   '/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRoute
   '/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
@@ -140,6 +148,7 @@ export interface FileRoutesById {
   '/convite/$token': typeof ConviteTokenRoute
   '/_authenticated/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
+  '/api/public/status/$token': typeof ApiPublicStatusTokenRoute
   '/_authenticated/app/o/$slug/alertas': typeof AuthenticatedAppOSlugAlertasRoute
   '/_authenticated/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRoute
   '/_authenticated/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
@@ -157,6 +166,7 @@ export interface FileRouteTypes {
     | '/convite/$token'
     | '/app/o/$slug'
     | '/api/public/ingest/$token'
+    | '/api/public/status/$token'
     | '/app/o/$slug/alertas'
     | '/app/o/$slug/configuracoes'
     | '/app/o/$slug/dashboard'
@@ -172,6 +182,7 @@ export interface FileRouteTypes {
     | '/convite/$token'
     | '/app/o/$slug'
     | '/api/public/ingest/$token'
+    | '/api/public/status/$token'
     | '/app/o/$slug/alertas'
     | '/app/o/$slug/configuracoes'
     | '/app/o/$slug/dashboard'
@@ -188,6 +199,7 @@ export interface FileRouteTypes {
     | '/convite/$token'
     | '/_authenticated/app/o/$slug'
     | '/api/public/ingest/$token'
+    | '/api/public/status/$token'
     | '/_authenticated/app/o/$slug/alertas'
     | '/_authenticated/app/o/$slug/configuracoes'
     | '/_authenticated/app/o/$slug/dashboard'
@@ -203,6 +215,7 @@ export interface RootRouteChildren {
   SimularRoute: typeof SimularRoute
   ConviteTokenRoute: typeof ConviteTokenRoute
   ApiPublicIngestTokenRoute: typeof ApiPublicIngestTokenRoute
+  ApiPublicStatusTokenRoute: typeof ApiPublicStatusTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -248,6 +261,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/app'
       preLoaderRoute: typeof AuthenticatedAppRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/api/public/status/$token': {
+      id: '/api/public/status/$token'
+      path: '/api/public/status/$token'
+      fullPath: '/api/public/status/$token'
+      preLoaderRoute: typeof ApiPublicStatusTokenRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/public/ingest/$token': {
       id: '/api/public/ingest/$token'
@@ -361,17 +381,8 @@ const rootRouteChildren: RootRouteChildren = {
   SimularRoute: SimularRoute,
   ConviteTokenRoute: ConviteTokenRoute,
   ApiPublicIngestTokenRoute: ApiPublicIngestTokenRoute,
+  ApiPublicStatusTokenRoute: ApiPublicStatusTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
