@@ -1,9 +1,11 @@
 import { createFileRoute, Link, Outlet, useNavigate, useParams, useLocation } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { getOrgBySlug } from "@/lib/orgs.functions";
 import { supabase } from "@/integrations/supabase/client";
-import { Inbox, LayoutDashboard, Settings, LogOut, ChevronDown, AlertTriangle, Users } from "lucide-react";
+import { Inbox, LayoutDashboard, Settings, LogOut, ChevronDown, AlertTriangle, Users, Bell } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug")({
   component: OrgLayout,
@@ -13,10 +15,35 @@ function OrgLayout() {
   const { slug } = useParams({ from: "/_authenticated/app/o/$slug" });
   const location = useLocation();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const fn = useServerFn(getOrgBySlug);
   const { data: org, isLoading, error } = useQuery({
     queryKey: ["org", slug], queryFn: () => fn({ data: { slug } }), retry: false,
   });
+  const [newCount, setNewCount] = useState(0);
+
+  // Live alert whenever a demand enters this organization (external channel, API or manual).
+  useEffect(() => {
+    if (!org?.id) return;
+    const channel = supabase
+      .channel(`demandas-in-${org.id}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "demandas", filter: `org_id=eq.${org.id}` },
+        (payload) => {
+          const d = payload.new as { title?: string; protocol?: string };
+          setNewCount((c) => c + 1);
+          toast.info("Nova demanda recebida", {
+            description: `${d.protocol ? d.protocol + " · " : ""}${d.title ?? "Sem título"}`,
+            action: { label: "Ver fila", onClick: () => navigate({ to: "/app/o/$slug/fila", params: { slug } }) },
+          });
+          qc.invalidateQueries({ queryKey: ["demandas"] });
+          qc.invalidateQueries({ queryKey: ["dashboard"] });
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [org?.id, qc, navigate, slug]);
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -52,6 +79,11 @@ function OrgLayout() {
               <a key={n.to} href={n.to}
                 className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm ${active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "hover:bg-sidebar-accent/50"}`}>
                 <Icon className="h-4 w-4" /> {n.label}
+                {n.label === "Fila" && newCount > 0 && (
+                  <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground">
+                    <Bell className="h-3 w-3" /> {newCount}
+                  </span>
+                )}
               </a>
             );
           })}
