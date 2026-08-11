@@ -7,7 +7,17 @@ import "@fontsource/inter/600.css";
 import "@fontsource/inter/700.css";
 
 export const getRouter = () => {
-  const queryClient = new QueryClient();
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        // Rede de segurança: se o canal em tempo real cair, as telas
+        // continuam se atualizando sozinhas sem F5.
+        refetchOnWindowFocus: true,
+        refetchOnReconnect: true,
+        refetchInterval: 15_000,
+      },
+    },
+  });
 
   const router = createRouter({
     routeTree,

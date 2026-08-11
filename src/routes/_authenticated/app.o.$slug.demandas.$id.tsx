@@ -1,11 +1,10 @@
 import { createFileRoute, Link, useParams, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { getDemanda, updateDemanda, addComment, deleteDemanda } from "@/lib/demandas.functions";
 import { getOrgBySlug, listOperators } from "@/lib/orgs.functions";
 import { StateBadge, STATE_LABEL, PriorityBadge, formatRelative } from "@/components/demandas-ui";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { friendlyError } from "@/lib/friendly-error";
 import { ArrowLeft, MessageCircle, GitBranch, User, AlertCircle, Send, Trash2, UserCheck } from "lucide-react";
@@ -70,19 +69,11 @@ function DemandaDetail() {
   const { data, isLoading } = useQuery({
     queryKey: ["demanda", id],
     queryFn: () => getFn({ data: { id } }),
+    refetchInterval: 8000,
   });
 
-  // Atualização em tempo real do histórico e da própria demanda.
-  useEffect(() => {
-    const channel = supabase
-      .channel(`demanda-${id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "demanda_events", filter: `demanda_id=eq.${id}` },
-        () => qc.invalidateQueries({ queryKey: ["demanda", id] }))
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "demandas", filter: `id=eq.${id}` },
-        () => qc.invalidateQueries({ queryKey: ["demanda", id] }))
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [id, qc]);
+  // O canal em tempo real da organização (layout) já invalida ["demanda", id];
+  // o refetchInterval acima é a rede de segurança caso o websocket caia.
 
   const update = useMutation({
     mutationFn: (patch: any) => updateFn({ data: { id, ...patch } }),

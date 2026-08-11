@@ -1,10 +1,11 @@
 import { createFileRoute, Link, Outlet, useNavigate, useParams, useLocation } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { getOrgBySlug } from "@/lib/orgs.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { useOrgRealtime } from "@/hooks/use-org-realtime";
 import { Inbox, LayoutDashboard, Settings, LogOut, ChevronDown, AlertTriangle, Users, Bell } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug")({
@@ -15,7 +16,6 @@ function OrgLayout() {
   const { slug } = useParams({ from: "/_authenticated/app/o/$slug" });
   const location = useLocation();
   const navigate = useNavigate();
-  const qc = useQueryClient();
   const fn = useServerFn(getOrgBySlug);
   const { data: org, isLoading, error } = useQuery({
     queryKey: ["org", slug], queryFn: () => fn({ data: { slug } }), retry: false,
@@ -24,28 +24,18 @@ function OrgLayout() {
 
   useEffect(() => { if (location.pathname.endsWith("/fila")) setNewCount(0); }, [location.pathname]);
 
-  // Live alert whenever a demand enters this organization (external channel, API or manual).
-  useEffect(() => {
-    if (!org?.id) return;
-    const channel = supabase
-      .channel(`demandas-in-${org.id}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "demandas", filter: `org_id=eq.${org.id}` },
-        (payload) => {
-          const d = payload.new as { title?: string; protocol?: string };
-          setNewCount((c) => c + 1);
-          toast.info("Nova demanda recebida", {
-            description: `${d.protocol ? d.protocol + " · " : ""}${d.title ?? "Sem título"}`,
-            action: { label: "Ver fila", onClick: () => navigate({ to: "/app/o/$slug/fila", params: { slug } }) },
-          });
-          qc.invalidateQueries({ queryKey: ["demandas"] });
-          qc.invalidateQueries({ queryKey: ["dashboard"] });
-        },
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [org?.id, qc, navigate, slug]);
+  // Um canal por organização alimenta fila, detalhe, painel e alertas em tempo real.
+  const onNewDemanda = useCallback(
+    (d: { title?: string; protocol?: string }) => {
+      setNewCount((c) => c + 1);
+      toast.info("Nova demanda recebida", {
+        description: `${d.protocol ? d.protocol + " · " : ""}${d.title ?? "Sem título"}`,
+        action: { label: "Ver fila", onClick: () => navigate({ to: "/app/o/$slug/fila", params: { slug } }) },
+      });
+    },
+    [navigate, slug],
+  );
+  useOrgRealtime({ orgId: org?.id, onNewDemanda });
 
   async function signOut() {
     await supabase.auth.signOut();
