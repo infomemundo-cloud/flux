@@ -1,10 +1,11 @@
 import { createFileRoute, Link, useParams, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { getDemanda, updateDemanda, addComment, deleteDemanda } from "@/lib/demandas.functions";
 import { getOrgBySlug, listOperators } from "@/lib/orgs.functions";
 import { StateBadge, STATE_LABEL, PriorityBadge, formatRelative } from "@/components/demandas-ui";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { friendlyError } from "@/lib/friendly-error";
 import { ArrowLeft, MessageCircle, GitBranch, User, AlertCircle, Send, Trash2, UserCheck } from "lucide-react";
@@ -17,6 +18,31 @@ export const Route = createFileRoute("/_authenticated/app/o/$slug/demandas/$id")
 const NEXT_STATES = ["novo", "em_analise", "aguardando_cliente", "aguardando_revisao_humana", "concluido"] as const;
 const PRIORITIES = ["baixa", "media", "alta", "urgente"] as const;
 const MANAGER_ROLES = new Set(["owner", "admin", "gerente"]);
+
+const ROLE_LABEL: Record<string, string> = {
+  owner: "Proprietário",
+  admin: "Admin",
+  gerente: "Gerente",
+  operador: "Operador",
+  agente_ia: "Agente de IA",
+};
+
+function initials(name: string) {
+  return name.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join("");
+}
+
+function Avatar({ name, isAI }: { name: string; isAI?: boolean }) {
+  return (
+    <div
+      className={`h-8 w-8 shrink-0 rounded-full grid place-items-center text-[11px] font-semibold ${
+        isAI ? "bg-accent text-accent-foreground" : "bg-secondary text-secondary-foreground"
+      }`}
+      aria-hidden
+    >
+      {isAI ? "IA" : initials(name)}
+    </div>
+  );
+}
 
 function DemandaDetail() {
   const { slug, id } = useParams({ from: "/_authenticated/app/o/$slug/demandas/$id" });
@@ -45,6 +71,18 @@ function DemandaDetail() {
     queryKey: ["demanda", id],
     queryFn: () => getFn({ data: { id } }),
   });
+
+  // Atualização em tempo real do histórico e da própria demanda.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`demanda-${id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "demanda_events", filter: `demanda_id=eq.${id}` },
+        () => qc.invalidateQueries({ queryKey: ["demanda", id] }))
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "demandas", filter: `id=eq.${id}` },
+        () => qc.invalidateQueries({ queryKey: ["demanda", id] }))
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [id, qc]);
 
   const update = useMutation({
     mutationFn: (patch: any) => updateFn({ data: { id, ...patch } }),
