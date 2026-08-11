@@ -54,7 +54,39 @@ export const getDemanda = createServerFn({ method: "GET" })
     if (!dem) throw new Error("Demanda não encontrada");
     const { data: events } = await context.supabase
       .from("demanda_events").select("*").eq("demanda_id", data.id).order("created_at");
-    return { demanda: dem, events: events ?? [] };
+
+    // Identidade dos personagens: quem criou, mudou status, comentou e é responsável.
+    const ids = new Set<string>();
+    if (dem.created_by) ids.add(dem.created_by as string);
+    if (dem.assignee_id) ids.add(dem.assignee_id as string);
+    for (const e of events ?? []) {
+      if (e.actor_id) ids.add(e.actor_id as string);
+      if (e.kind === "assigned") {
+        if (e.from_value) ids.add(e.from_value as string);
+        if (e.to_value) ids.add(e.to_value as string);
+      }
+    }
+    const actors: Record<string, { id: string; name: string; email: string | null; role: string | null }> = {};
+    if (ids.size) {
+      const idList = [...ids];
+      const { data: mems } = await context.supabase
+        .from("memberships").select("user_id, role").eq("org_id", dem.org_id).in("user_id", idList);
+      const roleById = new Map((mems ?? []).map((m: any) => [m.user_id, m.role as string]));
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await Promise.all(
+        idList.map(async (uid) => {
+          const { data: u } = await supabaseAdmin.auth.admin.getUserById(uid);
+          const meta = (u.user?.user_metadata ?? {}) as Record<string, unknown>;
+          const email = u.user?.email ?? null;
+          const name =
+            (typeof meta.full_name === "string" && meta.full_name) ||
+            (typeof meta.name === "string" && meta.name) ||
+            (email ? email.split("@")[0] : `Usuário ${uid.slice(0, 6)}`);
+          actors[uid] = { id: uid, name: name as string, email, role: roleById.get(uid) ?? null };
+        }),
+      );
+    }
+    return { demanda: dem, events: events ?? [], actors, viewerId: context.userId };
   });
 
 export const createDemanda = createServerFn({ method: "POST" })
