@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet, useNavigate, useParams, useLocation } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -16,7 +16,6 @@ function OrgLayout() {
   const { slug } = useParams({ from: "/_authenticated/app/o/$slug" });
   const location = useLocation();
   const navigate = useNavigate();
-  const qc = useQueryClient();
   const fn = useServerFn(getOrgBySlug);
   const { data: org, isLoading, error } = useQuery({
     queryKey: ["org", slug], queryFn: () => fn({ data: { slug } }), retry: false,
