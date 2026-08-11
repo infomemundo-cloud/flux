@@ -108,6 +108,19 @@ function DemandaDetail() {
 
   if (isLoading || !data) return <div className="p-6 text-sm text-muted-foreground">Carregando...</div>;
   const d: any = data.demanda;
+  const actors: Record<string, { id: string; name: string; email: string | null; role: string | null }> = (data as any).actors ?? {};
+  const viewerId: string | undefined = (data as any).viewerId;
+  const actorOf = (uid?: string | null) => (uid ? actors[uid] : undefined);
+  const nameOf = (uid?: string | null, fallback = "Sistema") => {
+    if (!uid) return fallback;
+    const a = actorOf(uid);
+    if (!a) return "Usuário removido";
+    return uid === viewerId ? `${a.name} (você)` : a.name;
+  };
+  const roleOf = (uid?: string | null) => {
+    const r = actorOf(uid)?.role;
+    return r ? (ROLE_LABEL[r] ?? r) : null;
+  };
 
   return (
     <div className="p-4 sm:p-6 pb-24 sm:pb-6 max-w-5xl mx-auto">
@@ -123,30 +136,44 @@ function DemandaDetail() {
 
           <h2 className="mt-6 sm:mt-8 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Histórico</h2>
           <div className="mt-3 space-y-3">
-            {data.events.map((e: any) => (
-              <div key={e.id} className="flex gap-3 p-3 rounded-md border border-border bg-card">
-                <div className="mt-0.5 text-muted-foreground shrink-0">
-                  {e.kind === "commented" && <MessageCircle className="h-4 w-4" />}
-                  {e.kind === "state_changed" && <GitBranch className="h-4 w-4" />}
-                  {e.kind === "assigned" && <User className="h-4 w-4" />}
-                  {e.kind === "created" && <AlertCircle className="h-4 w-4" />}
-                  {e.kind === "message_in" && <MessageCircle className="h-4 w-4 text-primary" />}
-                  {!["commented","state_changed","assigned","created","message_in"].includes(e.kind) && <GitBranch className="h-4 w-4" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-1">
-                    {e.kind === "state_changed" && <>Estado: <b>{STATE_LABEL[e.from_value] ?? e.from_value}</b> → <b>{STATE_LABEL[e.to_value] ?? e.to_value}</b></>}
-                    {e.kind === "priority_changed" && <>Prioridade: {e.from_value} → {e.to_value}</>}
-                    {e.kind === "created" && <>Demanda criada</>}
-                    {e.kind === "assigned" && <>Responsável alterado</>}
-                    {e.kind === "commented" && <>Comentário</>}
-                    {e.kind === "message_in" && <>Mensagem recebida</>}
-                    <span>· {formatRelative(e.created_at)}</span>
+            {data.events.map((e: any) => {
+              const isExternal = e.kind === "message_in";
+              const author = isExternal
+                ? (d.contacts?.name ?? "Cliente")
+                : nameOf(e.actor_id, e.kind === "created" ? "Entrada externa" : "Sistema");
+              const authorRole = isExternal ? "Cliente" : roleOf(e.actor_id);
+              const isAI = actorOf(e.actor_id)?.role === "agente_ia";
+              return (
+                <div key={e.id} className="flex gap-3 p-3 rounded-md border border-border bg-card">
+                  <Avatar name={author} isAI={isAI} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-x-1.5 text-xs">
+                      <span className="font-semibold text-foreground">{author}</span>
+                      {authorRole && (
+                        <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px] uppercase tracking-wide">
+                          {authorRole}
+                        </span>
+                      )}
+                      <span className="text-muted-foreground">· {formatRelative(e.created_at)}</span>
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground flex flex-wrap items-center gap-x-1">
+                      {e.kind === "commented" && <><MessageCircle className="h-3.5 w-3.5" /> comentou</>}
+                      {e.kind === "state_changed" && <><GitBranch className="h-3.5 w-3.5" /> mudou o estado de <b>{STATE_LABEL[e.from_value] ?? e.from_value}</b> para <b>{STATE_LABEL[e.to_value] ?? e.to_value}</b></>}
+                      {e.kind === "priority_changed" && <><GitBranch className="h-3.5 w-3.5" /> mudou a prioridade de <b>{e.from_value}</b> para <b>{e.to_value}</b></>}
+                      {e.kind === "created" && <><AlertCircle className="h-3.5 w-3.5" /> abriu a demanda</>}
+                      {e.kind === "assigned" && <><User className="h-3.5 w-3.5" /> definiu o responsável: <b>{e.to_value ? nameOf(e.to_value) : "sem responsável"}</b></>}
+                      {e.kind === "message_in" && <><MessageCircle className="h-3.5 w-3.5 text-primary" /> enviou uma mensagem</>}
+                      {!["commented","state_changed","assigned","created","message_in","priority_changed"].includes(e.kind) && <><GitBranch className="h-3.5 w-3.5" /> {e.kind}</>}
+                    </div>
+                    {e.content && (
+                      <div className={`mt-2 text-sm whitespace-pre-wrap break-words ${e.kind === "commented" || isExternal ? "rounded-md bg-muted/60 px-3 py-2" : ""}`}>
+                        {e.content}
+                      </div>
+                    )}
                   </div>
-                  {e.content && <div className="mt-1 text-sm whitespace-pre-wrap break-words">{e.content}</div>}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <form className="mt-4 flex gap-2" onSubmit={(ev) => { ev.preventDefault(); if (comment.trim()) send.mutate(); }}>
@@ -185,9 +212,10 @@ function DemandaDetail() {
               <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Responsável</div>
               <div className="text-sm mb-2 truncate">
                 {d.assignee_id
-                  ? (d.assignee_id === org.userId
-                      ? "Você"
-                      : (operators?.find((o) => o.user_id === d.assignee_id)?.email ?? "Outro operador"))
+                  ? <>
+                      <span className="font-medium">{nameOf(d.assignee_id)}</span>
+                      {roleOf(d.assignee_id) && <span className="text-muted-foreground"> · {roleOf(d.assignee_id)}</span>}
+                    </>
                   : <span className="text-muted-foreground">Sem responsável</span>}
               </div>
               {d.assignee_id !== org.userId && (
@@ -226,7 +254,7 @@ function DemandaDetail() {
             </div>
           )}
           <div className="rounded-lg border border-border bg-card p-4 text-xs text-muted-foreground">
-            Criada {formatRelative(d.created_at)}<br />
+            Criada por <span className="text-foreground font-medium">{nameOf(d.created_by, "entrada externa")}</span> {formatRelative(d.created_at)}<br />
             Atualizada {formatRelative(d.updated_at)}
           </div>
           {canDelete && (
