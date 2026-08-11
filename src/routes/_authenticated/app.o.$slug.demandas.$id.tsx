@@ -70,19 +70,11 @@ function DemandaDetail() {
   const { data, isLoading } = useQuery({
     queryKey: ["demanda", id],
     queryFn: () => getFn({ data: { id } }),
+    refetchInterval: 8000,
   });
 
-  // Atualização em tempo real do histórico e da própria demanda.
-  useEffect(() => {
-    const channel = supabase
-      .channel(`demanda-${id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "demanda_events", filter: `demanda_id=eq.${id}` },
-        () => qc.invalidateQueries({ queryKey: ["demanda", id] }))
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "demandas", filter: `id=eq.${id}` },
-        () => qc.invalidateQueries({ queryKey: ["demanda", id] }))
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [id, qc]);
+  // O canal em tempo real da organização (layout) já invalida ["demanda", id];
+  // o refetchInterval acima é a rede de segurança caso o websocket caia.
 
   const update = useMutation({
     mutationFn: (patch: any) => updateFn({ data: { id, ...patch } }),
