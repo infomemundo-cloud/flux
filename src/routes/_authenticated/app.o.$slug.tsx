@@ -110,7 +110,26 @@ function OrgLayout() {
       </aside>
 
       <main className="min-w-0 overflow-auto bg-surface">
+        <header className="sm:hidden sticky top-0 z-30 flex items-center gap-2.5 bg-sidebar text-sidebar-foreground px-4 py-3">
+          <span className="grid place-items-center h-7 w-7 rounded-lg bg-sidebar-primary text-sidebar-primary-foreground text-xs font-extrabold">F</span>
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold">{org.name}</span>
+          <button onClick={signOut} className="p-1.5 rounded-md hover:bg-sidebar-accent/60"><LogOut className="h-4 w-4" /></button>
+        </header>
+
         <Outlet />
+
+        <nav className="sm:hidden fixed bottom-0 inset-x-0 z-30 grid grid-cols-5 bg-sidebar text-sidebar-foreground border-t border-sidebar-border">
+          {nav.map((n) => {
+            const active = location.pathname.startsWith(n.to);
+            const Icon = n.icon;
+            return (
+              <a key={n.to} href={n.to} className={`flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium ${active ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/60"}`}>
+                <Icon className="h-[18px] w-[18px]" strokeWidth={1.9} />
+                <span className="truncate max-w-full px-1">{n.label}</span>
+              </a>
+            );
+          })}
+        </nav>
       </main>
     </div>
   );

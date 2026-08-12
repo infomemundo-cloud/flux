@@ -40,54 +40,78 @@ function FilaPage() {
   });
 
   return (
-    <div className="p-4 sm:p-6 pb-24 sm:pb-6">
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:flex sm:items-center sm:justify-between">
+    <div className="p-4 sm:p-8 pb-24 sm:pb-10 max-w-6xl mx-auto">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:flex sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight truncate">Fila de demandas</h1>
-          <p className="text-xs sm:text-sm text-muted-foreground">Tudo que precisa de acompanhamento.</p>
+          <h1 className="text-[22px] sm:text-[28px] font-extrabold tracking-tight truncate">Fila de demandas</h1>
+          <p className="mt-1 text-[13px] text-muted-foreground">
+            Tudo que precisa de acompanhamento{typeof data?.length === "number" ? ` · ${data.length} ${data.length === 1 ? "demanda" : "demandas"}` : ""}.
+          </p>
         </div>
-        <button onClick={() => setShowNew(true)} className="shrink-0 h-10 px-3 sm:px-4 rounded-md bg-primary text-primary-foreground font-medium inline-flex items-center gap-2 text-sm">
-          <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Nova demanda</span><span className="sm:hidden">Nova</span>
+        <button onClick={() => setShowNew(true)}
+          className="shrink-0 h-10 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-semibold inline-flex items-center gap-2 shadow-[0_6px_16px_-6px_var(--primary)] hover:brightness-110 active:scale-[0.98] transition">
+          <Plus className="h-4 w-4" strokeWidth={2.4} /> <span className="hidden sm:inline">Nova demanda</span><span className="sm:hidden">Nova</span>
         </button>
       </div>
 
-      <div className="mt-4 sm:mt-6 flex gap-2 items-center overflow-x-auto sm:flex-wrap -mx-4 px-4 sm:mx-0 sm:px-0 pb-1">
-        {STATES.map((s) => (
-          <button key={s.label} onClick={() => setState(s.v)}
-            className={`shrink-0 px-3 py-1.5 rounded-full text-xs border ${state === s.v ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-secondary"}`}>
-            {s.label}
-          </button>
-        ))}
+      <div className="mt-5 sm:mt-6 flex flex-col-reverse sm:flex-row sm:items-center gap-3">
+        <div className="flex gap-1.5 items-center overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 pb-0.5 sm:flex-wrap">
+          {STATES.map((s) => (
+            <button key={s.label} onClick={() => setState(s.v)}
+              className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition ${state === s.v ? "bg-foreground text-background" : "bg-card border border-border text-muted-foreground hover:text-foreground hover:border-foreground/20"}`}>
+              {s.label}
+            </button>
+          ))}
+        </div>
         <div className="sm:ml-auto relative shrink-0">
-          <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar título..."
-            className="h-9 pl-9 pr-3 rounded-md border border-input bg-background text-sm w-44 sm:w-64" />
+          <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por título..."
+            className="h-10 pl-9 pr-9 rounded-xl border border-border bg-card text-sm w-full sm:w-72 shadow-[var(--shadow-card)] outline-none focus:border-primary/60 focus:ring-4 focus:ring-primary/10 transition" />
+          {search && (
+            <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="mt-4 rounded-lg border border-border overflow-hidden bg-card">
-        {isLoading && <div className="p-6 text-sm text-muted-foreground">Carregando...</div>}
-        {data?.length === 0 && <div className="p-10 text-center text-sm text-muted-foreground">Nenhuma demanda encontrada.</div>}
-        {data?.map((d: any) => (
-          <Link key={d.id} to="/app/o/$slug/demandas/$id" params={{ slug, id: d.id }}
-            className="grid grid-cols-[minmax(0,1fr)_auto] sm:flex sm:items-center gap-x-3 gap-y-1 sm:gap-4 px-3 sm:px-4 py-3 border-b border-border last:border-0 hover:bg-secondary/50 transition">
-            <div className="min-w-0 sm:order-2 sm:flex-1">
-              <div className="font-medium truncate text-sm sm:text-base">{d.title}</div>
-              <div className="text-xs text-muted-foreground truncate">
-                {d.contacts?.name || d.contacts?.phone || "Sem contato"} · atualizada {formatRelative(d.updated_at)}
+      <div className="mt-5 space-y-2">
+        {isLoading && [0, 1, 2].map((i) => <div key={i} className="h-[76px] rounded-xl bg-card border border-border animate-pulse" />)}
+        {data?.length === 0 && (
+          <div className="rounded-2xl border border-dashed border-border bg-card/60 p-12 text-center">
+            <div className="text-sm font-semibold">Nenhuma demanda encontrada</div>
+            <p className="mt-1 text-[13px] text-muted-foreground">Ajuste os filtros ou crie uma nova demanda.</p>
+          </div>
+        )}
+        {data?.map((d: any) => {
+          const overdue = d.due_at && new Date(d.due_at) < new Date() && d.state !== "aguardando_revisao_humana" && d.state !== "concluido";
+          return (
+            <Link key={d.id} to="/app/o/$slug/demandas/$id" params={{ slug, id: d.id }}
+              className="group block rounded-xl bg-card border border-border shadow-[var(--shadow-card)] px-4 py-3.5 hover:border-primary/40 hover:shadow-[var(--shadow-pop)] transition-all">
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <StateBadge state={d.state} />
+                    <PriorityBadge priority={d.priority} />
+                    {overdue && <span className="text-[10px] font-bold uppercase tracking-wider text-destructive">atrasada</span>}
+                  </div>
+                  <div className="mt-2 font-semibold text-[15px] leading-snug truncate group-hover:text-primary transition-colors">{d.title}</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground truncate">
+                    {d.contacts?.name || d.contacts?.phone || "Sem contato"} · atualizada {formatRelative(d.updated_at)}
+                  </div>
+                </div>
+                {d.due_at && (
+                  <div className="shrink-0 text-right">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Vencimento</div>
+                    <div className={`text-xs font-semibold ${overdue ? "text-destructive" : "text-foreground"}`}>
+                      {new Date(d.due_at).toLocaleDateString("pt-BR")}
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-            <div className="shrink-0 sm:order-1"><StateBadge state={d.state} /></div>
-            <div className="col-span-2 flex items-center gap-3 sm:col-auto sm:order-3 sm:contents">
-              <PriorityBadge priority={d.priority} />
-              {d.due_at && (
-                <span className={`text-xs ${new Date(d.due_at) < new Date() && d.state !== "aguardando_revisao_humana" && d.state !== "concluido" ? "text-destructive font-medium" : "text-muted-foreground"}`}>
-                  venc. {new Date(d.due_at).toLocaleDateString("pt-BR")}
-                </span>
-              )}
-            </div>
-          </Link>
-        ))}
+            </Link>
+          );
+        })}
       </div>
 
       {showNew && org && <NewDemandaModal orgId={org.id} onClose={() => setShowNew(false)} />}
