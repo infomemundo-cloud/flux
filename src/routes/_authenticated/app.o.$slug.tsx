@@ -53,26 +53,49 @@ function OrgLayout() {
     { to: `/app/o/${slug}/configuracoes`, label: "Configurações", icon: Settings },
   ];
 
+  const initials = org.name.slice(0, 2).toUpperCase();
+
   return (
-    <div className="min-h-screen grid grid-cols-[240px_1fr] bg-background text-foreground">
-      <aside className="bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col">
-        <div className="p-4 border-b border-sidebar-border">
-          <Link to="/app" className="flex items-center gap-2 text-xs text-sidebar-foreground/60 hover:text-sidebar-foreground">
-            <ChevronDown className="h-3 w-3 rotate-90" /> Trocar organização
+    <div className="min-h-screen grid grid-cols-[1fr] sm:grid-cols-[256px_1fr] bg-surface text-foreground">
+      <aside className="hidden sm:flex bg-sidebar text-sidebar-foreground flex-col">
+        <div className="px-4 pt-5 pb-4">
+          <Link to="/app" className="flex items-center gap-2.5 group">
+            <span className="grid place-items-center h-8 w-8 rounded-lg bg-sidebar-primary text-sidebar-primary-foreground text-sm font-extrabold shadow-[0_0_0_1px_oklch(1_0_0/0.08)]">
+              F
+            </span>
+            <span className="font-extrabold tracking-tight text-[15px]">Fluxo</span>
           </Link>
-          <div className="mt-2 font-semibold truncate">{org.name}</div>
-          <div className="text-xs text-sidebar-foreground/60">{org.role}</div>
+
+          <Link
+            to="/app"
+            className="mt-5 flex items-center gap-2.5 rounded-xl border border-sidebar-border/80 bg-sidebar-accent/40 px-2.5 py-2 hover:bg-sidebar-accent transition"
+          >
+            <span className="grid place-items-center h-7 w-7 shrink-0 rounded-md bg-sidebar-accent text-[11px] font-bold text-sidebar-accent-foreground">
+              {initials}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-semibold truncate">{org.name}</span>
+              <span className="block text-[11px] capitalize text-sidebar-foreground/55">{org.role}</span>
+            </span>
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-sidebar-foreground/50" />
+          </Link>
         </div>
-        <nav className="p-2 flex-1">
+
+        <nav className="px-2 flex-1 space-y-0.5">
+          <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/40">
+            Operação
+          </div>
           {nav.map((n) => {
             const active = location.pathname.startsWith(n.to);
             const Icon = n.icon;
             return (
               <a key={n.to} href={n.to}
-                className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm ${active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "hover:bg-sidebar-accent/50"}`}>
-                <Icon className="h-4 w-4" /> {n.label}
+                className={`group relative flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors ${active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"}`}>
+                {active && <span className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[3px] rounded-r-full bg-sidebar-primary" />}
+                <Icon className={`h-[17px] w-[17px] ${active ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/55 group-hover:text-sidebar-foreground"}`} strokeWidth={1.9} />
+                {n.label}
                 {n.label === "Fila" && newCount > 0 && (
-                  <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground">
+                  <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-sidebar-primary text-sidebar-primary-foreground">
                     <Bell className="h-3 w-3" /> {newCount}
                   </span>
                 )}
@@ -80,11 +103,15 @@ function OrgLayout() {
             );
           })}
         </nav>
-        <button onClick={signOut} className="m-2 flex items-center gap-2 px-3 py-2 rounded-md text-sm hover:bg-sidebar-accent/50">
-          <LogOut className="h-4 w-4" /> Sair
+
+        <button onClick={signOut} className="mx-2 mb-3 flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors">
+          <LogOut className="h-[17px] w-[17px]" strokeWidth={1.9} /> Sair
         </button>
       </aside>
-      <main className="overflow-auto"><Outlet /></main>
+
+      <main className="min-w-0 overflow-auto bg-surface">
+        <Outlet />
+      </main>
     </div>
   );
 }
