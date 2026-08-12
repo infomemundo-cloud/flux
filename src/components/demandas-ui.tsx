@@ -1,3 +1,5 @@
+import { CalendarClock, Hash, MessageCircle, User } from "lucide-react";
+
 export const STATE_LABEL: Record<string, string> = {
   novo: "Novo",
   em_analise: "Em análise",
