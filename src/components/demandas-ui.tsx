@@ -53,3 +53,96 @@ export function formatRelative(iso: string) {
   if (diff < 604800) return `há ${Math.floor(diff / 86400)} d`;
   return new Date(iso).toLocaleDateString("pt-BR");
 }
+
+/** Tag de filtro elegante (usada no topo da Fila). */
+export function FilterTag({
+  active,
+  count,
+  children,
+  onClick,
+}: {
+  active: boolean;
+  count?: number;
+  children: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`group shrink-0 inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg text-[13px] font-semibold transition-all active:scale-[0.97] ${
+        active
+          ? "bg-primary text-primary-foreground shadow-[0_6px_16px_-8px_var(--primary)]"
+          : "bg-card border border-border text-muted-foreground hover:text-foreground hover:border-primary/35 hover:bg-primary/[0.03] shadow-[var(--shadow-card)]"
+      }`}
+    >
+      {children}
+      {typeof count === "number" && (
+        <span
+          className={`min-w-[1.25rem] px-1 rounded-md text-[10px] font-bold leading-4 tabular-nums ${
+            active ? "bg-primary-foreground/20" : "bg-secondary text-muted-foreground"
+          }`}
+        >
+          {count}
+        </span>
+      )}
+    </button>
+  );
+}
+
+/** Identificador curto da demanda (protocolo quando existir). */
+export function ProtocolChip({ protocol, id }: { protocol?: string | null; id: string }) {
+  const label = protocol || `#${id.slice(0, 6).toUpperCase()}`;
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md bg-secondary px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground tabular-nums">
+      <Hash className="h-3 w-3" strokeWidth={2.4} />
+      {label.replace(/^#/, "")}
+    </span>
+  );
+}
+
+/** Contato com ícone do canal (WhatsApp quando aplicável). */
+export function ContactLine({
+  contact,
+  channel,
+}: {
+  contact?: { name?: string | null; phone?: string | null } | null;
+  channel?: { kind?: string | null } | null;
+}) {
+  const isWhats = (channel?.kind ?? "").toLowerCase().includes("whats");
+  const name = contact?.name || contact?.phone || "Sem contato";
+  return (
+    <span className="inline-flex items-center gap-1.5 min-w-0 text-xs text-muted-foreground">
+      {isWhats ? (
+        <MessageCircle className="h-3.5 w-3.5 shrink-0 text-[oklch(0.6_0.15_150)]" strokeWidth={2.2} />
+      ) : (
+        <User className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} />
+      )}
+      <span className="truncate font-medium text-foreground/80">{name}</span>
+      {contact?.name && contact?.phone && <span className="hidden sm:inline truncate">· {contact.phone}</span>}
+    </span>
+  );
+}
+
+/** Prazo com destaque quando atrasado. */
+export function DueChip({ dueAt, overdue }: { dueAt: string; overdue?: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold ${
+        overdue ? "bg-destructive/10 text-destructive" : "bg-secondary text-muted-foreground"
+      }`}
+    >
+      <CalendarClock className="h-3.5 w-3.5" strokeWidth={2.2} />
+      {new Date(dueAt).toLocaleDateString("pt-BR")}
+    </span>
+  );
+}
+
+export function UrgentTag() {
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] font-extrabold uppercase tracking-wider text-destructive">
+      URGENTE
+    </span>
+  );
+}
