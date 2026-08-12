@@ -6,8 +6,8 @@ import { listDemandas, createDemanda } from "@/lib/demandas.functions";
 import { getOrgBySlug } from "@/lib/orgs.functions";
 import { toast } from "sonner";
 import { friendlyError } from "@/lib/friendly-error";
-import { Plus, Search, X } from "lucide-react";
-import { StateBadge, PriorityBadge, formatRelative } from "@/components/demandas-ui";
+import { Plus, Search, X, ChevronRight, Clock } from "lucide-react";
+import { StateBadge, PriorityBadge, formatRelative, FilterTag, ProtocolChip, ContactLine, DueChip, UrgentTag } from "@/components/demandas-ui";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/fila")({
   head: () => ({ meta: [{ title: "Fila — Fluxo" }] }),
@@ -55,12 +55,11 @@ function FilaPage() {
       </div>
 
       <div className="mt-5 sm:mt-6 flex flex-col-reverse sm:flex-row sm:items-center gap-3">
-        <div className="flex gap-1.5 items-center overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 pb-0.5 sm:flex-wrap">
+        <div className="flex gap-2 items-center overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 pb-1 sm:flex-wrap">
           {STATES.map((s) => (
-            <button key={s.label} onClick={() => setState(s.v)}
-              className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition ${state === s.v ? "bg-foreground text-background" : "bg-card border border-border text-muted-foreground hover:text-foreground hover:border-foreground/20"}`}>
+            <FilterTag key={s.label} active={state === s.v} onClick={() => setState(s.v)}>
               {s.label}
-            </button>
+            </FilterTag>
           ))}
         </div>
         <div className="sm:ml-auto relative shrink-0">
@@ -85,30 +84,42 @@ function FilaPage() {
         )}
         {data?.map((d: any) => {
           const overdue = d.due_at && new Date(d.due_at) < new Date() && d.state !== "aguardando_revisao_humana" && d.state !== "concluido";
+          const urgent = d.priority === "urgente";
           return (
             <Link key={d.id} to="/app/o/$slug/demandas/$id" params={{ slug, id: d.id }}
-              className="group block rounded-xl bg-card border border-border shadow-[var(--shadow-card)] px-4 py-3.5 hover:border-primary/40 hover:shadow-[var(--shadow-pop)] transition-all">
+              className={`group relative block overflow-hidden rounded-xl bg-card border shadow-[var(--shadow-card)] pl-4 pr-3 py-3.5 transition-all hover:shadow-[var(--shadow-pop)] ${
+                urgent || overdue ? "border-destructive/35 hover:border-destructive/60" : "border-border hover:border-primary/40"
+              }`}>
+              <span className={`absolute left-0 top-0 h-full w-[3px] ${urgent || overdue ? "bg-destructive" : "bg-transparent group-hover:bg-primary/60"} transition-colors`} />
               <div className="flex items-start gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
+                    <ProtocolChip protocol={d.protocol} id={d.id} />
                     <StateBadge state={d.state} />
-                    <PriorityBadge priority={d.priority} />
-                    {overdue && <span className="text-[10px] font-bold uppercase tracking-wider text-destructive">atrasada</span>}
+                    {urgent ? <UrgentTag /> : <PriorityBadge priority={d.priority} />}
+                    {overdue && <span className="text-[11px] font-bold uppercase tracking-wider text-destructive">atrasada</span>}
                   </div>
                   <div className="mt-2 font-semibold text-[15px] leading-snug truncate group-hover:text-primary transition-colors">{d.title}</div>
-                  <div className="mt-0.5 text-xs text-muted-foreground truncate">
-                    {d.contacts?.name || d.contacts?.phone || "Sem contato"} · atualizada {formatRelative(d.updated_at)}
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <ContactLine contact={d.contacts} channel={d.channels} />
+                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                      <Clock className="h-3.5 w-3.5" strokeWidth={2.2} /> atualizada {formatRelative(d.updated_at)}
+                    </span>
                   </div>
                 </div>
-                {d.due_at && (
-                  <div className="shrink-0 text-right">
-                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Vencimento</div>
-                    <div className={`text-xs font-semibold ${overdue ? "text-destructive" : "text-foreground"}`}>
-                      {new Date(d.due_at).toLocaleDateString("pt-BR")}
-                    </div>
-                  </div>
-                )}
+                <div className="shrink-0 flex items-center gap-2 self-center">
+                  {d.due_at && (
+                    <span className="hidden sm:inline-flex flex-col items-end gap-1">
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Prazo</span>
+                      <DueChip dueAt={d.due_at} overdue={!!overdue} />
+                    </span>
+                  )}
+                  <ChevronRight className="h-4 w-4 text-muted-foreground/50 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+                </div>
               </div>
+              {d.due_at && (
+                <div className="mt-2 sm:hidden"><DueChip dueAt={d.due_at} overdue={!!overdue} /></div>
+              )}
             </Link>
           );
         })}

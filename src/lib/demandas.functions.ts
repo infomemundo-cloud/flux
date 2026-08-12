@@ -28,7 +28,7 @@ export const listDemandas = createServerFn({ method: "GET" })
     await assertMember(context.supabase, data.orgId, context.userId);
     let q = context.supabase
       .from("demandas")
-      .select("id, title, state, priority, due_at, assignee_id, contact_id, created_at, updated_at, contacts:contact_id(name, phone)")
+      .select("id, protocol, title, state, priority, due_at, assignee_id, contact_id, created_at, updated_at, contacts:contact_id(name, phone), channels:channel_id(kind, name)")
       .eq("org_id", data.orgId)
       .order("created_at", { ascending: false })
       .limit(200);
@@ -263,7 +263,7 @@ export const slaAlerts = createServerFn({ method: "GET" })
     // Open (pending) demandas: not resolvido/fechado
     const { data: rows, error } = await context.supabase
       .from("demandas")
-      .select("id, title, state, priority, due_at, created_at, updated_at, contacts:contact_id(name, phone)")
+      .select("id, protocol, title, state, priority, due_at, created_at, updated_at, contacts:contact_id(name, phone), channels:channel_id(kind, name)")
       .eq("org_id", data.orgId)
       .not("state", "in", "(aguardando_revisao_humana,concluido)")
       .limit(500);
