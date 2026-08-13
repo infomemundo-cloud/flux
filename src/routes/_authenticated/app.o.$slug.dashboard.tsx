@@ -325,7 +325,15 @@ function Kpi({
         ? "text-[oklch(0.58_0.15_162)]"
         : tone === "primary"
           ? "text-primary"
-          : "text-muted-foreground";
+          : "text-foreground/70";
+  const accentBg =
+    tone === "destructive"
+      ? "bg-destructive/10"
+      : tone === "success"
+        ? "bg-[oklch(0.58_0.15_162/0.12)]"
+        : tone === "primary"
+          ? "bg-primary/10"
+          : "bg-secondary";
   const good = invert ? delta <= 0 : delta >= 0;
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-[var(--shadow-card)] hover:border-primary/25 transition-colors">
@@ -334,7 +342,7 @@ function Kpi({
           <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground truncate">{label}</div>
           <div className="mt-1.5 text-3xl font-bold tracking-tight tabular-nums">{value}</div>
         </div>
-        <span className={`grid place-items-center h-10 w-10 shrink-0 rounded-xl bg-current/10 ${accent}`}>
+        <span className={`grid place-items-center h-10 w-10 shrink-0 rounded-xl ${accentBg} ${accent}`}>
           <Icon className="h-[19px] w-[19px]" strokeWidth={2.2} />
         </span>
       </div>
