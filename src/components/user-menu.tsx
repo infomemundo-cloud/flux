@@ -1,4 +1,3 @@
-import { Link } from "@tanstack/react-router";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -126,9 +125,9 @@ export function UserMenu({
         <DropdownMenuSeparator />
 
         <DropdownMenuItem asChild>
-          <Link to={settingsTo} className="cursor-pointer">
+          <a href={settingsTo} className="cursor-pointer">
             <Settings className="h-4 w-4" /> Configurações de conta
-          </Link>
+          </a>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
