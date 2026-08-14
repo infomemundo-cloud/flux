@@ -6,7 +6,16 @@ import { toast } from "sonner";
 import { getOrgBySlug } from "@/lib/orgs.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrgRealtime } from "@/hooks/use-org-realtime";
-import { Inbox, LayoutDashboard, Settings, LogOut, ChevronDown, AlertTriangle, Users, Bell } from "lucide-react";
+import { UserMenu, ThemeCycleButton } from "@/components/user-menu";
+import { Inbox, LayoutDashboard, Settings, ChevronDown, AlertTriangle, Users, Bell, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+
+const ROLE_LABEL: Record<string, string> = {
+  owner: "Proprietário",
+  admin: "Administrador",
+  gerente: "Gerente",
+  operador: "Operador",
+  agente_ia: "Agente de IA",
+};
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug")({
   component: OrgLayout,
@@ -21,8 +30,28 @@ function OrgLayout() {
     queryKey: ["org", slug], queryFn: () => fn({ data: { slug } }), retry: false,
   });
   const [newCount, setNewCount] = useState(0);
+  const [collapsed, setCollapsed] = useState(false);
+  const [user, setUser] = useState<{ name: string; email: string | null } | null>(null);
 
   useEffect(() => { if (location.pathname.endsWith("/fila")) setNewCount(0); }, [location.pathname]);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("fluxo-sidebar-collapsed");
+    if (stored === "1") setCollapsed(true);
+    supabase.auth.getUser().then(({ data }) => {
+      const u = data.user;
+      if (!u) return;
+      const meta: any = u.user_metadata ?? {};
+      setUser({ name: meta.full_name ?? meta.name ?? (u.email ? u.email.split("@")[0]! : "Usuário"), email: u.email ?? null });
+    });
+  }, []);
+
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed((c) => {
+      localStorage.setItem("fluxo-sidebar-collapsed", c ? "0" : "1");
+      return !c;
+    });
+  }, []);
 
   // Um canal por organização alimenta fila, detalhe, painel e alertas em tempo real.
   const onNewDemanda = useCallback(
@@ -56,64 +85,107 @@ function OrgLayout() {
   const initials = org.name.slice(0, 2).toUpperCase();
 
   return (
-    <div className="min-h-screen grid grid-cols-[1fr] sm:grid-cols-[256px_1fr] bg-surface text-foreground">
-      <aside className="hidden sm:flex bg-sidebar text-sidebar-foreground flex-col">
-        <div className="px-4 pt-5 pb-4">
-          <Link to="/app" className="flex items-center gap-2.5 group">
-            <span className="grid place-items-center h-8 w-8 rounded-lg bg-sidebar-primary text-sidebar-primary-foreground text-sm font-extrabold shadow-[0_0_0_1px_oklch(1_0_0/0.08)]">
-              F
-            </span>
-            <span className="font-extrabold tracking-tight text-[15px]">Fluxo</span>
-          </Link>
+    <div
+      className="min-h-screen grid grid-cols-[1fr] bg-surface text-foreground sm:grid-cols-[var(--rail)_1fr]"
+      style={{ ["--rail" as any]: collapsed ? "68px" : "256px" }}
+    >
+      <aside className="hidden sm:flex bg-sidebar text-sidebar-foreground flex-col border-r border-sidebar-border/60">
+        <div className={`pt-4 pb-3 ${collapsed ? "px-2" : "px-4"}`}>
+          <div className={`flex items-center gap-2 ${collapsed ? "flex-col" : ""}`}>
+            <Link to="/app" className="flex min-w-0 items-center gap-2.5" title="Fluxo">
+              <span className="grid place-items-center h-8 w-8 shrink-0 rounded-lg bg-sidebar-primary text-sidebar-primary-foreground text-sm font-extrabold">
+                F
+              </span>
+              {!collapsed && <span className="font-extrabold tracking-tight text-[15px]">Fluxo</span>}
+            </Link>
+            <div className={`flex items-center gap-0.5 ${collapsed ? "" : "ml-auto"}`}>
+              <ThemeCycleButton />
+              <button
+                onClick={toggleCollapsed}
+                aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
+                title={collapsed ? "Expandir menu" : "Recolher menu"}
+                className="grid place-items-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+              >
+                {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
 
           <Link
             to="/app"
-            className="mt-5 flex items-center gap-2.5 rounded-xl border border-sidebar-border/80 bg-sidebar-accent/40 px-2.5 py-2 hover:bg-sidebar-accent transition"
+            title={org.name}
+            className={`mt-4 flex items-center gap-2.5 rounded-xl border border-sidebar-border/80 bg-sidebar-accent/40 py-2 hover:bg-sidebar-accent transition ${collapsed ? "justify-center px-1" : "px-2.5"}`}
           >
             <span className="grid place-items-center h-7 w-7 shrink-0 rounded-md bg-sidebar-accent text-[11px] font-bold text-sidebar-accent-foreground">
               {initials}
             </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-semibold truncate">{org.name}</span>
-              <span className="block text-[11px] capitalize text-sidebar-foreground/55">{org.role}</span>
-            </span>
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-sidebar-foreground/50" />
+            {!collapsed && (
+              <>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-semibold truncate">{org.name}</span>
+                  <span className="block text-[11px] text-sidebar-foreground/60">{ROLE_LABEL[org.role] ?? org.role}</span>
+                </span>
+                <ChevronDown className="h-3.5 w-3.5 shrink-0 text-sidebar-foreground/50" />
+              </>
+            )}
           </Link>
         </div>
 
-        <nav className="px-2 flex-1 space-y-0.5">
-          <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/40">
-            Operação
-          </div>
+        <nav className={`flex-1 space-y-0.5 ${collapsed ? "px-2" : "px-2"}`}>
+          {!collapsed && (
+            <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/45">
+              Operação
+            </div>
+          )}
           {nav.map((n) => {
             const active = location.pathname.startsWith(n.to);
             const Icon = n.icon;
             return (
-              <a key={n.to} href={n.to}
-                className={`group relative flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors ${active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"}`}>
+              <a key={n.to} href={n.to} title={n.label}
+                className={`group relative flex items-center gap-2.5 py-2 rounded-lg text-[13px] font-medium transition-colors ${collapsed ? "justify-center px-2" : "px-3"} ${active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"}`}>
                 {active && <span className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[3px] rounded-r-full bg-sidebar-primary" />}
-                <Icon className={`h-[17px] w-[17px] ${active ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/55 group-hover:text-sidebar-foreground"}`} strokeWidth={1.9} />
-                {n.label}
-                {n.label === "Fila" && newCount > 0 && (
+                <Icon className={`h-[17px] w-[17px] shrink-0 ${active ? "text-sidebar-accent-foreground" : "text-sidebar-foreground/65 group-hover:text-sidebar-foreground"}`} strokeWidth={1.9} />
+                {!collapsed && n.label}
+                {n.label === "Fila" && newCount > 0 && !collapsed && (
                   <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-sidebar-primary text-sidebar-primary-foreground">
                     <Bell className="h-3 w-3" /> {newCount}
                   </span>
+                )}
+                {n.label === "Fila" && newCount > 0 && collapsed && (
+                  <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-sidebar-primary" />
                 )}
               </a>
             );
           })}
         </nav>
 
-        <button onClick={signOut} className="mx-2 mb-3 flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors">
-          <LogOut className="h-[17px] w-[17px]" strokeWidth={1.9} /> Sair
-        </button>
+        <div className="mx-2 mb-3 mt-2">
+          <UserMenu
+            name={user?.name ?? "Usuário"}
+            email={user?.email}
+            role={ROLE_LABEL[org.role] ?? org.role}
+            collapsed={collapsed}
+            settingsTo={`/app/o/${slug}/configuracoes`}
+            onSignOut={signOut}
+          />
+        </div>
       </aside>
 
       <main className="min-w-0 overflow-auto bg-surface">
         <header className="sm:hidden sticky top-0 z-30 flex items-center gap-2.5 bg-sidebar text-sidebar-foreground px-4 py-3">
           <span className="grid place-items-center h-7 w-7 rounded-lg bg-sidebar-primary text-sidebar-primary-foreground text-xs font-extrabold">F</span>
           <span className="min-w-0 flex-1 truncate text-sm font-semibold">{org.name}</span>
-          <button onClick={signOut} className="p-1.5 rounded-md hover:bg-sidebar-accent/60"><LogOut className="h-4 w-4" /></button>
+          <ThemeCycleButton />
+          <div className="w-9">
+            <UserMenu
+              name={user?.name ?? "Usuário"}
+              email={user?.email}
+              role={ROLE_LABEL[org.role] ?? org.role}
+              collapsed
+              settingsTo={`/app/o/${slug}/configuracoes`}
+              onSignOut={signOut}
+            />
+          </div>
         </header>
 
         <Outlet />
