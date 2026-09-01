@@ -1,6 +1,8 @@
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
+@source inline("pill-brand pill-amber pill-orange pill-violet pill-green pill-red pill-neutral");
+
 
 @custom-variant dark (&:is(.dark *));
 
