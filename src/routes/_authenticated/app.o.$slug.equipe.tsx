@@ -6,7 +6,9 @@ import { getOrgBySlug, listMembers } from "@/lib/orgs.functions";
 import { createInvite, listInvites, approveInvite, rejectInvite, updateMemberRole, removeMember } from "@/lib/invites.functions";
 import { toast } from "sonner";
 import { friendlyError } from "@/lib/friendly-error";
-import { Copy, Check, X, Trash2, UserPlus, Bot } from "lucide-react";
+import { Copy, Check, X, Trash2, UserPlus, Bot, Users, MailPlus } from "lucide-react";
+import { SectionTitle, StatCard } from "@/components/section-ui";
+
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/equipe")({
   head: () => ({ meta: [{ title: "Gestão de Equipe — Fluxo" }] }),
@@ -81,8 +83,17 @@ function EquipePage() {
 
   return (
     <div className="p-4 sm:p-6 pb-24 sm:pb-6 max-w-4xl">
-      <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Gestão de Equipe</h1>
+      <h1 className="flex items-center gap-2 text-xl sm:text-2xl font-bold tracking-tight">
+        <Users className="h-5 w-5 text-primary" strokeWidth={2.2} /> Gestão de Equipe
+      </h1>
       <p className="text-xs sm:text-sm text-muted-foreground">Convide pessoas, aprove solicitações e defina papéis.</p>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        <StatCard icon={Users} label="Total de membros" value={members?.length ?? "—"} />
+        <StatCard icon={Bot} label="Agentes de IA" value={(members ?? []).filter((m: any) => m.role === "agente_ia").length} tone="violet" />
+        <StatCard icon={MailPlus} label="Convites pendentes" value={(invites ?? []).filter((i: any) => i.status === "pending").length} tone="amber" />
+      </div>
+
 
       {isManager && (
         <section className="mt-6 rounded-lg border border-border bg-card p-4">
@@ -107,8 +118,9 @@ function EquipePage() {
 
       {isManager && (
         <section className="mt-6">
-          <h2 className="font-semibold text-sm">Convites</h2>
-          <div className="mt-2 rounded-lg border border-border bg-card overflow-hidden">
+          <SectionTitle icon={MailPlus} title="Convites" hint="Links gerados e solicitações aguardando aprovação." />
+          <div className="card-elevated overflow-hidden">
+
             {(invites ?? []).length === 0 && <div className="p-4 text-sm text-muted-foreground">Nenhum convite.</div>}
             {invites?.map((inv: any) => {
               const link = `${origin}/convite/${inv.token}`;
@@ -148,10 +160,11 @@ function EquipePage() {
       )}
 
       <section className="mt-8">
-        <h2 className="font-semibold text-sm">Membros</h2>
-        <div className="mt-2 rounded-lg border border-border bg-card overflow-hidden">
+        <SectionTitle icon={Users} title="Membros" hint="Papéis definem o que cada pessoa pode fazer." />
+        <div className="card-elevated overflow-hidden">
           {members?.map((m: any) => (
-            <div key={m.id} className="flex flex-wrap items-center gap-2 p-3 border-b border-border last:border-0">
+            <div key={m.id} className="row-zebra flex flex-wrap items-center gap-2 p-3 border-b border-border last:border-0">
+
               <div className="flex items-center gap-2 flex-1 min-w-0 text-sm">
                 {m.role === "agente_ia" && <Bot className="h-4 w-4 text-primary shrink-0" />}
                 <span className="truncate">{m.email ?? m.user_id}</span>

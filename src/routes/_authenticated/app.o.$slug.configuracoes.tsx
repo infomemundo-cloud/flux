@@ -4,11 +4,18 @@ import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { getOrgBySlug, listMembers } from "@/lib/orgs.functions";
 import { listWebhookTokens, createWebhookToken, deleteWebhookToken } from "@/lib/demandas.functions";
+import { SectionTitle, StatCard } from "@/components/section-ui";
+import { ThemeToggleInline } from "@/components/user-menu";
 import { toast } from "sonner";
-import { Copy, Trash2, Plus } from "lucide-react";
+import { Copy, Trash2, Plus, Users, KeyRound, Webhook, Palette, Settings2 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/configuracoes")({
-  head: () => ({ meta: [{ title: "Configurações — Fluxo" }] }),
+  head: () => ({
+    meta: [
+      { title: "Configurações — Fluxo" },
+      { name: "description", content: "Ajuste tema, membros e tokens de integração da sua organização no Fluxo." },
+    ],
+  }),
   component: Config,
 });
 
@@ -54,52 +61,70 @@ function Config() {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
   return (
-    <div className="p-6 max-w-4xl">
-      <h1 className="text-2xl font-bold tracking-tight">Configurações</h1>
+    <div className="p-4 sm:p-6 pb-24 sm:pb-6 max-w-4xl">
+      <h1 className="flex items-center gap-2 text-xl sm:text-2xl font-bold tracking-tight">
+        <Settings2 className="h-5 w-5 text-primary" strokeWidth={2.2} /> Configurações
+      </h1>
+      <p className="text-xs sm:text-sm text-muted-foreground">Aparência, acessos e integrações desta organização.</p>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        <StatCard icon={Users} label="Total de membros" value={members?.length ?? "—"} />
+        <StatCard icon={KeyRound} label="Tokens ativos" value={tokens?.length ?? "—"} tone="green" />
+        <StatCard icon={Webhook} label="Canal de entrada" value="Webhook" tone="violet" />
+      </div>
 
       <section className="mt-8">
-        <h2 className="text-lg font-semibold">Membros</h2>
-        <p className="text-sm text-muted-foreground">Quem tem acesso a esta organização.</p>
-        <div className="mt-3 rounded-lg border border-border bg-card overflow-hidden">
-          {members?.map((m: any) => (
-            <div key={m.id} className="flex items-center justify-between p-3 border-b border-border last:border-0">
-              <div className="text-sm">{m.email ?? m.user_id}</div>
-              <span className="text-xs px-2 py-0.5 rounded bg-secondary text-secondary-foreground">{m.role}</span>
-            </div>
-          ))}
+        <SectionTitle icon={Palette} title="Aparência" hint="Escolha o tema desta interface. A preferência fica salva neste navegador." />
+        <div className="card-elevated p-3.5">
+          <ThemeToggleInline className="max-w-xs" />
         </div>
-        <p className="text-xs text-muted-foreground mt-2">Convites por e-mail chegam na próxima iteração.</p>
       </section>
 
-      <section className="mt-10">
-        <h2 className="text-lg font-semibold">Webhook — Entrada de demandas</h2>
-        <p className="text-sm text-muted-foreground">Aponte a Evolution API (ou qualquer sistema) para este endpoint. Cada mensagem vira uma demanda.</p>
+      <section className="mt-8">
+        <SectionTitle icon={Users} title="Membros" hint="Quem tem acesso a esta organização." />
+        <div className="card-elevated overflow-hidden">
+          {members?.map((m: any) => (
+            <div key={m.id} className="row-zebra flex items-center justify-between gap-3 border-b border-border p-3 last:border-0">
+              <div className="min-w-0 truncate text-sm">{m.email ?? m.user_id}</div>
+              <span className="shrink-0 rounded-md pill-brand px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">{m.role}</span>
+            </div>
+          ))}
+          {members?.length === 0 && <div className="p-4 text-sm text-muted-foreground">Nenhum membro.</div>}
+        </div>
+      </section>
 
-        <div className="mt-4 rounded-lg border border-border bg-card p-4 space-y-2 font-mono text-xs">
+      <section className="mt-8">
+        <SectionTitle icon={Webhook} title="Webhook — Entrada de demandas" hint="Aponte a Evolution API (ou qualquer sistema) para este endpoint. Cada mensagem vira uma demanda." />
+
+        <div className="card-elevated space-y-2 p-4 font-mono text-xs">
           <div><span className="text-muted-foreground">POST</span> {origin}/api/public/ingest/<b>{"{token}"}</b></div>
           <div className="text-muted-foreground">Body:</div>
-          <pre className="bg-secondary/50 p-3 rounded overflow-x-auto">{EXAMPLE_BODY}</pre>
+          <pre className="overflow-x-auto rounded-md bg-secondary/60 p-3">{EXAMPLE_BODY}</pre>
         </div>
 
         <form className="mt-4 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (tokName.trim()) createM.mutate(); }}>
           <input value={tokName} onChange={(e) => setTokName(e.target.value)} placeholder="Nome do token (ex: Evolution WhatsApp)"
-            className="flex-1 h-10 px-3 rounded-md border border-input bg-background" />
-          <button className="h-10 px-4 rounded-md bg-primary text-primary-foreground inline-flex items-center gap-2 font-medium">
+            className="h-10 flex-1 min-w-0 rounded-lg border border-border bg-card px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40" />
+          <button className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:opacity-90">
             <Plus className="h-4 w-4" /> Gerar token
           </button>
         </form>
 
-        <div className="mt-4 space-y-2">
+        <div className="card-elevated mt-4 overflow-hidden">
+          {tokens?.length === 0 && <div className="p-4 text-sm text-muted-foreground">Nenhum token gerado ainda.</div>}
           {tokens?.map((t: any) => (
-            <div key={t.id} className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card">
-              <div className="flex-1 min-w-0">
-                <div className="font-medium">{t.name}</div>
-                <code className="text-xs text-muted-foreground break-all">{t.token}</code>
+            <div key={t.id} className="row-zebra flex items-center gap-3 border-b border-border p-3 last:border-0">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg pill-green">
+                <KeyRound className="h-4 w-4" strokeWidth={2.2} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold">{t.name}</div>
+                <code className="break-all text-xs text-muted-foreground">{t.token}</code>
               </div>
-              <button title="Copiar" onClick={() => { navigator.clipboard.writeText(t.token); toast.success("Copiado"); }}
-                className="p-2 rounded-md hover:bg-secondary"><Copy className="h-4 w-4" /></button>
-              <button title="Remover" onClick={() => deleteM.mutate(t.id)}
-                className="p-2 rounded-md hover:bg-destructive/10 text-destructive"><Trash2 className="h-4 w-4" /></button>
+              <button title="Copiar" aria-label="Copiar token" onClick={() => { navigator.clipboard.writeText(t.token); toast.success("Copiado"); }}
+                className="rounded-md p-2 hover:bg-secondary"><Copy className="h-4 w-4" /></button>
+              <button title="Remover" aria-label="Remover token" onClick={() => deleteM.mutate(t.id)}
+                className="rounded-md p-2 text-destructive hover:bg-destructive/10"><Trash2 className="h-4 w-4" /></button>
             </div>
           ))}
         </div>
