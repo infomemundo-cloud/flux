@@ -7,7 +7,10 @@ import { getOrgBySlug, listOperators } from "@/lib/orgs.functions";
 import { StateBadge, STATE_LABEL, PriorityBadge, formatRelative } from "@/components/demandas-ui";
 import { toast } from "sonner";
 import { friendlyError } from "@/lib/friendly-error";
-import { ArrowLeft, MessageCircle, GitBranch, User, AlertCircle, Send, Trash2, UserCheck } from "lucide-react";
+import {
+  ArrowLeft, MessageCircle, GitBranch, User, AlertCircle, Send, Trash2, UserCheck,
+  Flag, CalendarClock, UserCog, Contact as ContactIcon, Activity, ShieldAlert, Circle,
+} from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/demandas/$id")({
   head: () => ({ meta: [{ title: "Demanda — Fluxo" }] }),
@@ -26,20 +29,52 @@ const ROLE_LABEL: Record<string, string> = {
   agente_ia: "Agente de IA",
 };
 
+const SELECT_CLS =
+  "w-full h-9 px-2.5 rounded-lg border border-border bg-background text-sm text-foreground transition-colors hover:border-primary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
+const GHOST_BTN =
+  "w-full h-9 rounded-lg border border-border bg-transparent text-sm font-semibold text-foreground inline-flex items-center justify-center gap-2 transition-colors hover:border-primary/50 hover:bg-primary/[0.06] hover:text-primary";
+
 function initials(name: string) {
-  return name.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join("");
+  return name.split(/[\s._@-]+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join("");
 }
 
-function Avatar({ name, isAI }: { name: string; isAI?: boolean }) {
+function Avatar({ name, isAI, tone }: { name: string; isAI?: boolean; tone?: "client" | "team" }) {
   return (
     <div
-      className={`h-8 w-8 shrink-0 rounded-full grid place-items-center text-[11px] font-semibold ${
-        isAI ? "bg-accent text-accent-foreground" : "bg-secondary text-secondary-foreground"
+      className={`h-8 w-8 shrink-0 rounded-full grid place-items-center text-[11px] font-bold ${
+        isAI ? "pill-violet" : tone === "client" ? "pill-green" : "pill-brand"
       }`}
       aria-hidden
     >
-      {isAI ? "IA" : initials(name)}
+      {isAI ? "IA" : initials(name) || "?"}
     </div>
+  );
+}
+
+/** Cartão de campo do painel lateral. */
+function Field({ icon: Icon, label, children }: { icon: typeof Flag; label: string; children: React.ReactNode }) {
+  return (
+    <div className="card-elevated p-3.5">
+      <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+        <Icon className="h-3.5 w-3.5" strokeWidth={2.2} /> {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** Linha fina de timeline para eventos de sistema. */
+function SystemLine({ icon: Icon, children, when }: { icon: typeof GitBranch; children: React.ReactNode; when: string }) {
+  return (
+    <li className="relative pl-9">
+      <span className="absolute left-[11px] top-0 h-full w-px bg-border" aria-hidden />
+      <span className="absolute left-0 top-1 grid h-[22px] w-[22px] place-items-center rounded-full border border-border bg-background text-muted-foreground">
+        <Icon className="h-3 w-3" strokeWidth={2.3} />
+      </span>
+      <div className="py-1.5 text-xs leading-relaxed text-muted-foreground">
+        {children} <span className="opacity-70">· {when}</span>
+      </div>
+    </li>
   );
 }
 
@@ -119,89 +154,124 @@ function DemandaDetail() {
         <ArrowLeft className="h-4 w-4" /> Voltar para fila
       </Link>
 
-      <div className="mt-4 grid md:grid-cols-[minmax(0,1fr)_280px] gap-4 md:gap-6">
+      <div className="mt-4 grid md:grid-cols-[minmax(0,1fr)_296px] gap-4 md:gap-6">
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-2 flex-wrap"><StateBadge state={d.state} /><PriorityBadge priority={d.priority} /></div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight break-words">{d.title}</h1>
           {d.description && <p className="mt-2 text-sm text-muted-foreground whitespace-pre-wrap">{d.description}</p>}
 
-          <h2 className="mt-6 sm:mt-8 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Histórico</h2>
-          <div className="mt-3 space-y-3">
+          <h2 className="mt-6 sm:mt-8 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+            <Activity className="h-3.5 w-3.5" strokeWidth={2.3} /> Histórico
+          </h2>
+
+          <ul className="mt-3 space-y-1">
             {data.events.map((e: any) => {
-              const isExternal = e.kind === "message_in";
-              const author = isExternal
-                ? (d.contacts?.name ?? "Cliente")
-                : nameOf(e.actor_id, e.kind === "created" ? "Entrada externa" : "Sistema");
-              const authorRole = isExternal ? "Cliente" : roleOf(e.actor_id);
+              const isClient = e.kind === "message_in";
+              const isComment = e.kind === "commented";
+              const when = formatRelative(e.created_at);
+
+              // Eventos de sistema: linha do tempo fina, sem cartão.
+              if (!isClient && !isComment) {
+                const who = <span className="font-semibold text-foreground/80">{nameOf(e.actor_id, e.kind === "created" ? "Entrada externa" : "Sistema")}</span>;
+                if (e.kind === "state_changed")
+                  return (
+                    <SystemLine key={e.id} icon={GitBranch} when={when}>
+                      {who} mudou o estado de <b className="text-foreground/80">{STATE_LABEL[e.from_value] ?? e.from_value}</b> para{" "}
+                      <b className="text-foreground/80">{STATE_LABEL[e.to_value] ?? e.to_value}</b>
+                    </SystemLine>
+                  );
+                if (e.kind === "priority_changed")
+                  return (
+                    <SystemLine key={e.id} icon={Flag} when={when}>
+                      {who} mudou a prioridade de <b className="text-foreground/80">{e.from_value}</b> para <b className="text-foreground/80">{e.to_value}</b>
+                    </SystemLine>
+                  );
+                if (e.kind === "created")
+                  return (
+                    <SystemLine key={e.id} icon={AlertCircle} when={when}>
+                      {who} abriu a demanda
+                    </SystemLine>
+                  );
+                if (e.kind === "assigned")
+                  return (
+                    <SystemLine key={e.id} icon={User} when={when}>
+                      {who} definiu o responsável: <b className="text-foreground/80">{e.to_value ? nameOf(e.to_value) : "sem responsável"}</b>
+                    </SystemLine>
+                  );
+                return (
+                  <SystemLine key={e.id} icon={Circle} when={when}>
+                    {who} · {e.kind}
+                  </SystemLine>
+                );
+              }
+
+              // Mensagens: cartões estilo chat com contraste por autor.
+              const author = isClient ? (d.contacts?.name ?? "Cliente") : nameOf(e.actor_id);
+              const authorRole = isClient ? "Cliente" : roleOf(e.actor_id);
               const isAI = actorOf(e.actor_id)?.role === "agente_ia";
+
               return (
-                <div key={e.id} className="flex gap-3 p-3 rounded-md border border-border bg-card">
-                  <Avatar name={author} isAI={isAI} />
-                  <div className="flex-1 min-w-0">
+                <li key={e.id} className={`flex gap-3 pt-2 ${isClient ? "" : "sm:pl-8"}`}>
+                  <Avatar name={author} isAI={isAI} tone={isClient ? "client" : "team"} />
+                  <div
+                    className={`min-w-0 flex-1 rounded-xl px-3.5 py-2.5 ${
+                      isClient
+                        ? "border border-border border-l-[3px] border-l-[var(--pill-green-fg)] bg-card shadow-[var(--shadow-card)]"
+                        : "border border-primary/15 bg-primary/[0.05]"
+                    }`}
+                  >
                     <div className="flex flex-wrap items-center gap-x-1.5 text-xs">
                       <span className="font-semibold text-foreground">{author}</span>
                       {authorRole && (
-                        <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px] uppercase tracking-wide">
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${isClient ? "pill-green" : isAI ? "pill-violet" : "pill-brand"}`}>
                           {authorRole}
                         </span>
                       )}
-                      <span className="text-muted-foreground">· {formatRelative(e.created_at)}</span>
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground flex flex-wrap items-center gap-x-1">
-                      {e.kind === "commented" && <><MessageCircle className="h-3.5 w-3.5" /> comentou</>}
-                      {e.kind === "state_changed" && <><GitBranch className="h-3.5 w-3.5" /> mudou o estado de <b>{STATE_LABEL[e.from_value] ?? e.from_value}</b> para <b>{STATE_LABEL[e.to_value] ?? e.to_value}</b></>}
-                      {e.kind === "priority_changed" && <><GitBranch className="h-3.5 w-3.5" /> mudou a prioridade de <b>{e.from_value}</b> para <b>{e.to_value}</b></>}
-                      {e.kind === "created" && <><AlertCircle className="h-3.5 w-3.5" /> abriu a demanda</>}
-                      {e.kind === "assigned" && <><User className="h-3.5 w-3.5" /> definiu o responsável: <b>{e.to_value ? nameOf(e.to_value) : "sem responsável"}</b></>}
-                      {e.kind === "message_in" && <><MessageCircle className="h-3.5 w-3.5 text-primary" /> enviou uma mensagem</>}
-                      {!["commented","state_changed","assigned","created","message_in","priority_changed"].includes(e.kind) && <><GitBranch className="h-3.5 w-3.5" /> {e.kind}</>}
+                      <span className="text-muted-foreground">
+                        · <MessageCircle className="inline h-3 w-3 -mt-0.5" /> {isClient ? "mensagem recebida" : "comentário"} · {when}
+                      </span>
                     </div>
                     {e.content && (
-                      <div className={`mt-2 text-sm whitespace-pre-wrap break-words ${e.kind === "commented" || isExternal ? "rounded-md bg-muted/60 px-3 py-2" : ""}`}>
-                        {e.content}
-                      </div>
+                      <div className="mt-1.5 whitespace-pre-wrap break-words text-sm text-foreground/90">{e.content}</div>
                     )}
                   </div>
-                </div>
+                </li>
               );
             })}
-          </div>
+          </ul>
 
-          <form className="mt-4 flex gap-2" onSubmit={(ev) => { ev.preventDefault(); if (comment.trim()) send.mutate(); }}>
+          <form className="mt-5 flex gap-2" onSubmit={(ev) => { ev.preventDefault(); if (comment.trim()) send.mutate(); }}>
             <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Adicionar comentário..."
-              className="flex-1 min-w-0 h-10 px-3 rounded-md border border-input bg-background text-sm" />
-            <button disabled={send.isPending} className="shrink-0 h-10 px-3 sm:px-4 rounded-md bg-primary text-primary-foreground inline-flex items-center gap-2 disabled:opacity-60 text-sm">
+              className="flex-1 min-w-0 h-10 px-3 rounded-lg border border-border bg-card text-sm placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40" />
+            <button disabled={send.isPending} className="shrink-0 h-10 px-3.5 sm:px-4 rounded-lg bg-primary text-primary-foreground inline-flex items-center gap-2 text-sm font-semibold disabled:opacity-60 hover:opacity-90 transition">
               <Send className="h-4 w-4" /> <span className="hidden sm:inline">Enviar</span>
             </button>
           </form>
         </div>
 
-        <aside className="space-y-3 sm:space-y-4 min-w-0">
-          <div className="rounded-lg border border-border bg-card p-4">
-            <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Estado</div>
-            <select value={d.state} onChange={(e) => update.mutate({ state: e.target.value })}
-              className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm">
+        <aside className="space-y-3 min-w-0">
+          <Field icon={Activity} label="Estado">
+            <select value={d.state} onChange={(e) => update.mutate({ state: e.target.value })} className={SELECT_CLS}>
               {NEXT_STATES.map((s) => <option key={s} value={s}>{STATE_LABEL[s]}</option>)}
             </select>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Prioridade</div>
-            <select value={d.priority} onChange={(e) => update.mutate({ priority: e.target.value })}
-              className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm">
+          </Field>
+
+          <Field icon={Flag} label="Prioridade">
+            <select value={d.priority} onChange={(e) => update.mutate({ priority: e.target.value })} className={SELECT_CLS}>
               {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Prazo</div>
+          </Field>
+
+          <Field icon={CalendarClock} label="Prazo">
             <input type="datetime-local"
               defaultValue={d.due_at ? new Date(d.due_at).toISOString().slice(0, 16) : ""}
               onBlur={(e) => update.mutate({ due_at: e.target.value ? new Date(e.target.value).toISOString() : null })}
-              className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm" />
-          </div>
+              className={SELECT_CLS} />
+          </Field>
+
           {org && (
-            <div className="rounded-lg border border-border bg-card p-4">
-              <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Responsável</div>
-              <div className="text-sm mb-2 truncate">
+            <Field icon={UserCog} label="Responsável">
+              <div className="mb-2 truncate text-sm">
                 {d.assignee_id
                   ? <>
                       <span className="font-medium">{nameOf(d.assignee_id)}</span>
@@ -210,10 +280,7 @@ function DemandaDetail() {
                   : <span className="text-muted-foreground">Sem responsável</span>}
               </div>
               {d.assignee_id !== org.userId && (
-                <button
-                  onClick={() => update.mutate({ assignee_id: org.userId })}
-                  className="w-full h-9 rounded-md bg-primary text-primary-foreground text-sm inline-flex items-center justify-center gap-2"
-                >
+                <button onClick={() => update.mutate({ assignee_id: org.userId })} className={GHOST_BTN}>
                   <UserCheck className="h-4 w-4" /> Atribuir para mim
                 </button>
               )}
@@ -222,7 +289,7 @@ function DemandaDetail() {
                   <select
                     value={d.assignee_id ?? ""}
                     onChange={(e) => update.mutate({ assignee_id: e.target.value || null })}
-                    className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                    className={SELECT_CLS}
                   >
                     <option value="">— Sem responsável —</option>
                     {(operators ?? []).map((o) => (
@@ -234,27 +301,31 @@ function DemandaDetail() {
                   <p className="text-[11px] text-muted-foreground">Gerentes/Admins podem mover a demanda entre operadores.</p>
                 </div>
               )}
-            </div>
+            </Field>
           )}
+
           {d.contacts && (
-            <div className="rounded-lg border border-border bg-card p-4">
-              <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Contato</div>
+            <Field icon={ContactIcon} label="Contato">
               <div className="text-sm font-medium">{d.contacts.name ?? "(sem nome)"}</div>
               {d.contacts.phone && <div className="text-xs text-muted-foreground">{d.contacts.phone}</div>}
               {d.contacts.email && <div className="text-xs text-muted-foreground">{d.contacts.email}</div>}
-            </div>
+            </Field>
           )}
-          <div className="rounded-lg border border-border bg-card p-4 text-xs text-muted-foreground">
-            Criada por <span className="text-foreground font-medium">{nameOf(d.created_by, "entrada externa")}</span> {formatRelative(d.created_at)}<br />
+
+          <div className="card-elevated p-3.5 text-xs text-muted-foreground">
+            Criada por <span className="font-medium text-foreground">{nameOf(d.created_by, "entrada externa")}</span> {formatRelative(d.created_at)}<br />
             Atualizada {formatRelative(d.updated_at)}
           </div>
+
           {canDelete && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
-              <div className="text-xs uppercase tracking-wide text-destructive mb-2">Zona de perigo</div>
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3.5">
+              <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-destructive">
+                <ShieldAlert className="h-3.5 w-3.5" strokeWidth={2.2} /> Zona de perigo
+              </div>
               {!confirmDelete ? (
                 <button
                   onClick={() => setConfirmDelete(true)}
-                  className="w-full h-9 rounded-md border border-destructive/40 text-destructive text-sm inline-flex items-center justify-center gap-2 hover:bg-destructive/10"
+                  className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-destructive/40 text-sm font-semibold text-destructive transition-colors hover:bg-destructive/10"
                 >
                   <Trash2 className="h-4 w-4" /> Excluir demanda
                 </button>
@@ -262,18 +333,12 @@ function DemandaDetail() {
                 <div className="space-y-2">
                   <p className="text-xs text-muted-foreground">Esta ação não pode ser desfeita. Todo o histórico será removido.</p>
                   <div className="flex gap-2">
-                    <button
-                      onClick={() => setConfirmDelete(false)}
-                      disabled={remove.isPending}
-                      className="flex-1 h-9 rounded-md border border-input bg-background text-sm"
-                    >
+                    <button onClick={() => setConfirmDelete(false)} disabled={remove.isPending}
+                      className="h-9 flex-1 rounded-lg border border-border bg-transparent text-sm font-medium hover:bg-secondary">
                       Cancelar
                     </button>
-                    <button
-                      onClick={() => remove.mutate()}
-                      disabled={remove.isPending}
-                      className="flex-1 h-9 rounded-md bg-destructive text-destructive-foreground text-sm font-medium disabled:opacity-60"
-                    >
+                    <button onClick={() => remove.mutate()} disabled={remove.isPending}
+                      className="h-9 flex-1 rounded-lg bg-destructive text-sm font-semibold text-destructive-foreground disabled:opacity-60">
                       {remove.isPending ? "Excluindo..." : "Confirmar"}
                     </button>
                   </div>
