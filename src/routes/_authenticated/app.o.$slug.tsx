@@ -184,25 +184,9 @@ function OrgLayout() {
       </aside>
 
       <main className="min-w-0 overflow-auto bg-surface">
-        <header className="sm:hidden sticky top-0 z-30 flex items-center gap-2.5 bg-sidebar text-sidebar-foreground px-4 py-3">
-          <span className="grid place-items-center h-7 w-7 rounded-lg bg-sidebar-primary text-sidebar-primary-foreground text-xs font-extrabold">F</span>
-          <span className="min-w-0 flex-1 truncate text-sm font-semibold">{org.name}</span>
-          <ThemeCycleButton />
-          <div className="w-9">
-            <UserMenu
-              name={user?.name ?? "Usuário"}
-              email={user?.email}
-              role={ROLE_LABEL[org.role] ?? org.role}
-              collapsed
-              settingsTo={`/app/o/${slug}/configuracoes`}
-              onSignOut={signOut}
-            />
-          </div>
-        </header>
-
         <Outlet />
 
-        <nav className="sm:hidden fixed bottom-0 inset-x-0 z-30 grid grid-cols-5 bg-sidebar text-sidebar-foreground border-t border-sidebar-border">
+        <nav className="sm:hidden fixed bottom-0 inset-x-0 z-30 grid grid-cols-6 bg-sidebar text-sidebar-foreground border-t border-sidebar-border">
           {nav.map((n) => {
             const active = location.pathname.startsWith(n.to);
             const Icon = n.icon;
