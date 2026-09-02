@@ -197,6 +197,16 @@ function OrgLayout() {
               </a>
             );
           })}
+          <div className="flex items-center justify-center py-1.5">
+            <UserMenu
+              name={user?.name ?? "Usuário"}
+              email={user?.email}
+              role={ROLE_LABEL[org.role] ?? org.role}
+              collapsed
+              settingsTo={`/app/o/${slug}/configuracoes`}
+              onSignOut={signOut}
+            />
+          </div>
         </nav>
       </main>
     </div>
