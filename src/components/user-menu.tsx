@@ -101,7 +101,17 @@ export function UserMenu({
         )}
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="start" side="top" className="w-64">
+      <DropdownMenuContent
+        align="start"
+        side="top"
+        sideOffset={8}
+        collisionPadding={8}
+        className={
+          collapsed
+            ? "w-64"
+            : "w-[var(--radix-dropdown-menu-trigger-width)] min-w-[var(--radix-dropdown-menu-trigger-width)]"
+        }
+      >
         <DropdownMenuLabel className="pb-1">
           <div className="truncate text-sm font-semibold">{name}</div>
           {email && <div className="truncate text-xs font-normal text-muted-foreground">{email}</div>}

@@ -100,14 +100,16 @@ function OrgLayout() {
             </Link>
             <div className={`flex items-center gap-0.5 ${collapsed ? "" : "ml-auto"}`}>
               <ThemeCycleButton />
-              <button
-                onClick={toggleCollapsed}
-                aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
-                title={collapsed ? "Expandir menu" : "Recolher menu"}
-                className="grid place-items-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-              >
-                {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-              </button>
+              {collapsed && (
+                <button
+                  onClick={toggleCollapsed}
+                  aria-label="Expandir menu"
+                  title="Expandir menu"
+                  className="grid place-items-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                >
+                  <PanelLeftOpen className="h-4 w-4" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -159,7 +161,17 @@ function OrgLayout() {
           })}
         </nav>
 
-        <div className="mx-2 mb-3 mt-2">
+        <div className="mx-2 mb-3 mt-2 space-y-1.5">
+          {!collapsed && (
+            <button
+              onClick={toggleCollapsed}
+              aria-label="Recolher menu"
+              title="Recolher menu"
+              className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-[12px] font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+            >
+              <PanelLeftClose className="h-4 w-4" /> Recolher menu
+            </button>
+          )}
           <UserMenu
             name={user?.name ?? "Usuário"}
             email={user?.email}
@@ -172,25 +184,9 @@ function OrgLayout() {
       </aside>
 
       <main className="min-w-0 overflow-auto bg-surface">
-        <header className="sm:hidden sticky top-0 z-30 flex items-center gap-2.5 bg-sidebar text-sidebar-foreground px-4 py-3">
-          <span className="grid place-items-center h-7 w-7 rounded-lg bg-sidebar-primary text-sidebar-primary-foreground text-xs font-extrabold">F</span>
-          <span className="min-w-0 flex-1 truncate text-sm font-semibold">{org.name}</span>
-          <ThemeCycleButton />
-          <div className="w-9">
-            <UserMenu
-              name={user?.name ?? "Usuário"}
-              email={user?.email}
-              role={ROLE_LABEL[org.role] ?? org.role}
-              collapsed
-              settingsTo={`/app/o/${slug}/configuracoes`}
-              onSignOut={signOut}
-            />
-          </div>
-        </header>
-
         <Outlet />
 
-        <nav className="sm:hidden fixed bottom-0 inset-x-0 z-30 grid grid-cols-5 bg-sidebar text-sidebar-foreground border-t border-sidebar-border">
+        <nav className="sm:hidden fixed bottom-0 inset-x-0 z-30 grid grid-cols-6 bg-sidebar text-sidebar-foreground border-t border-sidebar-border">
           {nav.map((n) => {
             const active = location.pathname.startsWith(n.to);
             const Icon = n.icon;
@@ -201,6 +197,16 @@ function OrgLayout() {
               </a>
             );
           })}
+          <div className="flex items-center justify-center py-1.5">
+            <UserMenu
+              name={user?.name ?? "Usuário"}
+              email={user?.email}
+              role={ROLE_LABEL[org.role] ?? org.role}
+              collapsed
+              settingsTo={`/app/o/${slug}/configuracoes`}
+              onSignOut={signOut}
+            />
+          </div>
         </nav>
       </main>
     </div>
