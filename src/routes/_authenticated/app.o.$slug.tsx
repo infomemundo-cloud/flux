@@ -98,19 +98,16 @@ function OrgLayout() {
               </span>
               {!collapsed && <span className="font-extrabold tracking-tight text-[15px]">Fluxo</span>}
             </Link>
-            <div className={`flex items-center gap-0.5 ${collapsed ? "" : "ml-auto"}`}>
-              <ThemeCycleButton />
-              {collapsed && (
-                <button
-                  onClick={toggleCollapsed}
-                  aria-label="Expandir menu"
-                  title="Expandir menu"
-                  className="grid place-items-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-                >
-                  <PanelLeftOpen className="h-4 w-4" />
-                </button>
-              )}
-            </div>
+            {collapsed && (
+              <button
+                onClick={toggleCollapsed}
+                aria-label="Expandir menu"
+                title="Expandir menu"
+                className="grid place-items-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+              >
+                <PanelLeftOpen className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
           <Link
