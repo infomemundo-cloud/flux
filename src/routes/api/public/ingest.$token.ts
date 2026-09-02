@@ -20,15 +20,19 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
   server: {
     handlers: {
       POST: async ({ request, params }) => {
+        const json = (body: unknown, status: number) =>
+          new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const { data: tok, error: te } = await supabaseAdmin
           .from("webhook_tokens").select("id, org_id, channel_id, organizations:org_id(name)").eq("token", params.token).maybeSingle();
-        if (te || !tok) return new Response(JSON.stringify({ error: "invalid_token" }), { status: 401, headers: { "content-type": "application/json" } });
+        if (te) console.error("[ingest] token lookup failed", te);
+        if (te || !tok) return json({ error: "invalid_token" }, 401);
         let payload: unknown;
-        try { payload = await request.json(); } catch { return new Response(JSON.stringify({ error: "invalid_json" }), { status: 400 }); }
+        try { payload = await request.json(); } catch { return json({ error: "invalid_json" }, 400); }
         const parsed = Body.safeParse(payload);
-        if (!parsed.success) return new Response(JSON.stringify({ error: "invalid_body", issues: parsed.error.flatten() }), { status: 400, headers: { "content-type": "application/json" } });
+        if (!parsed.success) return json({ error: "invalid_body", issues: parsed.error.flatten() }, 400);
         const b = parsed.data;
+
         // upsert contact by phone/external_id
         let contactId: string | null = null;
         if (b.contact?.phone || b.contact?.external_id || b.contact?.email) {
@@ -63,7 +67,11 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             priority: b.priority ?? "media",
             contact_id: contactId, channel_id: tok.channel_id,
           }).select("id, protocol").single();
-          if (de || !dem) return new Response(JSON.stringify({ error: de?.message }), { status: 500, headers: { "content-type": "application/json" } });
+          if (de || !dem) {
+            console.error("[ingest] demanda insert failed", de);
+            return json({ error: "internal_error" }, 500);
+          }
+
           demandaId = dem.id;
           protocol = dem.protocol as string | null;
         }
