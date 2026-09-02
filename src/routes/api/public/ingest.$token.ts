@@ -67,7 +67,11 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             priority: b.priority ?? "media",
             contact_id: contactId, channel_id: tok.channel_id,
           }).select("id, protocol").single();
-          if (de || !dem) return new Response(JSON.stringify({ error: de?.message }), { status: 500, headers: { "content-type": "application/json" } });
+          if (de || !dem) {
+            console.error("[ingest] demanda insert failed", de);
+            return json({ error: "internal_error" }, 500);
+          }
+
           demandaId = dem.id;
           protocol = dem.protocol as string | null;
         }
