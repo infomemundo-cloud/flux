@@ -161,7 +161,17 @@ function OrgLayout() {
           })}
         </nav>
 
-        <div className="mx-2 mb-3 mt-2">
+        <div className="mx-2 mb-3 mt-2 space-y-1.5">
+          {!collapsed && (
+            <button
+              onClick={toggleCollapsed}
+              aria-label="Recolher menu"
+              title="Recolher menu"
+              className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-[12px] font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+            >
+              <PanelLeftClose className="h-4 w-4" /> Recolher menu
+            </button>
+          )}
           <UserMenu
             name={user?.name ?? "Usuário"}
             email={user?.email}
