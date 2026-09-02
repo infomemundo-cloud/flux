@@ -98,19 +98,16 @@ function OrgLayout() {
               </span>
               {!collapsed && <span className="font-extrabold tracking-tight text-[15px]">Fluxo</span>}
             </Link>
-            <div className={`flex items-center gap-0.5 ${collapsed ? "" : "ml-auto"}`}>
-              <ThemeCycleButton />
-              {collapsed && (
-                <button
-                  onClick={toggleCollapsed}
-                  aria-label="Expandir menu"
-                  title="Expandir menu"
-                  className="grid place-items-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-                >
-                  <PanelLeftOpen className="h-4 w-4" />
-                </button>
-              )}
-            </div>
+            {collapsed && (
+              <button
+                onClick={toggleCollapsed}
+                aria-label="Expandir menu"
+                title="Expandir menu"
+                className="grid place-items-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+              >
+                <PanelLeftOpen className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
           <Link
@@ -161,25 +158,30 @@ function OrgLayout() {
           })}
         </nav>
 
-        <div className="mx-2 mb-3 mt-2 space-y-1.5">
-          {!collapsed && (
-            <button
-              onClick={toggleCollapsed}
-              aria-label="Recolher menu"
-              title="Recolher menu"
-              className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-[12px] font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-            >
-              <PanelLeftClose className="h-4 w-4" /> Recolher menu
-            </button>
-          )}
-          <UserMenu
-            name={user?.name ?? "Usuário"}
-            email={user?.email}
-            role={ROLE_LABEL[org.role] ?? org.role}
-            collapsed={collapsed}
-            settingsTo={`/app/o/${slug}/configuracoes`}
-            onSignOut={signOut}
-          />
+        <div className={`mx-2 mb-3 mt-2 flex items-center gap-1 ${collapsed ? "flex-col" : ""}`}>
+          <div className="min-w-0 flex-1">
+            <UserMenu
+              name={user?.name ?? "Usuário"}
+              email={user?.email}
+              role={ROLE_LABEL[org.role] ?? org.role}
+              collapsed={collapsed}
+              settingsTo={`/app/o/${slug}/configuracoes`}
+              onSignOut={signOut}
+            />
+          </div>
+          <div className={`flex shrink-0 items-center ${collapsed ? "flex-col gap-1" : "ml-auto gap-0.5"}`}>
+            <ThemeCycleButton />
+            {!collapsed && (
+              <button
+                onClick={toggleCollapsed}
+                aria-label="Recolher menu"
+                title="Recolher menu"
+                className="grid place-items-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+              >
+                <PanelLeftClose className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         </div>
       </aside>
 
