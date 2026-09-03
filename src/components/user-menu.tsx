@@ -86,26 +86,42 @@ export function UserMenu({
     .map((p) => p[0]!.toUpperCase())
     .join("");
 
+  const trigger = (
+    <DropdownMenuTrigger
+      className={`flex w-full items-center gap-2.5 rounded-xl border border-sidebar-border/70 bg-sidebar-accent/30 px-2 py-2 text-left transition hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring ${
+        collapsed ? "justify-center px-1.5" : ""
+      }`}
+    >
+      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-sidebar-primary text-[11px] font-bold text-sidebar-primary-foreground">
+        {initials || "U"}
+      </span>
+      {!collapsed && (
+        <>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[13px] font-semibold text-sidebar-foreground">{name}</span>
+            <span className="block truncate text-[11px] text-sidebar-foreground/60">{email ?? role ?? ""}</span>
+          </span>
+          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-sidebar-foreground/50" />
+        </>
+      )}
+    </DropdownMenuTrigger>
+  );
+
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        className={`flex w-full items-center gap-2.5 rounded-xl border border-sidebar-border/70 bg-sidebar-accent/30 px-2 py-2 text-left transition hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring ${
-          collapsed ? "justify-center" : ""
-        }`}
-      >
-        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-sidebar-primary text-[11px] font-bold text-sidebar-primary-foreground">
-          {initials || "U"}
-        </span>
-        {!collapsed && (
-          <>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-semibold text-sidebar-foreground">{name}</span>
-              <span className="block truncate text-[11px] text-sidebar-foreground/60">{email ?? role ?? ""}</span>
-            </span>
-            <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-sidebar-foreground/50" />
-          </>
-        )}
-      </DropdownMenuTrigger>
+      {collapsed ? (
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+            <TooltipContent side="top" sideOffset={6}>
+              <p className="font-medium">{name}</p>
+              <p className="text-xs text-muted-foreground">{email ?? role ?? ""}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ) : (
+        trigger
+      )}
 
       <DropdownMenuContent
         align="start"
