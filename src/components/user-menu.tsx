@@ -126,13 +126,13 @@ export function UserMenu({
       <DropdownMenuContent
         align="start"
         side="top"
-        sideOffset={8}
+        sideOffset={10}
         collisionPadding={8}
-        className={
+        className={`z-50 ${
           collapsed
             ? "w-64"
             : "w-[var(--radix-dropdown-menu-trigger-width)] min-w-[var(--radix-dropdown-menu-trigger-width)]"
-        }
+        }`}
       >
         <DropdownMenuLabel className="pb-1">
           <div className="truncate text-sm font-semibold">{name}</div>
