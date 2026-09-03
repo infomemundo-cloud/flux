@@ -9,8 +9,8 @@ import { useOrgRealtime } from "@/hooks/use-org-realtime";
 import { UserMenu, ThemeCycleButton } from "@/components/user-menu";
 import { Inbox, LayoutDashboard, Settings, AlertTriangle, Users, Bell, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
-
 const ROLE_LABEL: Record<string, string> = {
+
   owner: "Proprietário",
   admin: "Administrador",
   gerente: "Gerente",
@@ -84,8 +84,8 @@ function OrgLayout() {
   ];
 
   return (
-
     <div
+
       className="min-h-screen grid grid-cols-[1fr] bg-surface text-foreground sm:grid-cols-[var(--rail)_1fr]"
       style={{ ["--rail" as any]: collapsed ? "68px" : "256px" }}
     >
@@ -98,11 +98,10 @@ function OrgLayout() {
           )}
         </div>
 
-
         <nav className={`flex-1 space-y-0.5 ${collapsed ? "px-2" : "px-2"}`}>
           {nav.map((n) => {
-
             const active = location.pathname.startsWith(n.to);
+
             const Icon = n.icon;
             return (
               <a key={n.to} href={n.to} title={n.label}
