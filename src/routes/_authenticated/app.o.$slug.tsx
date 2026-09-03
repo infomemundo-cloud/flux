@@ -90,45 +90,14 @@ function OrgLayout() {
       style={{ ["--rail" as any]: collapsed ? "68px" : "256px" }}
     >
       <aside className="hidden sm:flex bg-sidebar text-sidebar-foreground flex-col border-r border-sidebar-border/60">
-        <div className={`pt-4 pb-3 ${collapsed ? "px-2" : "px-4"}`}>
-          <div className={`flex items-center gap-2 ${collapsed ? "flex-col" : ""}`}>
-            <Link to="/app" className="flex min-w-0 items-center gap-2.5" title="Fluxo">
-              <span className="grid place-items-center h-8 w-8 shrink-0 rounded-lg bg-sidebar-primary text-sidebar-primary-foreground text-sm font-extrabold">
-                F
-              </span>
-              {!collapsed && <span className="font-extrabold tracking-tight text-[15px]">Fluxo</span>}
-            </Link>
-            {collapsed && (
-              <button
-                onClick={toggleCollapsed}
-                aria-label="Expandir menu"
-                title="Expandir menu"
-                className="grid place-items-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-              >
-                <PanelLeftOpen className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-
-          <Link
-            to="/app"
-            title={org.name}
-            className={`mt-4 flex items-center gap-2.5 rounded-xl border border-sidebar-border/80 bg-sidebar-accent/40 py-2 hover:bg-sidebar-accent transition ${collapsed ? "justify-center px-1" : "px-2.5"}`}
-          >
-            <span className="grid place-items-center h-7 w-7 shrink-0 rounded-md bg-sidebar-accent text-[11px] font-bold text-sidebar-accent-foreground">
-              {initials}
-            </span>
-            {!collapsed && (
-              <>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[13px] font-semibold truncate">{org.name}</span>
-                  <span className="block text-[11px] text-sidebar-foreground/60">{ROLE_LABEL[org.role] ?? org.role}</span>
-                </span>
-                <ChevronDown className="h-3.5 w-3.5 shrink-0 text-sidebar-foreground/50" />
-              </>
-            )}
-          </Link>
+        <div className={`pt-4 pb-2 ${collapsed ? "px-2" : "px-4"}`}>
+          {!collapsed && (
+            <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/45">
+              Operação
+            </div>
+          )}
         </div>
+
 
         <nav className={`flex-1 space-y-0.5 ${collapsed ? "px-2" : "px-2"}`}>
           {!collapsed && (
