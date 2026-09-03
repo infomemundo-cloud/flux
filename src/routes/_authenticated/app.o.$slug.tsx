@@ -85,20 +85,32 @@ function OrgLayout() {
 
   return (
     <div
-
       className="min-h-screen grid grid-cols-[1fr] bg-surface text-foreground sm:grid-cols-[var(--rail)_1fr]"
       style={{ ["--rail" as any]: collapsed ? "68px" : "256px" }}
     >
-      <aside className="hidden sm:flex bg-sidebar text-sidebar-foreground flex-col border-r border-sidebar-border/60">
-        <div className={`pt-4 pb-2 ${collapsed ? "px-2" : "px-4"}`}>
-          {!collapsed && (
+      <aside className="hidden sm:flex h-screen flex-col justify-between overflow-hidden sticky top-0 left-0 bg-sidebar text-sidebar-foreground border-r border-sidebar-border/60">
+        {!collapsed && (
+          <div className="shrink-0 pt-4 pb-2 px-4">
             <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/45">
               Operação
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        <nav className={`flex-1 space-y-0.5 ${collapsed ? "px-2" : "px-2"}`}>
+        {collapsed && (
+          <div className="shrink-0 flex justify-end pt-2 pb-1 px-2">
+            <button
+              onClick={toggleCollapsed}
+              aria-label="Expandir menu"
+              title="Expandir menu"
+              className="grid place-items-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+            >
+              <PanelLeftOpen className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        <nav className="flex-1 overflow-y-auto space-y-0.5 px-2 py-1">
           {nav.map((n) => {
             const active = location.pathname.startsWith(n.to);
 
@@ -122,29 +134,31 @@ function OrgLayout() {
           })}
         </nav>
 
-        <div className={`mx-2 mb-3 mt-2 flex items-center gap-1 ${collapsed ? "flex-col" : ""}`}>
-          <div className="min-w-0 flex-1">
-            <UserMenu
-              name={user?.name ?? "Usuário"}
-              email={user?.email}
-              role={ROLE_LABEL[org.role] ?? org.role}
-              collapsed={collapsed}
-              settingsTo={`/app/o/${slug}/configuracoes`}
-              onSignOut={signOut}
-            />
-          </div>
-          <div className={`flex shrink-0 items-center ${collapsed ? "flex-col gap-1" : "ml-auto gap-0.5"}`}>
-            <ThemeCycleButton />
-            {!collapsed && (
-              <button
-                onClick={toggleCollapsed}
-                aria-label="Recolher menu"
-                title="Recolher menu"
-                className="grid place-items-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-              >
-                <PanelLeftClose className="h-4 w-4" />
-              </button>
-            )}
+        <div className="mt-auto shrink-0 border-t border-sidebar-border bg-sidebar p-2">
+          <div className={`flex items-center gap-1.5 ${collapsed ? "flex-col" : ""}`}>
+            <div className="min-w-0 flex-1">
+              <UserMenu
+                name={user?.name ?? "Usuário"}
+                email={user?.email}
+                role={ROLE_LABEL[org.role] ?? org.role}
+                collapsed={collapsed}
+                settingsTo={`/app/o/${slug}/configuracoes`}
+                onSignOut={signOut}
+              />
+            </div>
+            <div className={`flex shrink-0 items-center ${collapsed ? "flex-col gap-1" : "gap-0.5"}`}>
+              <ThemeCycleButton />
+              {!collapsed && (
+                <button
+                  onClick={toggleCollapsed}
+                  aria-label="Recolher menu"
+                  title="Recolher menu"
+                  className="grid place-items-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                >
+                  <PanelLeftClose className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </aside>
