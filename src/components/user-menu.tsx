@@ -6,6 +6,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useTheme, THEMES, type Theme } from "@/lib/theme";
 import { ChevronsUpDown, LogOut, Settings, Sun, Moon, Building2, Check } from "lucide-react";
 
