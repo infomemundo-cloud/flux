@@ -1,4 +1,4 @@
-import { createFileRoute, Link, Outlet, useNavigate, useParams, useLocation } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useNavigate, useParams, useLocation } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useCallback, useEffect, useState } from "react";
@@ -7,9 +7,10 @@ import { getOrgBySlug } from "@/lib/orgs.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrgRealtime } from "@/hooks/use-org-realtime";
 import { UserMenu, ThemeCycleButton } from "@/components/user-menu";
-import { Inbox, LayoutDashboard, Settings, ChevronDown, AlertTriangle, Users, Bell, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Inbox, LayoutDashboard, Settings, AlertTriangle, Users, Bell, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 const ROLE_LABEL: Record<string, string> = {
+
   owner: "Proprietário",
   admin: "Administrador",
   gerente: "Gerente",
@@ -82,62 +83,25 @@ function OrgLayout() {
     { to: `/app/o/${slug}/configuracoes`, label: "Configurações", icon: Settings },
   ];
 
-  const initials = org.name.slice(0, 2).toUpperCase();
-
   return (
     <div
+
       className="min-h-screen grid grid-cols-[1fr] bg-surface text-foreground sm:grid-cols-[var(--rail)_1fr]"
       style={{ ["--rail" as any]: collapsed ? "68px" : "256px" }}
     >
       <aside className="hidden sm:flex bg-sidebar text-sidebar-foreground flex-col border-r border-sidebar-border/60">
-        <div className={`pt-4 pb-3 ${collapsed ? "px-2" : "px-4"}`}>
-          <div className={`flex items-center gap-2 ${collapsed ? "flex-col" : ""}`}>
-            <Link to="/app" className="flex min-w-0 items-center gap-2.5" title="Fluxo">
-              <span className="grid place-items-center h-8 w-8 shrink-0 rounded-lg bg-sidebar-primary text-sidebar-primary-foreground text-sm font-extrabold">
-                F
-              </span>
-              {!collapsed && <span className="font-extrabold tracking-tight text-[15px]">Fluxo</span>}
-            </Link>
-            {collapsed && (
-              <button
-                onClick={toggleCollapsed}
-                aria-label="Expandir menu"
-                title="Expandir menu"
-                className="grid place-items-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-              >
-                <PanelLeftOpen className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-
-          <Link
-            to="/app"
-            title={org.name}
-            className={`mt-4 flex items-center gap-2.5 rounded-xl border border-sidebar-border/80 bg-sidebar-accent/40 py-2 hover:bg-sidebar-accent transition ${collapsed ? "justify-center px-1" : "px-2.5"}`}
-          >
-            <span className="grid place-items-center h-7 w-7 shrink-0 rounded-md bg-sidebar-accent text-[11px] font-bold text-sidebar-accent-foreground">
-              {initials}
-            </span>
-            {!collapsed && (
-              <>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[13px] font-semibold truncate">{org.name}</span>
-                  <span className="block text-[11px] text-sidebar-foreground/60">{ROLE_LABEL[org.role] ?? org.role}</span>
-                </span>
-                <ChevronDown className="h-3.5 w-3.5 shrink-0 text-sidebar-foreground/50" />
-              </>
-            )}
-          </Link>
-        </div>
-
-        <nav className={`flex-1 space-y-0.5 ${collapsed ? "px-2" : "px-2"}`}>
+        <div className={`pt-4 pb-2 ${collapsed ? "px-2" : "px-4"}`}>
           {!collapsed && (
             <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/45">
               Operação
             </div>
           )}
+        </div>
+
+        <nav className={`flex-1 space-y-0.5 ${collapsed ? "px-2" : "px-2"}`}>
           {nav.map((n) => {
             const active = location.pathname.startsWith(n.to);
+
             const Icon = n.icon;
             return (
               <a key={n.to} href={n.to} title={n.label}
