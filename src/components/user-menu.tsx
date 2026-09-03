@@ -129,10 +129,8 @@ export function UserMenu({
         sideOffset={10}
         collisionPadding={16}
         avoidCollisions
-        className={`z-50 ${
-          collapsed
-            ? "w-64"
-            : "w-[var(--radix-dropdown-menu-trigger-width)] min-w-[var(--radix-dropdown-menu-trigger-width)]"
+        className={`z-50 min-w-[var(--radix-dropdown-menu-trigger-width)] max-w-xs ${
+          collapsed ? "w-64" : ""
         }`}
       >
         <DropdownMenuLabel className="pb-1">
