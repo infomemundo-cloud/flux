@@ -1,4 +1,4 @@
-import { createFileRoute, Link, Outlet, useNavigate, useParams, useLocation } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useNavigate, useParams, useLocation } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useCallback, useEffect, useState } from "react";
@@ -7,7 +7,8 @@ import { getOrgBySlug } from "@/lib/orgs.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrgRealtime } from "@/hooks/use-org-realtime";
 import { UserMenu, ThemeCycleButton } from "@/components/user-menu";
-import { Inbox, LayoutDashboard, Settings, ChevronDown, AlertTriangle, Users, Bell, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Inbox, LayoutDashboard, Settings, AlertTriangle, Users, Bell, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+
 
 const ROLE_LABEL: Record<string, string> = {
   owner: "Proprietário",
@@ -100,12 +101,8 @@ function OrgLayout() {
 
 
         <nav className={`flex-1 space-y-0.5 ${collapsed ? "px-2" : "px-2"}`}>
-          {!collapsed && (
-            <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/45">
-              Operação
-            </div>
-          )}
           {nav.map((n) => {
+
             const active = location.pathname.startsWith(n.to);
             const Icon = n.icon;
             return (
