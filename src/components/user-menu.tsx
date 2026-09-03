@@ -124,10 +124,11 @@ export function UserMenu({
       )}
 
       <DropdownMenuContent
-        align="start"
+        align={collapsed ? "start" : "end"}
         side="top"
         sideOffset={10}
-        collisionPadding={8}
+        collisionPadding={16}
+        avoidCollisions
         className={`z-50 ${
           collapsed
             ? "w-64"
