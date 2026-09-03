@@ -83,9 +83,8 @@ function OrgLayout() {
     { to: `/app/o/${slug}/configuracoes`, label: "Configurações", icon: Settings },
   ];
 
-  const initials = org.name.slice(0, 2).toUpperCase();
-
   return (
+
     <div
       className="min-h-screen grid grid-cols-[1fr] bg-surface text-foreground sm:grid-cols-[var(--rail)_1fr]"
       style={{ ["--rail" as any]: collapsed ? "68px" : "256px" }}
