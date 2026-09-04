@@ -1,4 +1,4 @@
-import { createFileRoute, Outlet, useNavigate, useParams, useLocation } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useNavigate, useParams, useLocation } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useCallback, useEffect, useState } from "react";
@@ -7,6 +7,7 @@ import { getOrgBySlug } from "@/lib/orgs.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrgRealtime } from "@/hooks/use-org-realtime";
 import { UserMenu, ThemeCycleButton } from "@/components/user-menu";
+import { PageFade, TopProgressBar, ListSkeleton } from "@/components/skeletons";
 import { Inbox, LayoutDashboard, Settings, AlertTriangle, Users, Bell, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -72,16 +73,26 @@ function OrgLayout() {
     navigate({ to: "/auth" });
   }
 
-  if (isLoading) return <div className="p-6 text-sm text-muted-foreground">Carregando...</div>;
+  if (isLoading)
+    return (
+      <div className="min-h-screen grid grid-cols-[1fr] bg-surface sm:grid-cols-[256px_1fr]">
+        <aside className="hidden sm:block h-screen sticky top-0 bg-sidebar border-r border-sidebar-border/60" />
+        <main className="p-4 sm:p-8">
+          <div className="h-7 w-52 shimmer rounded-md" />
+          <div className="mt-2 h-3 w-72 shimmer rounded-md" />
+          <div className="mt-6"><ListSkeleton rows={5} /></div>
+        </main>
+      </div>
+    );
   if (error || !org) return <div className="p-6 text-sm text-destructive">Sem acesso a esta organização.</div>;
 
   const nav = [
-    { to: `/app/o/${slug}/fila`, label: "Fila", icon: Inbox },
-    { to: `/app/o/${slug}/alertas`, label: "Alertas SLA", icon: AlertTriangle },
-    { to: `/app/o/${slug}/dashboard`, label: "Dashboard", icon: LayoutDashboard },
-    { to: `/app/o/${slug}/equipe`, label: "Equipe", icon: Users },
-    { to: `/app/o/${slug}/configuracoes`, label: "Configurações", icon: Settings },
-  ];
+    { route: "/app/o/$slug/fila", to: `/app/o/${slug}/fila`, label: "Fila", icon: Inbox },
+    { route: "/app/o/$slug/alertas", to: `/app/o/${slug}/alertas`, label: "Alertas SLA", icon: AlertTriangle },
+    { route: "/app/o/$slug/dashboard", to: `/app/o/${slug}/dashboard`, label: "Dashboard", icon: LayoutDashboard },
+    { route: "/app/o/$slug/equipe", to: `/app/o/${slug}/equipe`, label: "Equipe", icon: Users },
+    { route: "/app/o/$slug/configuracoes", to: `/app/o/${slug}/configuracoes`, label: "Configurações", icon: Settings },
+  ] as const;
 
   return (
     <div
@@ -116,7 +127,7 @@ function OrgLayout() {
 
             const Icon = n.icon;
             return (
-              <a key={n.to} href={n.to} title={n.label}
+              <Link key={n.to} to={n.route} params={{ slug }} preload="intent" title={n.label}
                 className={`group relative flex items-center gap-2.5 py-2 rounded-lg text-[13px] font-medium transition-colors ${collapsed ? "justify-center px-2" : "px-3"} ${active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"}`}>
                 {active && <span className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[3px] rounded-r-full bg-sidebar-primary" />}
                 <Icon className={`h-[17px] w-[17px] shrink-0 ${active ? "text-sidebar-accent-foreground" : "text-sidebar-foreground/65 group-hover:text-sidebar-foreground"}`} strokeWidth={1.9} />
@@ -129,7 +140,7 @@ function OrgLayout() {
                 {n.label === "Fila" && newCount > 0 && collapsed && (
                   <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-sidebar-primary" />
                 )}
-              </a>
+              </Link>
             );
           })}
         </nav>
@@ -164,17 +175,20 @@ function OrgLayout() {
       </aside>
 
       <main className="min-w-0 overflow-auto bg-surface">
-        <Outlet />
+        <TopProgressBar />
+        <PageFade key={location.pathname}>
+          <Outlet />
+        </PageFade>
 
         <nav className="sm:hidden fixed bottom-0 inset-x-0 z-30 grid grid-cols-6 bg-sidebar text-sidebar-foreground border-t border-sidebar-border">
           {nav.map((n) => {
             const active = location.pathname.startsWith(n.to);
             const Icon = n.icon;
             return (
-              <a key={n.to} href={n.to} className={`flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium ${active ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/60"}`}>
+              <Link key={n.to} to={n.route} params={{ slug }} preload="intent" className={`flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium ${active ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/60"}`}>
                 <Icon className="h-[18px] w-[18px]" strokeWidth={1.9} />
                 <span className="truncate max-w-full px-1">{n.label}</span>
-              </a>
+              </Link>
             );
           })}
           <div className="flex items-center justify-center py-1.5">
