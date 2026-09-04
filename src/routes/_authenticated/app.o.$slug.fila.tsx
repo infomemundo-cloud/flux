@@ -2,6 +2,7 @@ import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
+import { ListSkeleton } from "@/components/skeletons";
 import { listDemandas, createDemanda } from "@/lib/demandas.functions";
 import { getOrgBySlug } from "@/lib/orgs.functions";
 import { toast } from "sonner";
@@ -75,7 +76,7 @@ function FilaPage() {
       </div>
 
       <div className="mt-5 space-y-2">
-        {isLoading && [0, 1, 2].map((i) => <div key={i} className="h-[76px] rounded-xl bg-card border border-border animate-pulse" />)}
+        {isLoading && !data && <ListSkeleton rows={5} />}
         {data?.length === 0 && (
           <div className="rounded-2xl border border-dashed border-border bg-card/60 p-12 text-center">
             <div className="text-sm font-semibold">Nenhuma demanda encontrada</div>

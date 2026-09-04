@@ -5,6 +5,7 @@ import { useState } from "react";
 import { listMyOrgs, createOrg } from "@/lib/orgs.functions";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
+import { ListSkeleton } from "@/components/skeletons";
 
 export const Route = createFileRoute("/_authenticated/app")({
   head: () => ({ meta: [{ title: "Suas organizações — Fluxo" }] }),
@@ -43,7 +44,7 @@ function OrgPicker() {
         <p className="text-sm text-muted-foreground mt-1">Escolha uma para abrir o painel, ou crie uma nova.</p>
 
         <div className="mt-6 space-y-2">
-          {isLoading && <div className="text-sm text-muted-foreground">Carregando...</div>}
+          {isLoading && !data && <ListSkeleton rows={3} height="h-[72px]" />}
           {data?.length === 0 && <div className="text-sm text-muted-foreground border border-dashed border-border rounded-lg p-6 text-center">Você ainda não pertence a nenhuma organização.</div>}
           {data?.map(({ org, role }) => (
             <Link key={org.id} to="/app/o/$slug/fila" params={{ slug: org.slug }}

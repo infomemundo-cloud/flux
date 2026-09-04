@@ -7,6 +7,7 @@ import { orgDashboard, listDemandas } from "@/lib/demandas.functions";
 import { STATE_LABEL, PriorityBadge } from "@/components/demandas-ui";
 import { AiSuggestionsCard, MemberAvatar, Sparkline, TeamSelector, type TeamOption } from "@/components/dashboard-ui";
 import { AlertTriangle, CheckCircle2, Inbox, Layers, TrendingUp } from "lucide-react";
+import { DashboardSkeleton } from "@/components/skeletons";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Fluxo" }] }),
@@ -58,7 +59,7 @@ function Dashboard() {
     return m;
   }, [operators]);
 
-  if (!org || !dash) return <div className="p-4 sm:p-6 text-sm text-muted-foreground">Carregando...</div>;
+  if (!org || !dash) return <DashboardSkeleton />;
 
   return (
     <div className="p-4 sm:p-6 pb-24 sm:pb-6 space-y-6 max-w-[1400px]">

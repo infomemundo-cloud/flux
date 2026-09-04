@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { slaAlerts } from "@/lib/demandas.functions";
 import { StateBadge, PriorityBadge, formatRelative, ProtocolChip, ContactLine, DueChip, UrgentTag } from "@/components/demandas-ui";
 import { AlertTriangle, Clock, ChevronRight, ShieldCheck } from "lucide-react";
+import { ListSkeleton } from "@/components/skeletons";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/alertas")({
   head: () => ({ meta: [{ title: "Alertas de SLA — Fluxo" }] }),
@@ -89,11 +90,7 @@ function AlertasPage() {
         )}
       </p>
 
-      {isLoading && (
-        <div className="space-y-2">
-          {[0, 1, 2].map((i) => <div key={i} className="h-[92px] rounded-xl bg-card border border-border animate-pulse" />)}
-        </div>
-      )}
+      {isLoading && !data && <ListSkeleton rows={4} height="h-[92px]" />}
       {!isLoading && data && data.length === 0 && (
         <div className="rounded-2xl border border-dashed border-border bg-card/60 p-12 text-center">
           <span className="mx-auto grid place-items-center h-11 w-11 rounded-xl bg-[oklch(0.62_0.15_162/0.12)] text-[oklch(0.48_0.14_162)]">
