@@ -15,9 +15,17 @@ export const getRouter = () => {
         refetchOnWindowFocus: true,
         refetchOnReconnect: true,
         refetchInterval: 15_000,
+        // Cache ativo: ao voltar para uma aba já visitada o conteúdo aparece
+        // na hora e revalida em segundo plano.
+        staleTime: 1000 * 60 * 5,
+        gcTime: 1000 * 60 * 30,
+        placeholderData: (prev: unknown) => prev,
       },
     },
   });
+
+
+
 
   const router = createRouter({
     routeTree,

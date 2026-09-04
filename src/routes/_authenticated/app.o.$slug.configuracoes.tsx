@@ -8,6 +8,7 @@ import { SectionTitle, StatCard } from "@/components/section-ui";
 import { ThemeToggleInline } from "@/components/user-menu";
 import { toast } from "sonner";
 import { Copy, Trash2, Plus, Users, KeyRound, Webhook, Palette, Settings2 } from "lucide-react";
+import { FormSkeleton } from "@/components/skeletons";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/configuracoes")({
   head: () => ({
@@ -59,6 +60,8 @@ function Config() {
   });
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
+
+  if (!org) return <FormSkeleton sections={3} />;
 
   return (
     <div className="p-4 sm:p-6 pb-24 sm:pb-6 max-w-4xl">

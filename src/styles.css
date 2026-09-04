@@ -281,6 +281,35 @@
   animation: alert-blink 1.4s ease-in-out infinite;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .animate-alert-blink { animation: none; }
+@keyframes shimmer-sweep {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
+
+@utility shimmer {
+  background-color: color-mix(in oklch, var(--muted) 70%, transparent);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklch, var(--foreground) 7%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+@utility animate-progress-slide {
+  animation: progress-slide 1.1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-alert-blink,
+  .shimmer,
+  .animate-progress-slide { animation: none; }
+}
+

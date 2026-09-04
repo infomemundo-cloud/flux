@@ -6,6 +6,7 @@ import { getDemanda, updateDemanda, addComment, deleteDemanda } from "@/lib/dema
 import { getOrgBySlug, listOperators } from "@/lib/orgs.functions";
 import { StateBadge, STATE_LABEL, PriorityBadge, formatRelative } from "@/components/demandas-ui";
 import { toast } from "sonner";
+import { DetailSkeleton } from "@/components/skeletons";
 import { friendlyError } from "@/lib/friendly-error";
 import {
   ArrowLeft, MessageCircle, GitBranch, User, AlertCircle, Send, Trash2, UserCheck,
@@ -132,7 +133,7 @@ function DemandaDetail() {
     onError: (e) => toast.error(friendlyError(e)),
   });
 
-  if (isLoading || !data) return <div className="p-6 text-sm text-muted-foreground">Carregando...</div>;
+  if (isLoading || !data) return <DetailSkeleton />;
   const d: any = data.demanda;
   const actors: Record<string, { id: string; name: string; email: string | null; role: string | null }> = (data as any).actors ?? {};
   const viewerId: string | undefined = (data as any).viewerId;
