@@ -9,31 +9,30 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SimularRouteImport } from './routes/simular'
-import { Route as AuthRouteImport } from './routes/auth'
-import { Route as AcompanharRouteImport } from './routes/acompanhar'
-import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ConviteTokenRouteImport } from './routes/convite.$token'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as AcompanharRouteImport } from './routes/acompanhar'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as SimularRouteImport } from './routes/simular'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
-import { Route as ApiPublicStatusTokenRouteImport } from './routes/api/public/status.$token'
-import { Route as ApiPublicIngestTokenRouteImport } from './routes/api/public/ingest.$token'
+import { Route as ConviteTokenRouteImport } from './routes/convite.$token'
 import { Route as AuthenticatedAppOSlugRouteImport } from './routes/_authenticated/app.o.$slug'
-import { Route as AuthenticatedAppOSlugFilaRouteImport } from './routes/_authenticated/app.o.$slug.fila'
-import { Route as AuthenticatedAppOSlugEquipeRouteImport } from './routes/_authenticated/app.o.$slug.equipe'
-import { Route as AuthenticatedAppOSlugDashboardRouteImport } from './routes/_authenticated/app.o.$slug.dashboard'
-import { Route as AuthenticatedAppOSlugConfiguracoesRouteImport } from './routes/_authenticated/app.o.$slug.configuracoes'
+import { Route as ApiPublicIngestTokenRouteImport } from './routes/api/public/ingest.$token'
+import { Route as ApiPublicStatusTokenRouteImport } from './routes/api/public/status.$token'
 import { Route as AuthenticatedAppOSlugAlertasRouteImport } from './routes/_authenticated/app.o.$slug.alertas'
+import { Route as AuthenticatedAppOSlugConfiguracoesRouteImport } from './routes/_authenticated/app.o.$slug.configuracoes'
+import { Route as AuthenticatedAppOSlugDashboardRouteImport } from './routes/_authenticated/app.o.$slug.dashboard'
+import { Route as AuthenticatedAppOSlugEquipeRouteImport } from './routes/_authenticated/app.o.$slug.equipe'
+import { Route as AuthenticatedAppOSlugFilaRouteImport } from './routes/_authenticated/app.o.$slug.fila'
 import { Route as AuthenticatedAppOSlugDemandasIdRouteImport } from './routes/_authenticated/app.o.$slug.demandas.$id'
 
-const SimularRoute = SimularRouteImport.update({
-  id: '/simular',
-  path: '/simular',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthRoute = AuthRouteImport.update({
-  id: '/auth',
-  path: '/auth',
+const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
+  id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AcompanharRoute = AcompanharRouteImport.update({
@@ -41,18 +40,14 @@ const AcompanharRoute = AcompanharRouteImport.update({
   path: '/acompanhar',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
-  id: '/_authenticated',
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ConviteTokenRoute = ConviteTokenRouteImport.update({
-  id: '/convite/$token',
-  path: '/convite/$token',
+const SimularRoute = SimularRouteImport.update({
+  id: '/simular',
+  path: '/simular',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
@@ -60,14 +55,9 @@ const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
   path: '/app',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const ApiPublicStatusTokenRoute = ApiPublicStatusTokenRouteImport.update({
-  id: '/api/public/status/$token',
-  path: '/api/public/status/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPublicIngestTokenRoute = ApiPublicIngestTokenRouteImport.update({
-  id: '/api/public/ingest/$token',
-  path: '/api/public/ingest/$token',
+const ConviteTokenRoute = ConviteTokenRouteImport.update({
+  id: '/convite/$token',
+  path: '/convite/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedAppOSlugRoute = AuthenticatedAppOSlugRouteImport.update({
@@ -75,22 +65,20 @@ const AuthenticatedAppOSlugRoute = AuthenticatedAppOSlugRouteImport.update({
   path: '/o/$slug',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
-const AuthenticatedAppOSlugFilaRoute =
-  AuthenticatedAppOSlugFilaRouteImport.update({
-    id: '/fila',
-    path: '/fila',
-    getParentRoute: () => AuthenticatedAppOSlugRoute,
-  } as any)
-const AuthenticatedAppOSlugEquipeRoute =
-  AuthenticatedAppOSlugEquipeRouteImport.update({
-    id: '/equipe',
-    path: '/equipe',
-    getParentRoute: () => AuthenticatedAppOSlugRoute,
-  } as any)
-const AuthenticatedAppOSlugDashboardRoute =
-  AuthenticatedAppOSlugDashboardRouteImport.update({
-    id: '/dashboard',
-    path: '/dashboard',
+const ApiPublicIngestTokenRoute = ApiPublicIngestTokenRouteImport.update({
+  id: '/api/public/ingest/$token',
+  path: '/api/public/ingest/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicStatusTokenRoute = ApiPublicStatusTokenRouteImport.update({
+  id: '/api/public/status/$token',
+  path: '/api/public/status/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedAppOSlugAlertasRoute =
+  AuthenticatedAppOSlugAlertasRouteImport.update({
+    id: '/alertas',
+    path: '/alertas',
     getParentRoute: () => AuthenticatedAppOSlugRoute,
   } as any)
 const AuthenticatedAppOSlugConfiguracoesRoute =
@@ -99,10 +87,22 @@ const AuthenticatedAppOSlugConfiguracoesRoute =
     path: '/configuracoes',
     getParentRoute: () => AuthenticatedAppOSlugRoute,
   } as any)
-const AuthenticatedAppOSlugAlertasRoute =
-  AuthenticatedAppOSlugAlertasRouteImport.update({
-    id: '/alertas',
-    path: '/alertas',
+const AuthenticatedAppOSlugDashboardRoute =
+  AuthenticatedAppOSlugDashboardRouteImport.update({
+    id: '/dashboard',
+    path: '/dashboard',
+    getParentRoute: () => AuthenticatedAppOSlugRoute,
+  } as any)
+const AuthenticatedAppOSlugEquipeRoute =
+  AuthenticatedAppOSlugEquipeRouteImport.update({
+    id: '/equipe',
+    path: '/equipe',
+    getParentRoute: () => AuthenticatedAppOSlugRoute,
+  } as any)
+const AuthenticatedAppOSlugFilaRoute =
+  AuthenticatedAppOSlugFilaRouteImport.update({
+    id: '/fila',
+    path: '/fila',
     getParentRoute: () => AuthenticatedAppOSlugRoute,
   } as any)
 const AuthenticatedAppOSlugDemandasIdRoute =
@@ -233,25 +233,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/simular': {
-      id: '/simular'
-      path: '/simular'
-      fullPath: '/simular'
-      preLoaderRoute: typeof SimularRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/acompanhar': {
-      id: '/acompanhar'
-      path: '/acompanhar'
-      fullPath: '/acompanhar'
-      preLoaderRoute: typeof AcompanharRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated': {
@@ -261,18 +247,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/acompanhar': {
+      id: '/acompanhar'
+      path: '/acompanhar'
+      fullPath: '/acompanhar'
+      preLoaderRoute: typeof AcompanharRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/convite/$token': {
-      id: '/convite/$token'
-      path: '/convite/$token'
-      fullPath: '/convite/$token'
-      preLoaderRoute: typeof ConviteTokenRouteImport
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/simular': {
+      id: '/simular'
+      path: '/simular'
+      fullPath: '/simular'
+      preLoaderRoute: typeof SimularRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/app': {
@@ -282,18 +275,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/api/public/status/$token': {
-      id: '/api/public/status/$token'
-      path: '/api/public/status/$token'
-      fullPath: '/api/public/status/$token'
-      preLoaderRoute: typeof ApiPublicStatusTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/ingest/$token': {
-      id: '/api/public/ingest/$token'
-      path: '/api/public/ingest/$token'
-      fullPath: '/api/public/ingest/$token'
-      preLoaderRoute: typeof ApiPublicIngestTokenRouteImport
+    '/convite/$token': {
+      id: '/convite/$token'
+      path: '/convite/$token'
+      fullPath: '/convite/$token'
+      preLoaderRoute: typeof ConviteTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/app/o/$slug': {
@@ -303,25 +289,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppOSlugRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
-    '/_authenticated/app/o/$slug/fila': {
-      id: '/_authenticated/app/o/$slug/fila'
-      path: '/fila'
-      fullPath: '/app/o/$slug/fila'
-      preLoaderRoute: typeof AuthenticatedAppOSlugFilaRouteImport
-      parentRoute: typeof AuthenticatedAppOSlugRoute
+    '/api/public/ingest/$token': {
+      id: '/api/public/ingest/$token'
+      path: '/api/public/ingest/$token'
+      fullPath: '/api/public/ingest/$token'
+      preLoaderRoute: typeof ApiPublicIngestTokenRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/app/o/$slug/equipe': {
-      id: '/_authenticated/app/o/$slug/equipe'
-      path: '/equipe'
-      fullPath: '/app/o/$slug/equipe'
-      preLoaderRoute: typeof AuthenticatedAppOSlugEquipeRouteImport
-      parentRoute: typeof AuthenticatedAppOSlugRoute
+    '/api/public/status/$token': {
+      id: '/api/public/status/$token'
+      path: '/api/public/status/$token'
+      fullPath: '/api/public/status/$token'
+      preLoaderRoute: typeof ApiPublicStatusTokenRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/app/o/$slug/dashboard': {
-      id: '/_authenticated/app/o/$slug/dashboard'
-      path: '/dashboard'
-      fullPath: '/app/o/$slug/dashboard'
-      preLoaderRoute: typeof AuthenticatedAppOSlugDashboardRouteImport
+    '/_authenticated/app/o/$slug/alertas': {
+      id: '/_authenticated/app/o/$slug/alertas'
+      path: '/alertas'
+      fullPath: '/app/o/$slug/alertas'
+      preLoaderRoute: typeof AuthenticatedAppOSlugAlertasRouteImport
       parentRoute: typeof AuthenticatedAppOSlugRoute
     }
     '/_authenticated/app/o/$slug/configuracoes': {
@@ -331,11 +317,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppOSlugConfiguracoesRouteImport
       parentRoute: typeof AuthenticatedAppOSlugRoute
     }
-    '/_authenticated/app/o/$slug/alertas': {
-      id: '/_authenticated/app/o/$slug/alertas'
-      path: '/alertas'
-      fullPath: '/app/o/$slug/alertas'
-      preLoaderRoute: typeof AuthenticatedAppOSlugAlertasRouteImport
+    '/_authenticated/app/o/$slug/dashboard': {
+      id: '/_authenticated/app/o/$slug/dashboard'
+      path: '/dashboard'
+      fullPath: '/app/o/$slug/dashboard'
+      preLoaderRoute: typeof AuthenticatedAppOSlugDashboardRouteImport
+      parentRoute: typeof AuthenticatedAppOSlugRoute
+    }
+    '/_authenticated/app/o/$slug/equipe': {
+      id: '/_authenticated/app/o/$slug/equipe'
+      path: '/equipe'
+      fullPath: '/app/o/$slug/equipe'
+      preLoaderRoute: typeof AuthenticatedAppOSlugEquipeRouteImport
+      parentRoute: typeof AuthenticatedAppOSlugRoute
+    }
+    '/_authenticated/app/o/$slug/fila': {
+      id: '/_authenticated/app/o/$slug/fila'
+      path: '/fila'
+      fullPath: '/app/o/$slug/fila'
+      preLoaderRoute: typeof AuthenticatedAppOSlugFilaRouteImport
       parentRoute: typeof AuthenticatedAppOSlugRoute
     }
     '/_authenticated/app/o/$slug/demandas/$id': {
