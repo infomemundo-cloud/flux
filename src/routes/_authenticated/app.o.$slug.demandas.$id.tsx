@@ -88,8 +88,11 @@ function DemandaDetail() {
   const deleteFn = useServerFn(deleteDemanda);
   const orgFn = useServerFn(getOrgBySlug);
   const qc = useQueryClient();
+  const waFn = useServerFn(sendWhatsAppMessage);
   const [comment, setComment] = useState("");
+  const [viaWhatsapp, setViaWhatsapp] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
 
   const { data: org } = useQuery({ queryKey: ["org", slug], queryFn: () => orgFn({ data: { slug } }) });
   const canDelete = org?.role === "owner" || org?.role === "admin";
