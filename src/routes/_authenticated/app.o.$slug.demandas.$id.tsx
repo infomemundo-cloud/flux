@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { getDemanda, updateDemanda, addComment, deleteDemanda } from "@/lib/demandas.functions";
+import { sendWhatsAppMessage } from "@/lib/whatsapp.functions";
+
 import { getOrgBySlug, listOperators } from "@/lib/orgs.functions";
 import { StateBadge, STATE_LABEL, PriorityBadge, formatRelative } from "@/components/demandas-ui";
 import { toast } from "sonner";
@@ -88,8 +90,11 @@ function DemandaDetail() {
   const deleteFn = useServerFn(deleteDemanda);
   const orgFn = useServerFn(getOrgBySlug);
   const qc = useQueryClient();
+  const waFn = useServerFn(sendWhatsAppMessage);
   const [comment, setComment] = useState("");
+  const [viaWhatsapp, setViaWhatsapp] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
 
   const { data: org } = useQuery({ queryKey: ["org", slug], queryFn: () => orgFn({ data: { slug } }) });
   const canDelete = org?.role === "owner" || org?.role === "admin";
@@ -118,10 +123,18 @@ function DemandaDetail() {
   });
 
   const send = useMutation({
-    mutationFn: () => commentFn({ data: { demandaId: id, orgId: data!.demanda.org_id, content: comment } }),
-    onSuccess: () => { setComment(""); qc.invalidateQueries({ queryKey: ["demanda", id] }); },
+    mutationFn: () =>
+      viaWhatsapp
+        ? waFn({ data: { demandId: id, messageText: comment, role: "agent" as const } })
+        : commentFn({ data: { demandaId: id, orgId: data!.demanda.org_id, content: comment } }),
+    onSuccess: (res: any) => {
+      setComment("");
+      qc.invalidateQueries({ queryKey: ["demanda", id] });
+      if (viaWhatsapp) toast.success(res?.message ?? "Mensagem enviada");
+    },
     onError: (e) => toast.error(friendlyError(e)),
   });
+
 
   const remove = useMutation({
     mutationFn: () => deleteFn({ data: { id } }),
@@ -241,9 +254,25 @@ function DemandaDetail() {
             })}
           </ul>
 
-          <form className="mt-5 flex gap-2" onSubmit={(ev) => { ev.preventDefault(); if (comment.trim()) send.mutate(); }}>
-            <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Adicionar comentário..."
+          {d.whatsapp_jid && (
+            <div className="mt-5 flex flex-wrap items-center gap-2 text-xs">
+              <button type="button" onClick={() => setViaWhatsapp(false)}
+                className={`rounded-full border px-3 py-1 font-semibold transition ${!viaWhatsapp ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-secondary"}`}>
+                Comentário interno
+              </button>
+              <button type="button" onClick={() => setViaWhatsapp(true)}
+                className={`rounded-full border px-3 py-1 font-semibold transition ${viaWhatsapp ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-secondary"}`}>
+                Responder no WhatsApp
+              </button>
+              <span className="text-muted-foreground">{d.whatsapp_jid.replace(/@.*$/, "")}</span>
+            </div>
+          )}
+
+          <form className="mt-3 flex gap-2" onSubmit={(ev) => { ev.preventDefault(); if (comment.trim()) send.mutate(); }}>
+            <input value={comment} onChange={(e) => setComment(e.target.value)}
+              placeholder={viaWhatsapp ? "Escreva a resposta que será enviada ao cliente..." : "Adicionar comentário..."}
               className="flex-1 min-w-0 h-10 px-3 rounded-lg border border-border bg-card text-sm placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40" />
+
             <button disabled={send.isPending} className="shrink-0 h-10 px-3.5 sm:px-4 rounded-lg bg-primary text-primary-foreground inline-flex items-center gap-2 text-sm font-semibold disabled:opacity-60 hover:opacity-90 transition">
               <Send className="h-4 w-4" /> <span className="hidden sm:inline">Enviar</span>
             </button>

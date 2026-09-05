@@ -203,6 +203,7 @@ export type Database = {
           assignee_id: string | null
           category: string | null
           channel_id: string | null
+          channel_type: Database["public"]["Enums"]["demanda_channel_type"]
           closed_at: string | null
           contact_id: string | null
           created_at: string
@@ -210,6 +211,8 @@ export type Database = {
           description: string | null
           due_at: string | null
           id: string
+          instance_name: string | null
+          last_message_id: string | null
           org_id: string
           priority: Database["public"]["Enums"]["demanda_priority"]
           protocol: string | null
@@ -217,11 +220,13 @@ export type Database = {
           state: Database["public"]["Enums"]["demanda_state"]
           title: string
           updated_at: string
+          whatsapp_jid: string | null
         }
         Insert: {
           assignee_id?: string | null
           category?: string | null
           channel_id?: string | null
+          channel_type?: Database["public"]["Enums"]["demanda_channel_type"]
           closed_at?: string | null
           contact_id?: string | null
           created_at?: string
@@ -229,6 +234,8 @@ export type Database = {
           description?: string | null
           due_at?: string | null
           id?: string
+          instance_name?: string | null
+          last_message_id?: string | null
           org_id: string
           priority?: Database["public"]["Enums"]["demanda_priority"]
           protocol?: string | null
@@ -236,11 +243,13 @@ export type Database = {
           state?: Database["public"]["Enums"]["demanda_state"]
           title: string
           updated_at?: string
+          whatsapp_jid?: string | null
         }
         Update: {
           assignee_id?: string | null
           category?: string | null
           channel_id?: string | null
+          channel_type?: Database["public"]["Enums"]["demanda_channel_type"]
           closed_at?: string | null
           contact_id?: string | null
           created_at?: string
@@ -248,6 +257,8 @@ export type Database = {
           description?: string | null
           due_at?: string | null
           id?: string
+          instance_name?: string | null
+          last_message_id?: string | null
           org_id?: string
           priority?: Database["public"]["Enums"]["demanda_priority"]
           protocol?: string | null
@@ -255,6 +266,7 @@ export type Database = {
           state?: Database["public"]["Enums"]["demanda_state"]
           title?: string
           updated_at?: string
+          whatsapp_jid?: string | null
         }
         Relationships: [
           {
@@ -443,6 +455,44 @@ export type Database = {
           },
         ]
       }
+      whatsapp_settings: {
+        Row: {
+          api_key: string | null
+          auto_reply_enabled: boolean
+          base_url: string | null
+          created_at: string
+          instance_name: string | null
+          org_id: string
+          updated_at: string
+        }
+        Insert: {
+          api_key?: string | null
+          auto_reply_enabled?: boolean
+          base_url?: string | null
+          created_at?: string
+          instance_name?: string | null
+          org_id: string
+          updated_at?: string
+        }
+        Update: {
+          api_key?: string | null
+          auto_reply_enabled?: boolean
+          base_url?: string | null
+          created_at?: string
+          instance_name?: string | null
+          org_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_settings_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -460,6 +510,7 @@ export type Database = {
         | "portal"
         | "api"
         | "manual"
+      demanda_channel_type: "simulation" | "evolution" | "whatsapp_official"
       demanda_priority: "baixa" | "media" | "alta" | "urgente"
       demanda_state:
         | "novo"
@@ -614,6 +665,7 @@ export const Constants = {
         "api",
         "manual",
       ],
+      demanda_channel_type: ["simulation", "evolution", "whatsapp_official"],
       demanda_priority: ["baixa", "media", "alta", "urgente"],
       demanda_state: [
         "novo",
