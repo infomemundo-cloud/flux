@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { getDemanda, updateDemanda, addComment, deleteDemanda } from "@/lib/demandas.functions";
+import { sendWhatsAppMessage } from "@/lib/whatsapp.functions";
+
 import { getOrgBySlug, listOperators } from "@/lib/orgs.functions";
 import { StateBadge, STATE_LABEL, PriorityBadge, formatRelative } from "@/components/demandas-ui";
 import { toast } from "sonner";
