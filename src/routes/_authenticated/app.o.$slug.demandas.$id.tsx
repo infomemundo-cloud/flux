@@ -254,9 +254,25 @@ function DemandaDetail() {
             })}
           </ul>
 
-          <form className="mt-5 flex gap-2" onSubmit={(ev) => { ev.preventDefault(); if (comment.trim()) send.mutate(); }}>
-            <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Adicionar comentário..."
+          {d.whatsapp_jid && (
+            <div className="mt-5 flex flex-wrap items-center gap-2 text-xs">
+              <button type="button" onClick={() => setViaWhatsapp(false)}
+                className={`rounded-full border px-3 py-1 font-semibold transition ${!viaWhatsapp ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-secondary"}`}>
+                Comentário interno
+              </button>
+              <button type="button" onClick={() => setViaWhatsapp(true)}
+                className={`rounded-full border px-3 py-1 font-semibold transition ${viaWhatsapp ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-secondary"}`}>
+                Responder no WhatsApp
+              </button>
+              <span className="text-muted-foreground">{d.whatsapp_jid.replace(/@.*$/, "")}</span>
+            </div>
+          )}
+
+          <form className="mt-3 flex gap-2" onSubmit={(ev) => { ev.preventDefault(); if (comment.trim()) send.mutate(); }}>
+            <input value={comment} onChange={(e) => setComment(e.target.value)}
+              placeholder={viaWhatsapp ? "Escreva a resposta que será enviada ao cliente..." : "Adicionar comentário..."}
               className="flex-1 min-w-0 h-10 px-3 rounded-lg border border-border bg-card text-sm placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40" />
+
             <button disabled={send.isPending} className="shrink-0 h-10 px-3.5 sm:px-4 rounded-lg bg-primary text-primary-foreground inline-flex items-center gap-2 text-sm font-semibold disabled:opacity-60 hover:opacity-90 transition">
               <Send className="h-4 w-4" /> <span className="hidden sm:inline">Enviar</span>
             </button>
