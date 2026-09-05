@@ -118,10 +118,18 @@ function DemandaDetail() {
   });
 
   const send = useMutation({
-    mutationFn: () => commentFn({ data: { demandaId: id, orgId: data!.demanda.org_id, content: comment } }),
-    onSuccess: () => { setComment(""); qc.invalidateQueries({ queryKey: ["demanda", id] }); },
+    mutationFn: () =>
+      viaWhatsapp
+        ? waFn({ data: { demandId: id, messageText: comment, role: "agent" as const } })
+        : commentFn({ data: { demandaId: id, orgId: data!.demanda.org_id, content: comment } }),
+    onSuccess: (res: any) => {
+      setComment("");
+      qc.invalidateQueries({ queryKey: ["demanda", id] });
+      if (viaWhatsapp) toast.success(res?.message ?? "Mensagem enviada");
+    },
     onError: (e) => toast.error(friendlyError(e)),
   });
+
 
   const remove = useMutation({
     mutationFn: () => deleteFn({ data: { id } }),
