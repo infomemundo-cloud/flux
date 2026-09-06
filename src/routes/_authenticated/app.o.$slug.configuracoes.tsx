@@ -4,12 +4,12 @@ import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { getOrgBySlug, listMembers } from "@/lib/orgs.functions";
 import { listWebhookTokens, createWebhookToken, deleteWebhookToken } from "@/lib/demandas.functions";
-import { getWhatsappSettings, saveWhatsappSettings, testWhatsappConnection } from "@/lib/whatsapp.functions";
+import { getWhatsappConnection, connectWhatsapp, disconnectWhatsapp, setWhatsappAutoReply } from "@/lib/whatsapp.functions";
 import { friendlyError } from "@/lib/friendly-error";
 import { SectionTitle, StatCard } from "@/components/section-ui";
 import { ThemeToggleInline } from "@/components/user-menu";
 import { toast } from "sonner";
-import { Copy, Trash2, Plus, Users, KeyRound, Webhook, Palette, Settings2, MessageCircle, PlugZap, Loader2 } from "lucide-react";
+import { Copy, Trash2, Plus, Users, KeyRound, Webhook, Palette, Settings2, MessageCircle, Loader2, QrCode, PowerOff, RefreshCw, X, Smartphone } from "lucide-react";
 import { useEffect } from "react";
 import { FormSkeleton } from "@/components/skeletons";
 
