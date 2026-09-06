@@ -141,42 +141,67 @@ function Config() {
   );
 }
 
-const INPUT_CLS =
-  "h-10 w-full rounded-lg border border-border bg-card px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
+const STATUS_META = {
+  connected: { label: "Conectado", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-500" },
+  connecting: { label: "Conectando", cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400", dot: "bg-amber-500 animate-pulse" },
+  disconnected: { label: "Desconectado", cls: "bg-destructive/10 text-destructive", dot: "bg-destructive" },
+} as const;
 
 function WhatsappSection({ orgId }: { orgId: string }) {
-  const getFn = useServerFn(getWhatsappSettings);
-  const saveFn = useServerFn(saveWhatsappSettings);
-  const testFn = useServerFn(testWhatsappConnection);
+  const getFn = useServerFn(getWhatsappConnection);
+  const connectFn = useServerFn(connectWhatsapp);
+  const disconnectFn = useServerFn(disconnectWhatsapp);
+  const autoFn = useServerFn(setWhatsappAutoReply);
   const qc = useQueryClient();
 
-  const { data: cfg, isLoading, error } = useQuery({
-    queryKey: ["whatsapp-settings", orgId],
+  const [qrOpen, setQrOpen] = useState(false);
+  const [qr, setQr] = useState<string | null>(null);
+  const [pairCode, setPairCode] = useState<string | null>(null);
+
+  const { data: conn, isLoading, error } = useQuery({
+    queryKey: ["whatsapp-connection", orgId],
     queryFn: () => getFn({ data: { orgId } }),
     retry: false,
+    refetchInterval: qrOpen ? 5000 : false,
   });
 
-  const [baseUrl, setBaseUrl] = useState("");
-  const [instance, setInstance] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [auto, setAuto] = useState(false);
+  const status = (conn?.status ?? "disconnected") as keyof typeof STATUS_META;
+  const meta = STATUS_META[status];
 
+  // Fecha o QR assim que a conexão é confirmada.
   useEffect(() => {
-    if (!cfg) return;
-    setBaseUrl(cfg.base_url);
-    setInstance(cfg.instance_name);
-    setAuto(cfg.auto_reply_enabled);
-  }, [cfg]);
+    if (qrOpen && status === "connected") {
+      setQrOpen(false);
+      setQr(null);
+      toast.success("WhatsApp conectado!");
+    }
+  }, [status, qrOpen]);
 
-  const save = useMutation({
-    mutationFn: () => saveFn({ data: { orgId, base_url: baseUrl, instance_name: instance, api_key: apiKey || undefined, auto_reply_enabled: auto } }),
-    onSuccess: () => { setApiKey(""); qc.invalidateQueries({ queryKey: ["whatsapp-settings", orgId] }); toast.success("Integração salva"); },
+  const connect = useMutation({
+    mutationFn: () => connectFn({ data: { orgId } }),
+    onSuccess: (r: any) => {
+      setQr(r?.qr ?? null);
+      setPairCode(r?.code ?? null);
+      if (r?.status === "connected") toast.success(r.message);
+      else setQrOpen(true);
+      qc.invalidateQueries({ queryKey: ["whatsapp-connection", orgId] });
+    },
     onError: (e) => toast.error(friendlyError(e)),
   });
 
-  const test = useMutation({
-    mutationFn: () => testFn({ data: { orgId } }),
-    onSuccess: (r: any) => (r?.ok ? toast.success(r.message) : toast.error(r?.message ?? "Falha no teste")),
+  const disconnect = useMutation({
+    mutationFn: () => disconnectFn({ data: { orgId, deleteInstance: true } }),
+    onSuccess: () => {
+      setQrOpen(false); setQr(null); setPairCode(null);
+      qc.invalidateQueries({ queryKey: ["whatsapp-connection", orgId] });
+      toast.success("WhatsApp desconectado");
+    },
+    onError: (e) => toast.error(friendlyError(e)),
+  });
+
+  const auto = useMutation({
+    mutationFn: (enabled: boolean) => autoFn({ data: { orgId, enabled } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["whatsapp-connection", orgId] }),
     onError: (e) => toast.error(friendlyError(e)),
   });
 
@@ -184,51 +209,107 @@ function WhatsappSection({ orgId }: { orgId: string }) {
 
   return (
     <section className="mt-8">
-      <SectionTitle icon={MessageCircle} title="Integração WhatsApp" hint="Conecte seu WhatsApp para receber e responder mensagens direto nas demandas." />
+      <SectionTitle icon={MessageCircle} title="Integração WhatsApp" hint="Conecte o WhatsApp desta organização lendo um QR Code. As mensagens entram e saem apenas por aqui." />
       {isLoading ? (
         <FormSkeleton sections={1} />
       ) : (
-        <form className="card-elevated space-y-4 p-4" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold text-muted-foreground">Endereço do serviço</span>
-              <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.evolution.com" className={INPUT_CLS} />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold text-muted-foreground">Nome da instância</span>
-              <input value={instance} onChange={(e) => setInstance(e.target.value)} placeholder="minha-instancia" className={INPUT_CLS} />
-            </label>
-            <label className="block sm:col-span-2">
-              <span className="mb-1 block text-xs font-semibold text-muted-foreground">
-                Chave de acesso {cfg?.has_api_key && <span className="font-normal">(já salva — preencha só para trocar)</span>}
+        <div className="card-elevated space-y-4 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                <Smartphone className="h-5 w-5" strokeWidth={2.2} />
               </span>
-              <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} type="password" autoComplete="off"
-                placeholder={cfg?.has_api_key ? "••••••••" : "Chave global / token da instância"} className={INPUT_CLS} />
-            </label>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${meta.cls}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} /> {meta.label}
+                  </span>
+                </div>
+                <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {status === "connected" && conn?.connected_number
+                    ? `Número ${conn.connected_number}`
+                    : conn?.service_ready
+                      ? "Uma conexão exclusiva desta organização."
+                      : "Serviço de WhatsApp indisponível no momento."}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {status !== "connected" && (
+                <button type="button" disabled={connect.isPending || !conn?.service_ready} onClick={() => connect.mutate()}
+                  className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-60">
+                  {connect.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />}
+                  Gerar QR Code / Conectar WhatsApp
+                </button>
+              )}
+              {(status !== "disconnected" || conn?.instance_name) && (
+                <button type="button" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}
+                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-destructive/40 px-4 text-sm font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-60">
+                  {disconnect.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <PowerOff className="h-4 w-4" />}
+                  Desconectar / Excluir instância
+                </button>
+              )}
+            </div>
           </div>
 
           <label className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
             <span className="min-w-0">
-              <span className="block text-sm font-semibold">Integração ativa / resposta automática por IA</span>
+              <span className="block text-sm font-semibold">Resposta automática por IA</span>
               <span className="block text-xs text-muted-foreground">Quando ligado, o atendimento pode responder automaticamente.</span>
             </span>
-            <button type="button" role="switch" aria-checked={auto} aria-label="Integração ativa" onClick={() => setAuto((v) => !v)}
-              className={`relative h-6 w-11 shrink-0 rounded-full transition ${auto ? "bg-primary" : "bg-secondary"}`}>
-              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-card shadow transition-all ${auto ? "left-[22px]" : "left-0.5"}`} />
+            <button type="button" role="switch" aria-checked={!!conn?.auto_reply_enabled} aria-label="Resposta automática por IA"
+              onClick={() => auto.mutate(!conn?.auto_reply_enabled)}
+              className={`relative h-6 w-11 shrink-0 rounded-full transition ${conn?.auto_reply_enabled ? "bg-primary" : "bg-secondary"}`}>
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-card shadow transition-all ${conn?.auto_reply_enabled ? "left-[22px]" : "left-0.5"}`} />
             </button>
           </label>
 
-          <div className="flex flex-wrap gap-2">
-            <button disabled={save.isPending}
-              className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-60">
-              Salvar
-            </button>
-            <button type="button" disabled={test.isPending} onClick={() => test.mutate()}
-              className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-4 text-sm font-semibold transition hover:bg-secondary disabled:opacity-60">
-              {test.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlugZap className="h-4 w-4" />} Testar conexão
+          {conn?.webhook_url && (
+            <div className="rounded-lg bg-secondary/50 p-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Endereço de entrada configurado automaticamente</div>
+              <code className="mt-1 block break-all text-xs">{conn.webhook_url}</code>
+            </div>
+          )}
+        </div>
+      )}
+
+      {qrOpen && (
+        <div role="dialog" aria-modal="true" aria-label="Conectar WhatsApp"
+          className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold">Conectar WhatsApp</h3>
+                <p className="text-xs text-muted-foreground">No WhatsApp: Aparelhos conectados → Conectar aparelho.</p>
+              </div>
+              <button type="button" aria-label="Fechar" onClick={() => setQrOpen(false)} className="rounded-md p-1.5 hover:bg-secondary">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 grid place-items-center rounded-xl bg-white p-3">
+              {qr ? (
+                <img src={qr} alt="QR Code para conectar o WhatsApp" className="h-56 w-56" />
+              ) : (
+                <div className="grid h-56 w-56 place-items-center text-sm text-muted-foreground">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              )}
+            </div>
+
+            {pairCode && (
+              <div className="mt-3 text-center text-xs text-muted-foreground">
+                Código de pareamento: <code className="font-bold text-foreground">{pairCode}</code>
+              </div>
+            )}
+
+            <button type="button" disabled={connect.isPending} onClick={() => connect.mutate()}
+              className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-border text-sm font-semibold transition hover:bg-secondary disabled:opacity-60">
+              {connect.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Gerar novo QR Code
             </button>
           </div>
-        </form>
+        </div>
       )}
     </section>
   );
