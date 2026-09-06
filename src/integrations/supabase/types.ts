@@ -460,28 +460,40 @@ export type Database = {
           api_key: string | null
           auto_reply_enabled: boolean
           base_url: string | null
+          connected_at: string | null
+          connected_number: string | null
+          connection_status: string
           created_at: string
           instance_name: string | null
           org_id: string
           updated_at: string
+          use_master_credentials: boolean
         }
         Insert: {
           api_key?: string | null
           auto_reply_enabled?: boolean
           base_url?: string | null
+          connected_at?: string | null
+          connected_number?: string | null
+          connection_status?: string
           created_at?: string
           instance_name?: string | null
           org_id: string
           updated_at?: string
+          use_master_credentials?: boolean
         }
         Update: {
           api_key?: string | null
           auto_reply_enabled?: boolean
           base_url?: string | null
+          connected_at?: string | null
+          connected_number?: string | null
+          connection_status?: string
           created_at?: string
           instance_name?: string | null
           org_id?: string
           updated_at?: string
+          use_master_credentials?: boolean
         }
         Relationships: [
           {
