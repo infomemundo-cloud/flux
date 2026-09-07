@@ -31,3 +31,5 @@ dist-ssr
 *.sln
 *.sw?
 node_modules\n.env\n.next\ndist
+.env
+supabase/.temp/
