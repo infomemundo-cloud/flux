@@ -32,4 +32,9 @@ dist-ssr
 *.sw?
 node_modules\n.env\n.next\ndist
 .env
-supabase/.temp/
+
+# Supabase
+supabase/
+
+# public
+supabase/
