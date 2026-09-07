@@ -1,1 +1,0 @@
-revoke all on function public.guard_ai_demanda_state() from public;
