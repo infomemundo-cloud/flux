@@ -10,15 +10,22 @@ export const listMyOrgs = createServerFn({ method: "GET" })
       .select("role, organizations:org_id(id, name, slug, created_at)")
       .eq("user_id", context.userId);
     if (error) throw new Error(error.message);
-    return (data ?? []).map((m: any) => ({
-      role: m.role as string,
-      org: m.organizations,
-    })).filter((x) => x.org);
+    return (data ?? [])
+      .map((m: any) => ({
+        role: m.role as string,
+        org: m.organizations,
+      }))
+      .filter((x) => x.org);
   });
 
 const slugify = (s: string) =>
-  s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 40) || "org";
+  s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 40) || "org";
 
 export const createOrg = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -28,7 +35,11 @@ export const createOrg = createServerFn({ method: "POST" })
     let slug = base;
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     for (let i = 0; i < 8; i++) {
-      const { data: existing } = await supabaseAdmin.from("organizations").select("id").eq("slug", slug).maybeSingle();
+      const { data: existing } = await supabaseAdmin
+        .from("organizations")
+        .select("id")
+        .eq("slug", slug)
+        .maybeSingle();
       if (!existing) break;
       slug = `${base}-${Math.random().toString(36).slice(2, 6)}`;
     }
@@ -38,10 +49,7 @@ export const createOrg = createServerFn({ method: "POST" })
       .select("id, name, slug")
       .single();
     if (error) throw new Error(error.message);
-    const { error: memErr } = await supabaseAdmin
-      .from("memberships")
-      .insert({ org_id: org.id, user_id: context.userId, role: "owner" });
-    if (memErr) throw new Error(memErr.message);
+
     return org;
   });
 
@@ -50,11 +58,18 @@ export const getOrgBySlug = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => z.object({ slug: z.string() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: org, error } = await context.supabase
-      .from("organizations").select("id, name, slug").eq("slug", data.slug).maybeSingle();
+      .from("organizations")
+      .select("id, name, slug")
+      .eq("slug", data.slug)
+      .maybeSingle();
     if (error) throw new Error(error.message);
     if (!org) throw new Error("Organização não encontrada");
     const { data: mem } = await context.supabase
-      .from("memberships").select("role").eq("org_id", org.id).eq("user_id", context.userId).maybeSingle();
+      .from("memberships")
+      .select("role")
+      .eq("org_id", org.id)
+      .eq("user_id", context.userId)
+      .maybeSingle();
     if (!mem) throw new Error("Sem acesso");
     return { ...org, role: mem.role as string, userId: context.userId };
   });

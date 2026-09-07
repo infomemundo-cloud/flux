@@ -1,4 +1,4 @@
-import { CalendarClock, Hash, MessageCircle, User } from "lucide-react";
+import { CalendarClock, Hash, MessageCircle, User, UserCheck } from "lucide-react";
 
 export const STATE_LABEL: Record<string, string> = {
   novo: "Novo",
@@ -143,6 +143,25 @@ export function UrgentTag() {
   return (
     <span className="inline-flex items-center gap-1 text-[11px] font-extrabold uppercase tracking-wider text-destructive">
       URGENTE
+    </span>
+  );
+}
+
+/** Responsável da demanda com fallback explícito. */
+export function AssigneeLine({
+  assignee,
+}: {
+  assignee?: { id: string; name: string } | null;
+}) {
+  const name = assignee?.name ?? null;
+  return (
+    <span className="inline-flex items-center gap-1.5 min-w-0 text-xs text-muted-foreground">
+      <UserCheck className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} />
+      {name ? (
+        <span className="truncate font-medium text-foreground/80">{name}</span>
+      ) : (
+        <span className="truncate italic text-muted-foreground/70">Sem responsável</span>
+      )}
     </span>
   );
 }

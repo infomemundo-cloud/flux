@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/auth")({
@@ -52,9 +51,17 @@ function AuthPage() {
   }
 
   async function handleGoogle() {
-    const res = await lovable.auth.signInWithOAuth("google", { redirect_uri: `${window.location.origin}/auth` });
-    if (res.error) toast.error(res.error.message ?? "Erro Google");
-    else if (!res.redirected) navigate({ to: safeRedirect() });
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth`,
+        },
+      });
+      if (error) throw error;
+    } catch (err: any) {
+      toast.error(err.message ?? "Erro ao conectar com Google");
+    }
   }
 
   function safeRedirect(): string {

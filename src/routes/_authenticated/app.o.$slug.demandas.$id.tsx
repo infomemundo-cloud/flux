@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { DetailSkeleton } from "@/components/skeletons";
 import { friendlyError } from "@/lib/friendly-error";
 import {
-  ArrowLeft, MessageCircle, GitBranch, User, AlertCircle, Send, Trash2, UserCheck,
+  ArrowLeft, MessageCircle, GitBranch, AlertCircle, Send, Trash2, UserCheck,
   Flag, CalendarClock, UserCog, Contact as ContactIcon, Activity, ShieldAlert, Circle,
 } from "lucide-react";
 
@@ -186,7 +186,20 @@ function DemandaDetail() {
 
               // Eventos de sistema: linha do tempo fina, sem cartão.
               if (!isClient && !isComment) {
-                const who = <span className="font-semibold text-foreground/80">{nameOf(e.actor_id, e.kind === "created" ? "Entrada externa" : "Sistema")}</span>;
+                // Fallback semântico por tipo: "Sistema" apenas para eventos sem actor real.
+                const fallbackByKind: Record<string, string> = {
+                  created: "Entrada externa",
+                  state_changed: "Automação",
+                  priority_changed: "Automação",
+                  assigned: "Atribuição automática",
+                };
+                const fallback = fallbackByKind[e.kind] ?? "Sistema";
+                const who = (
+                  <span className="font-semibold text-foreground/80">
+                    {nameOf(e.actor_id, fallback)}
+                  </span>
+                );
+
                 if (e.kind === "state_changed")
                   return (
                     <SystemLine key={e.id} icon={GitBranch} when={when}>
@@ -208,8 +221,11 @@ function DemandaDetail() {
                   );
                 if (e.kind === "assigned")
                   return (
-                    <SystemLine key={e.id} icon={User} when={when}>
-                      {who} definiu o responsável: <b className="text-foreground/80">{e.to_value ? nameOf(e.to_value) : "sem responsável"}</b>
+                    <SystemLine key={e.id} icon={UserCheck} when={when}>
+                      {who} atribuiu para{" "}
+                      <b className="text-foreground/80">
+                        {e.to_value ? nameOf(e.to_value, "usuário removido") : "sem responsável"}
+                      </b>
                     </SystemLine>
                   );
                 return (

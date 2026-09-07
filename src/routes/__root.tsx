@@ -6,11 +6,11 @@ import {
   useRouter,
   HeadContent,
   Scripts,
+  type ErrorComponentProps,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
-import { reportLovableError } from "../lib/lovable-error-reporting";
 import { supabase } from "@/integrations/supabase/client";
 import { Toaster } from "sonner";
 import { ThemeProvider } from "@/lib/theme";
@@ -37,12 +37,9 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+function ErrorComponent({ error, reset }: ErrorComponentProps) {
   console.error(error);
   const router = useRouter();
-  useEffect(() => {
-    reportLovableError(error, { boundary: "tanstack_root_error_component" });
-  }, [error]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -81,9 +78,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Fluxo — Motor de Demandas" },
-      { name: "description", content: "Transforme conversas em demandas acompanháveis: estados, SLA, responsáveis, histórico. Nada importante é esquecido." },
+      {
+        name: "description",
+        content:
+          "Transforme conversas em demandas acompanháveis: estados, SLA, responsáveis, histórico. Nada importante é esquecido.",
+      },
       { property: "og:title", content: "Fluxo — Motor de Demandas" },
-      { property: "og:description", content: "Transforme conversas em demandas acompanháveis até a resolução." },
+      {
+        property: "og:description",
+        content: "Transforme conversas em demandas acompanháveis até a resolução.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
