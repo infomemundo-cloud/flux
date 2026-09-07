@@ -15,6 +15,7 @@ dist-ssr
 .tanstack/**
 .nitro
 *.local
+.next
 
 # Wrangler / Cloudflare
 .wrangler/
@@ -30,11 +31,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-node_modules\n.env\n.next\ndist
+
+# Secrets
 .env
 
-# Supabase
-supabase/
-
-# public
+# Ignorar Supabase
 supabase/
