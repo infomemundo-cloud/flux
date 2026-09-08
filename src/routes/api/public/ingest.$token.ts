@@ -35,6 +35,7 @@ const EvolutionPayload = z.object({
       remoteJid: z.string().max(180),
       fromMe: z.boolean().optional(),
       id: z.string().max(180).optional(),
+      participant: z.string().max(180).optional(), // ID do autor caso seja mensagem em grupo
     }),
     pushName: z.string().max(120).nullish(),
     message: z
@@ -54,7 +55,6 @@ function looksLikeEvolution(payload: any): boolean {
   );
 }
 
-/** Converte o corpo bruto do webhook (Evolution ou simulação) numa demanda normalizada. */
 function normalize(payload: unknown):
   | { ok: true; value: Normalized }
   | { ok: false; status: number; body: unknown } {
@@ -64,21 +64,17 @@ function normalize(payload: unknown):
       ? raw.event.replace(/_/g, ".").toLowerCase()
       : "";
 
-    // 1. Se for um evento conhecido da Evolution que NÃO é mensagem (ex: chats.update, presence.update), ignora com status 200
     if (eventName && eventName !== "messages.upsert") {
       return { ok: false, status: 200, body: { ok: true, ignored: `event_${eventName}` } };
     }
 
-    // 2. Valida o payload de mensagem
     const parsed = EvolutionPayload.safeParse(payload);
     if (!parsed.success) {
-      // Se não passar na estrutura da mensagem mas parecer ser da Evolution, responde 200 para não travar a fila
       return { ok: false, status: 200, body: { ok: true, ignored: "non_message_or_invalid_structure" } };
     }
 
     const d = parsed.data.data;
 
-    // Ignora mensagens enviadas por nós mesmos para evitar loop
     if (d.key.fromMe === true) {
       return { ok: false, status: 200, body: { ok: true, ignored: "from_me" } };
     }
@@ -89,16 +85,27 @@ function normalize(payload: unknown):
     }
 
     const jid = d.key.remoteJid;
+    const isGroup = jid.endsWith("@g.us");
+
+    // Formata o telefone/ID limpo
     const phone = jid
       .replace(/@s\.whatsapp\.net$/i, "")
       .replace(/@c\.us$/i, "")
       .replace(/@g\.us$/i, "");
 
+    // Para grupos, monta um nome legível indicando o autor da mensagem no grupo
+    const senderName = d.pushName ?? (isGroup ? "Participante de Grupo" : "Contato WhatsApp");
+    const contactName = isGroup ? `[Grupo] ${senderName}` : senderName;
+
     return {
       ok: true,
       value: {
         message: text.slice(0, 4000),
-        contact: { name: d.pushName ?? undefined, phone, external_id: jid },
+        contact: {
+          name: contactName,
+          phone,
+          external_id: jid, // Identificador único garantido para grupos e contatos individuais
+        },
         channel_kind: "whatsapp",
         channel_type: "evolution",
         whatsapp_jid: jid,
@@ -138,7 +145,6 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           .eq("token", params.token)
           .maybeSingle();
 
-        if (te) console.error("[ingest] token lookup failed", te);
         if (te || !tok) return json({ error: "invalid_token" }, 401);
 
         let payload: unknown;
@@ -152,20 +158,14 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
         if (!norm.ok) return json(norm.body, norm.status);
         const b = norm.value;
 
-        // Upsert contact por phone/external_id/email
+        // 1. Busca ou cria o contato associado (grupo ou pessoa) pelo external_id
         let contactId: string | null = null;
-        if (b.contact?.phone || b.contact?.external_id || b.contact?.email) {
-          const filter = b.contact.external_id
-            ? { external_id: b.contact.external_id }
-            : b.contact.phone
-            ? { phone: b.contact.phone }
-            : { email: b.contact.email! };
-
+        if (b.contact?.external_id || b.contact?.phone) {
           const { data: found } = await supabaseAdmin
             .from("contacts")
             .select("id")
             .eq("org_id", tok.org_id)
-            .match(filter)
+            .or(`external_id.eq.${b.contact.external_id},phone.eq.${b.contact.phone}`)
             .maybeSingle();
 
           if (found) {
@@ -187,7 +187,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           }
         }
 
-        // Reopen: se já existir demanda aberta para o mesmo contato, vincula a mensagem
+        // 2. Tenta encontrar uma demanda aberta para este contato
         let demandaId: string | null = null;
         let protocol: string | null = null;
 
@@ -197,7 +197,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             .select("id")
             .eq("org_id", tok.org_id)
             .eq("contact_id", contactId)
-            .in("state", ["novo", "em_analise", "aguardando_cliente"])
+            .in("state", ["novo", "em_analise", "aguardando_cliente"]) // APENAS ESTADOS ABERTOS
             .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
@@ -205,6 +205,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           if (open) demandaId = open.id;
         }
 
+        // 3. Se a demanda anterior já estava 'Concluído' ou 'Cancelado' (não achou demanda aberta), CRIA UMA NOVA DEMANDA
         if (!demandaId) {
           const title = b.title ?? b.message.slice(0, 80);
           const { data: dem, error: de } = await supabaseAdmin
@@ -232,6 +233,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           demandaId = dem.id;
           protocol = dem.protocol as string | null;
         } else {
+          // Atualiza os metadados na demanda existente
           const patch: Record<string, unknown> = { last_message_id: b.message_id ?? null };
           if (b.whatsapp_jid) {
             patch["whatsapp_jid"] = b.whatsapp_jid;
@@ -251,6 +253,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           protocol = (p?.protocol as string | null) ?? null;
         }
 
+        // 4. Registra a nova mensagem recebida no histórico de eventos
         await supabaseAdmin.from("demanda_events").insert({
           org_id: tok.org_id,
           demanda_id: demandaId,
