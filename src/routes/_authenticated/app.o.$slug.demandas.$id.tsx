@@ -12,7 +12,7 @@ import { DetailSkeleton } from "@/components/skeletons";
 import { friendlyError } from "@/lib/friendly-error";
 import {
   ArrowLeft, MessageCircle, GitBranch, AlertCircle, Send, Trash2, UserCheck,
-  Flag, CalendarClock, UserCog, Contact as ContactIcon, Activity, ShieldAlert, Circle,
+  Flag, CalendarClock, UserCog, Contact as ContactIcon, Activity, ShieldAlert, Circle, CheckCircle2,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/demandas/$id")({
@@ -95,7 +95,6 @@ function DemandaDetail() {
   const [viaWhatsapp, setViaWhatsapp] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-
   const { data: org } = useQuery({ queryKey: ["org", slug], queryFn: () => orgFn({ data: { slug } }) });
   const canDelete = org?.role === "owner" || org?.role === "admin";
   const isManager = !!org && MANAGER_ROLES.has(org.role);
@@ -112,9 +111,6 @@ function DemandaDetail() {
     queryFn: () => getFn({ data: { id } }),
     refetchInterval: 8000,
   });
-
-  // O canal em tempo real da organização (layout) já invalida ["demanda", id];
-  // o refetchInterval acima é a rede de segurança caso o websocket caia.
 
   const update = useMutation({
     mutationFn: (patch: any) => updateFn({ data: { id, ...patch } }),
@@ -134,7 +130,6 @@ function DemandaDetail() {
     },
     onError: (e) => toast.error(friendlyError(e)),
   });
-
 
   const remove = useMutation({
     mutationFn: () => deleteFn({ data: { id } }),
@@ -181,12 +176,13 @@ function DemandaDetail() {
           <ul className="mt-3 space-y-1">
             {data.events.map((e: any) => {
               const isClient = e.kind === "message_in";
+              const isOutgoing = e.kind === "message_out";
               const isComment = e.kind === "commented";
+              const isChatMessage = isClient || isOutgoing || isComment;
               const when = formatRelative(e.created_at);
 
               // Eventos de sistema: linha do tempo fina, sem cartão.
-              if (!isClient && !isComment) {
-                // Fallback semântico por tipo: "Sistema" apenas para eventos sem actor real.
+              if (!isChatMessage) {
                 const fallbackByKind: Record<string, string> = {
                   created: "Entrada externa",
                   state_changed: "Automação",
@@ -235,10 +231,16 @@ function DemandaDetail() {
                 );
               }
 
-              // Mensagens: cartões estilo chat com contraste por autor.
-              const author = isClient ? (d.contacts?.name ?? "Cliente") : nameOf(e.actor_id);
+              // Mensagens (message_in, message_out, commented): cartões estilo chat
+              const author = isClient ? (d.contacts?.name ?? "Cliente") : nameOf(e.actor_id, "Atendente");
               const authorRole = isClient ? "Cliente" : roleOf(e.actor_id);
               const isAI = actorOf(e.actor_id)?.role === "agente_ia";
+
+              const messageLabel = isClient
+                ? "mensagem recebida"
+                : isOutgoing
+                ? "resposta enviada"
+                : "comentário";
 
               return (
                 <li key={e.id} className={`flex gap-3 pt-2 ${isClient ? "" : "sm:pl-8"}`}>
@@ -247,7 +249,9 @@ function DemandaDetail() {
                     className={`min-w-0 flex-1 rounded-xl px-3.5 py-2.5 ${
                       isClient
                         ? "border border-border border-l-[3px] border-l-[var(--pill-green-fg)] bg-card shadow-[var(--shadow-card)]"
-                        : "border border-primary/15 bg-primary/[0.05]"
+                        : isOutgoing
+                        ? "border border-primary/20 border-l-[3px] border-l-primary bg-primary/[0.04]"
+                        : "border border-primary/15 bg-primary/[0.02]"
                     }`}
                   >
                     <div className="flex flex-wrap items-center gap-x-1.5 text-xs">
@@ -257,8 +261,8 @@ function DemandaDetail() {
                           {authorRole}
                         </span>
                       )}
-                      <span className="text-muted-foreground">
-                        · <MessageCircle className="inline h-3 w-3 -mt-0.5" /> {isClient ? "mensagem recebida" : "comentário"} · {when}
+                      <span className="text-muted-foreground inline-flex items-center gap-1">
+                        · {isOutgoing ? <CheckCircle2 className="h-3 w-3 text-primary" /> : <MessageCircle className="h-3 w-3" />} {messageLabel} · {when}
                       </span>
                     </div>
                     {e.content && (
