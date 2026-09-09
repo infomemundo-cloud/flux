@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { ListSkeleton } from "@/components/skeletons";
 import { listDemandas, createDemanda } from "@/lib/demandas.functions";
 import { getOrgBySlug } from "@/lib/orgs.functions";
@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { friendlyError } from "@/lib/friendly-error";
 import { Plus, Search, X, ChevronRight, Clock } from "lucide-react";
 import { StateBadge, PriorityBadge, formatRelative, FilterTag, ProtocolChip, ContactLine, DueChip, UrgentTag, AssigneeLine } from "@/components/demandas-ui";
+import { useOrgRealtime } from "@/hooks/use-org-realtime";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/fila")({
   head: () => ({ meta: [{ title: "Fila — Fluxo" }] }),
@@ -26,6 +27,7 @@ const STATES = [
 
 function FilaPage() {
   const { slug } = useParams({ from: "/_authenticated/app/o/$slug/fila" });
+  const queryClient = useQueryClient();
   const orgFn = useServerFn(getOrgBySlug);
   const { data: org } = useQuery({ queryKey: ["org", slug], queryFn: () => orgFn({ data: { slug } }) });
 
@@ -33,6 +35,17 @@ function FilaPage() {
   const [state, setState] = useState<string | undefined>();
   const [search, setSearch] = useState("");
   const [showNew, setShowNew] = useState(false);
+
+  // Callback estável para não reiniciar a assinatura do Supabase Realtime a cada render
+  const handleNewDemanda = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["demandas"] });
+  }, [queryClient]);
+
+  // Escuta os eventos em tempo real para a organização atual
+  useOrgRealtime({
+    orgId: org?.id,
+    onNewDemanda: handleNewDemanda,
+  });
 
   const { data: result, isLoading } = useQuery({
     queryKey: ["demandas", org?.id, state, search],
