@@ -41,7 +41,7 @@ export const Route = createFileRoute("/api/public/status/$token")({
           .from("demanda_events")
           .select("kind, from_value, to_value, created_at")
           .eq("demanda_id", dem.id)
-          .in("kind", ["created", "state_changed", "message_in", "closed"])
+          .in("kind", ["created", "state_changed", "message_in", "message_out", "closed"])
           .order("created_at");
 
         return json({

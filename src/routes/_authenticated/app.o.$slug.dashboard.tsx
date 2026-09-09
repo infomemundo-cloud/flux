@@ -212,10 +212,11 @@ function TaskColumns({
     return { assigneeId: scope };
   }, [scope, currentUserId]);
 
-  const { data: rows } = useQuery({
+  const { data: result } = useQuery({
     queryKey: ["tasks", orgId, scope],
     queryFn: () => listFn({ data: { orgId, ...scopeArg } as any }),
   });
+  const rows = result?.rows;
 
   const byState = useMemo(() => {
     const m: Record<string, any[]> = { novo: [], em_analise: [], aguardando_cliente: [], aguardando_revisao_humana: [] };
