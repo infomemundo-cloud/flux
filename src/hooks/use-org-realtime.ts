@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -8,25 +8,22 @@ type Options = {
   onNewDemanda?: (row: { id?: string; title?: string; protocol?: string }) => void;
 };
 
+/**
+ * Assina em tempo real tudo que muda dentro da organização (demandas + histórico)
+ * e invalida os caches das telas: fila, detalhe, painel e alertas.
+ * Um único canal por org atende todas as páginas filhas do layout.
+ */
 export function useOrgRealtime({ orgId, onNewDemanda }: Options) {
   const qc = useQueryClient();
 
-  // Guarda o callback em um Ref para não reiniciar o useEffect caso a função mude no componente
-  const onNewDemandaRef = useRef(onNewDemanda);
   useEffect(() => {
-    onNewDemandaRef.current = onNewDemanda;
-  }, [onNewDemanda]);
-
-  useEffect(() => {
-    // Garante que o WebSocket só seja criado no navegador e se houver orgId
-    if (typeof window === "undefined" || !orgId) return;
+    if (!orgId) return;
 
     const refreshLists = () => {
       qc.invalidateQueries({ queryKey: ["demandas"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       qc.invalidateQueries({ queryKey: ["alertas"] });
     };
-
     const refreshDemanda = (id?: string | null) => {
       if (id) qc.invalidateQueries({ queryKey: ["demanda", id] });
       else qc.invalidateQueries({ queryKey: ["demanda"] });
@@ -41,9 +38,7 @@ export function useOrgRealtime({ orgId, onNewDemanda }: Options) {
           const row = (payload.new ?? payload.old) as { id?: string; title?: string; protocol?: string };
           refreshLists();
           refreshDemanda(row?.id);
-          if (payload.eventType === "INSERT") {
-            onNewDemandaRef.current?.(row ?? {});
-          }
+          if (payload.eventType === "INSERT") onNewDemanda?.(row ?? {});
         },
       )
       .on(
@@ -60,5 +55,5 @@ export function useOrgRealtime({ orgId, onNewDemanda }: Options) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [orgId, qc]); // Removido onNewDemanda da array de dependências
+  }, [orgId, qc, onNewDemanda]);
 }

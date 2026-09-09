@@ -35,7 +35,7 @@ const EvolutionPayload = z.object({
       remoteJid: z.string().max(180),
       fromMe: z.boolean().optional(),
       id: z.string().max(180).optional(),
-      participant: z.string().max(180).optional(),
+      participant: z.string().max(180).optional(), // ID do autor caso seja mensagem em grupo
     }),
     pushName: z.string().max(120).nullish(),
     message: z
@@ -87,11 +87,13 @@ function normalize(payload: unknown):
     const jid = d.key.remoteJid;
     const isGroup = jid.endsWith("@g.us");
 
+    // Formata o telefone/ID limpo
     const phone = jid
       .replace(/@s\.whatsapp\.net$/i, "")
       .replace(/@c\.us$/i, "")
       .replace(/@g\.us$/i, "");
 
+    // Para grupos, monta um nome legível indicando o autor da mensagem no grupo
     const senderName = d.pushName ?? (isGroup ? "Participante de Grupo" : "Contato WhatsApp");
     const contactName = isGroup ? `[Grupo] ${senderName}` : senderName;
 
@@ -102,7 +104,7 @@ function normalize(payload: unknown):
         contact: {
           name: contactName,
           phone,
-          external_id: jid,
+          external_id: jid, // Identificador único garantido para grupos e contatos individuais
         },
         channel_kind: "whatsapp",
         channel_type: "evolution",
@@ -156,59 +158,19 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
         if (!norm.ok) return json(norm.body, norm.status);
         const b = norm.value;
 
-        // 0. VERIFICAÇÃO DE IDEMPOTÊNCIA (Evita duplicação por retentativas do webhook)
-        const targetMessageId = b.message_id ?? b.external_ref;
-        if (targetMessageId) {
-          const { data: existingEvent } = await supabaseAdmin
-            .from("demanda_events")
-            .select("demanda_id, demandas(protocol)")
-            .eq("org_id", tok.org_id)
-            .contains("metadata", { message_id: targetMessageId })
-            .maybeSingle();
-
-          if (existingEvent) {
-            return json(
-              {
-                ok: true,
-                duplicate: true,
-                demanda_id: existingEvent.demanda_id,
-                protocol: (existingEvent.demandas as any)?.protocol ?? null,
-                org: (tok as any).organizations?.name ?? null,
-              },
-              200,
-            );
-          }
-        }
-
-        // 1. Busca ou cria o contato associado com resolução precisa
+        // 1. Busca ou cria o contato associado (grupo ou pessoa) pelo external_id
         let contactId: string | null = null;
         if (b.contact?.external_id || b.contact?.phone) {
-          // Busca prioritária por external_id
-          if (b.contact.external_id) {
-            const { data: foundByExt } = await supabaseAdmin
-              .from("contacts")
-              .select("id")
-              .eq("org_id", tok.org_id)
-              .eq("external_id", b.contact.external_id)
-              .maybeSingle();
+          const { data: found } = await supabaseAdmin
+            .from("contacts")
+            .select("id")
+            .eq("org_id", tok.org_id)
+            .or(`external_id.eq.${b.contact.external_id},phone.eq.${b.contact.phone}`)
+            .maybeSingle();
 
-            if (foundByExt) contactId = foundByExt.id;
-          }
-
-          // Fallback por telefone caso não encontre por external_id
-          if (!contactId && b.contact.phone) {
-            const { data: foundByPhone } = await supabaseAdmin
-              .from("contacts")
-              .select("id")
-              .eq("org_id", tok.org_id)
-              .eq("phone", b.contact.phone)
-              .maybeSingle();
-
-            if (foundByPhone) contactId = foundByPhone.id;
-          }
-
-          // Cria contato se não existir
-          if (!contactId) {
+          if (found) {
+            contactId = found.id;
+          } else {
             const { data: c } = await supabaseAdmin
               .from("contacts")
               .insert({
@@ -232,21 +194,18 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
         if (contactId && b.reopen_if_open !== false) {
           const { data: open } = await supabaseAdmin
             .from("demandas")
-            .select("id, protocol")
+            .select("id")
             .eq("org_id", tok.org_id)
             .eq("contact_id", contactId)
-            .in("state", ["novo", "em_analise", "aguardando_cliente"])
+            .in("state", ["novo", "em_analise", "aguardando_cliente"]) // APENAS ESTADOS ABERTOS
             .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
 
-          if (open) {
-            demandaId = open.id;
-            protocol = open.protocol as string | null;
-          }
+          if (open) demandaId = open.id;
         }
 
-        // 3. Cria uma nova demanda se não houver aberta
+        // 3. Se a demanda anterior já estava 'Concluído' ou 'Cancelado' (não achou demanda aberta), CRIA UMA NOVA DEMANDA
         if (!demandaId) {
           const title = b.title ?? b.message.slice(0, 80);
           const { data: dem, error: de } = await supabaseAdmin
@@ -294,7 +253,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           protocol = (p?.protocol as string | null) ?? null;
         }
 
-        // 4. Registra o evento da mensagem recebida
+        // 4. Registra a nova mensagem recebida no histórico de eventos
         await supabaseAdmin.from("demanda_events").insert({
           org_id: tok.org_id,
           demanda_id: demandaId,
@@ -322,7 +281,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             protocol,
             org: (tok as any).organizations?.name ?? null,
           }),
-          { status: 200, headers: { "content-type": "application/json" } },
+          { status: 200, headers: { "content-type": "application/json" } }
         );
       },
     },
