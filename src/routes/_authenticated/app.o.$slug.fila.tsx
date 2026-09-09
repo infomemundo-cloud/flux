@@ -8,7 +8,7 @@ import { getOrgBySlug } from "@/lib/orgs.functions";
 import { toast } from "sonner";
 import { friendlyError } from "@/lib/friendly-error";
 import { Plus, Search, X, ChevronRight, Clock } from "lucide-react";
-import { StateBadge, PriorityBadge, formatRelative, FilterTag, ProtocolChip, ContactLine, DueChip, UrgentTag, AssigneeLine } from "@/components/demandas-ui";
+import { StateBadge, PriorityBadge, formatRelative, FilterTag, ProtocolChip, ContactLine, DueChip, UrgentTag } from "@/components/demandas-ui";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/fila")({
   head: () => ({ meta: [{ title: "Fila — Fluxo" }] }),
@@ -34,13 +34,11 @@ function FilaPage() {
   const [search, setSearch] = useState("");
   const [showNew, setShowNew] = useState(false);
 
-  const { data: result, isLoading } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["demandas", org?.id, state, search],
     queryFn: () => listFn({ data: { orgId: org!.id, state: state as any, search: search || undefined } }),
     enabled: !!org?.id,
   });
-  const data = result?.rows;
-  const assignees = result?.assignees ?? {};
 
   return (
     <div className="p-4 sm:p-8 pb-24 sm:pb-10 max-w-6xl mx-auto">
@@ -105,7 +103,6 @@ function FilaPage() {
                   <div className="mt-2 font-semibold text-[15px] leading-snug truncate group-hover:text-primary transition-colors">{d.title}</div>
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
                     <ContactLine contact={d.contacts} channel={d.channels} />
-                    <AssigneeLine assignee={d.assignee_id ? (assignees[d.assignee_id] ?? null) : null} />
                     <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                       <Clock className="h-3.5 w-3.5" strokeWidth={2.2} /> atualizada {formatRelative(d.updated_at)}
                     </span>
