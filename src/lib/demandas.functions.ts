@@ -54,29 +54,7 @@ export const listDemandas = createServerFn({ method: "GET" })
     if (data.search) q = q.ilike("title", `%${data.search}%`);
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
-
-    // Resolve nomes dos responsáveis em batch
-    const assignees: Record<string, { id: string; name: string }> = {};
-    const assigneeIds = [
-      ...new Set((rows ?? []).map((r: any) => r.assignee_id).filter(Boolean) as string[]),
-    ];
-    if (assigneeIds.length > 0) {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await Promise.all(
-        assigneeIds.map(async (uid) => {
-          const { data: u } = await supabaseAdmin.auth.admin.getUserById(uid);
-          const meta = (u.user?.user_metadata ?? {}) as Record<string, unknown>;
-          const email = u.user?.email ?? null;
-          const name =
-            (typeof meta.full_name === "string" && meta.full_name) ||
-            (typeof meta.name === "string" && meta.name) ||
-            (email ? email.split("@")[0] : `Usuário ${uid.slice(0, 6)}`);
-          assignees[uid] = { id: uid, name: name as string };
-        }),
-      );
-    }
-
-    return { rows: rows ?? [], assignees };
+    return rows ?? [];
   });
 
 export const getDemanda = createServerFn({ method: "GET" })
@@ -239,10 +217,8 @@ export const updateDemanda = createServerFn({ method: "POST" })
 
     const patch: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(rest)) if (v !== undefined) patch[k] = v;
-    // Usa context.supabase (cliente autenticado) em vez de supabaseAdmin para que o trigger
-    // log_demanda_changes consiga resolver auth.uid() e gravar actor_id corretamente.
-    // A permissão já foi verificada acima via assertMember + OP_ROLES.
-    const { data: dem, error } = await context.supabase
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: dem, error } = await supabaseAdmin
       .from("demandas")
       .update(patch as never)
       .eq("id", id)
@@ -384,7 +360,6 @@ export const slaAlerts = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     await assertMember(context.supabase, data.orgId, context.userId);
     const cutoff = new Date(Date.now() - data.staleDays * 86400000).toISOString();
-    // Open (pending) demandas: not resolvido/fechado
     const { data: rows, error } = await context.supabase
       .from("demandas")
       .select(
@@ -396,7 +371,6 @@ export const slaAlerts = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
     const list = rows ?? [];
     if (list.length === 0) return [];
-    // Latest event per demanda
     const ids = list.map((r: any) => r.id);
     const { data: events } = await context.supabase
       .from("demanda_events")
