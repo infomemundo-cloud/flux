@@ -360,6 +360,7 @@ export const slaAlerts = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     await assertMember(context.supabase, data.orgId, context.userId);
     const cutoff = new Date(Date.now() - data.staleDays * 86400000).toISOString();
+    // Open (pending) demandas: not resolvido/fechado
     const { data: rows, error } = await context.supabase
       .from("demandas")
       .select(
@@ -371,6 +372,7 @@ export const slaAlerts = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
     const list = rows ?? [];
     if (list.length === 0) return [];
+    // Latest event per demanda
     const ids = list.map((r: any) => r.id);
     const { data: events } = await context.supabase
       .from("demanda_events")
