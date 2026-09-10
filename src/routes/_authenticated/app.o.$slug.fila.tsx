@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ListSkeleton } from "@/components/skeletons";
 import { listDemandas, createDemanda } from "@/lib/demandas.functions";
 import { getOrgBySlug } from "@/lib/orgs.functions";
@@ -15,12 +15,14 @@ export const Route = createFileRoute("/_authenticated/app/o/$slug/fila")({
   component: FilaPage,
 });
 
+const PAGE_SIZE = 20;
+
 const STATES = [
   { v: undefined, label: "Todas" },
   { v: "novo", label: "Novo" },
   { v: "em_analise", label: "Em análise" },
   { v: "aguardando_cliente", label: "Aguardando cliente" },
-  { v: "aguardando_revisao_humana", label: "Aguard. revisão" },
+  { v: "aguardando_revisao_humana", label: "Aguardando revisão" },
   { v: "concluido", label: "Concluído" },
 ] as const;
 
@@ -32,24 +34,63 @@ function FilaPage() {
   const listFn = useServerFn(listDemandas);
   const [state, setState] = useState<string | undefined>();
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [offset, setOffset] = useState(0);
+  const [pages, setPages] = useState<Record<number, any[]>>({});
+  const [assignees, setAssignees] = useState<Record<string, any>>({});
+  const [total, setTotal] = useState(0);
   const [showNew, setShowNew] = useState(false);
 
-  const { data: result, isLoading } = useQuery({
-    queryKey: ["demandas", org?.id, state, search],
-    queryFn: () => listFn({ data: { orgId: org!.id, state: state as any, search: search || undefined } }),
+  // Debounce: só dispara a busca 350ms depois que o usuário parar de digitar.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Filtro ou busca mudou: volta pra primeira página e zera o que estava acumulado.
+  useEffect(() => {
+    setOffset(0);
+    setPages({});
+  }, [state, debouncedSearch, org?.id]);
+
+  const { data: result, isFetching } = useQuery({
+    queryKey: ["demandas", org?.id, state, debouncedSearch, offset],
+    queryFn: () =>
+      listFn({
+        data: { orgId: org!.id, state: state as any, search: debouncedSearch || undefined, offset, limit: PAGE_SIZE },
+      }),
     enabled: !!org?.id,
   });
-  const data = result?.rows;
-  const assignees = result?.assignees ?? {};
+
+  useEffect(() => {
+    if (!result) return;
+    setPages((prev) => ({ ...prev, [offset]: result.rows }));
+    setAssignees((prev) => ({ ...prev, ...result.assignees }));
+    setTotal(result.total);
+  }, [result, offset]);
+
+  // Junta as páginas já carregadas em ordem (0, 20, 40...) — guardar por offset em vez
+  // de simplesmente concatenar evita duplicar linhas se o React Query refizer a mesma página.
+  const data = Object.keys(pages)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .flatMap((k) => pages[k]);
+  const hasMore = data.length < total;
+  const loadingFirstPage = isFetching && data.length === 0;
 
   return (
     <div className="p-4 sm:p-8 pb-24 sm:pb-10 max-w-6xl mx-auto">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:flex sm:items-end sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-[22px] sm:text-[28px] font-extrabold tracking-tight truncate">Fila de demandas</h1>
-          <p className="mt-1 text-[13px] text-muted-foreground">
-            Tudo que precisa de acompanhamento{typeof data?.length === "number" ? ` · ${data.length} ${data.length === 1 ? "demanda" : "demandas"}` : ""}.
-          </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <span className="text-[13px] text-foreground/60">Tudo que precisa de acompanhamento</span>
+            {total > 0 && (
+              <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
+                {total} {total === 1 ? "demanda" : "demandas"}
+              </span>
+            )}
+          </div>
         </div>
         <button onClick={() => setShowNew(true)}
           className="shrink-0 h-10 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-semibold inline-flex items-center gap-2 shadow-[0_6px_16px_-6px_var(--primary)] hover:brightness-110 active:scale-[0.98] transition">
@@ -57,18 +98,20 @@ function FilaPage() {
         </button>
       </div>
 
-      <div className="mt-5 sm:mt-6 flex flex-col-reverse sm:flex-row sm:items-center gap-3">
-        <div className="flex gap-2 items-center overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 pb-1 sm:flex-wrap">
+      {/* Filtros quebram linha sozinhos quando não cabem — sem overflow, sem barra de
+          rolagem. Busca fica numa linha própria, sempre, pra nunca disputar espaço. */}
+      <div className="mt-5 sm:mt-6 space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
           {STATES.map((s) => (
             <FilterTag key={s.label} active={state === s.v} onClick={() => setState(s.v)}>
               {s.label}
             </FilterTag>
           ))}
         </div>
-        <div className="sm:ml-auto relative shrink-0">
+        <div className="relative sm:max-w-sm">
           <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por título..."
-            className="h-10 pl-9 pr-9 rounded-xl border border-border bg-card text-sm w-full sm:w-72 shadow-[var(--shadow-card)] outline-none focus:border-primary/60 focus:ring-4 focus:ring-primary/10 transition" />
+            className="h-10 pl-9 pr-9 rounded-xl border border-border bg-card text-sm w-full shadow-[var(--shadow-card)] outline-none focus:border-primary/60 focus:ring-4 focus:ring-primary/10 transition" />
           {search && (
             <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
               <X className="h-3.5 w-3.5" />
@@ -78,14 +121,14 @@ function FilaPage() {
       </div>
 
       <div className="mt-5 space-y-2">
-        {isLoading && !data && <ListSkeleton rows={5} />}
-        {data?.length === 0 && (
+        {loadingFirstPage && <ListSkeleton rows={5} />}
+        {!loadingFirstPage && data.length === 0 && (
           <div className="rounded-2xl border border-dashed border-border bg-card/60 p-12 text-center">
             <div className="text-sm font-semibold">Nenhuma demanda encontrada</div>
             <p className="mt-1 text-[13px] text-muted-foreground">Ajuste os filtros ou crie uma nova demanda.</p>
           </div>
         )}
-        {data?.map((d: any) => {
+        {data.map((d: any) => {
           const overdue = d.due_at && new Date(d.due_at) < new Date() && d.state !== "aguardando_revisao_humana" && d.state !== "concluido";
           const urgent = d.priority === "urgente";
           return (
@@ -127,6 +170,18 @@ function FilaPage() {
             </Link>
           );
         })}
+
+        {hasMore && !loadingFirstPage && (
+          <div className="pt-2 flex justify-center">
+            <button
+              onClick={() => setOffset((o) => o + PAGE_SIZE)}
+              disabled={isFetching}
+              className="h-10 px-5 rounded-xl border border-border bg-card text-sm font-semibold text-foreground hover:border-primary/40 hover:text-primary transition disabled:opacity-60"
+            >
+              {isFetching ? "Carregando..." : `Carregar mais (${data.length} de ${total})`}
+            </button>
+          </div>
+        )}
       </div>
 
       {showNew && org && <NewDemandaModal orgId={org.id} onClose={() => setShowNew(false)} />}

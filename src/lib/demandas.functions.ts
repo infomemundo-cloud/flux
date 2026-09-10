@@ -34,6 +34,10 @@ export const listDemandas = createServerFn({ method: "GET" })
         assignedToMe: z.boolean().optional(),
         assigneeId: z.string().uuid().nullable().optional(),
         search: z.string().optional(),
+        // Paginação: offset/limit com defaults seguros. limit tem teto de 100
+        // pra impedir que alguém peça um lote gigante direto na chamada.
+        offset: z.number().int().min(0).default(0),
+        limit: z.number().int().min(1).max(100).default(20),
       })
       .parse(d),
   )
@@ -43,16 +47,17 @@ export const listDemandas = createServerFn({ method: "GET" })
       .from("demandas")
       .select(
         "id, protocol, title, state, priority, due_at, assignee_id, contact_id, created_at, updated_at, contacts:contact_id(name, phone), channels:channel_id(kind, name)",
+        { count: "exact" },
       )
       .eq("org_id", data.orgId)
       .order("created_at", { ascending: false })
-      .limit(200);
+      .range(data.offset, data.offset + data.limit - 1);
     if (data.state) q = q.eq("state", data.state);
     if (data.assignedToMe) q = q.eq("assignee_id", context.userId);
     if (data.assigneeId === null) q = q.is("assignee_id", null);
     else if (typeof data.assigneeId === "string") q = q.eq("assignee_id", data.assigneeId);
     if (data.search) q = q.ilike("title", `%${data.search}%`);
-    const { data: rows, error } = await q;
+    const { data: rows, count, error } = await q;
     if (error) throw new Error(error.message);
 
     // Resolve nomes dos responsáveis em batch
@@ -76,7 +81,10 @@ export const listDemandas = createServerFn({ method: "GET" })
       );
     }
 
-    return { rows: rows ?? [], assignees };
+    // total = contagem real no banco (respeitando os filtros aplicados), não rows.length.
+    // offset/limit voltam no payload pra a UI saber se ainda há mais páginas
+    // (offset + rows.length < total) sem precisar recalcular nada.
+    return { rows: rows ?? [], assignees, total: count ?? 0, offset: data.offset, limit: data.limit };
   });
 
 export const getDemanda = createServerFn({ method: "GET" })
