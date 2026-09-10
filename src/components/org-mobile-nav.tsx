@@ -12,17 +12,21 @@ type OrgMobileNavProps = {
 
 export function OrgMobileNav({ slug, activePath, user, roleLabel, onSignOut }: OrgMobileNavProps) {
   return (
-    <nav className="sm:hidden fixed bottom-0 inset-x-0 z-30 grid grid-cols-6 bg-sidebar text-sidebar-foreground border-t border-sidebar-border">
+    <nav className="sm:hidden fixed bottom-0 inset-x-0 z-30 grid grid-cols-6 gap-0.5 bg-sidebar text-sidebar-foreground border-t border-sidebar-border px-1 py-1.5">
       {ORG_NAV_ITEMS.map((n) => {
-        const targetPath = `/app/o/${slug}/${n.segment}`;
-        const active = activePath.startsWith(targetPath);
+        const to = `/app/o/${slug}/${n.segment}`;
+        const active = activePath.startsWith(to);
         const Icon = n.icon;
         return (
           <Link
             key={n.segment}
-            to={targetPath}
+            to={to}
             preload="intent"
-            className={`flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium ${active ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/60"}`}
+            className={`flex flex-col items-center gap-1 py-1.5 rounded-lg text-[10px] font-medium transition-colors ${
+              active
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "text-sidebar-foreground/60"
+            }`}
           >
             <Icon className="h-[18px] w-[18px]" strokeWidth={1.9} />
             <span className="truncate max-w-full px-1">{n.label}</span>

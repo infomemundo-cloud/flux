@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { ThemeCycleButton, UserMenu } from "@/components/user-menu";
 
+// Fonte única da navegação da org — usada aqui e no OrgMobileNav.
+// Adicionar uma rota nova (ex: módulo financeiro) é mexer só nesta lista.
 export const ORG_NAV_ITEMS = [
   { segment: "fila", label: "Fila", icon: Inbox },
   { segment: "alertas", label: "Alertas SLA", icon: AlertTriangle },
@@ -41,61 +43,33 @@ export function OrgSidebar({
   onSignOut,
 }: OrgSidebarProps) {
   return (
-    <aside
-      className={`hidden sm:flex h-screen flex-col justify-between overflow-hidden sticky top-0 left-0 bg-sidebar text-sidebar-foreground border-r border-sidebar-border/60 transition-all ${
-        collapsed ? "w-[68px] items-center px-0" : "w-[256px] px-0"
-      }`}
-    >
-      {/* TOPO: Ações superiores */}
-      <div className="w-full shrink-0 pt-3 pb-2 flex flex-col items-center justify-center gap-2">
-        {collapsed ? (
-          <>
-            <button
-              onClick={onToggle}
-              aria-label="Expandir menu"
-              title="Expandir menu"
-              className="flex items-center justify-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground transition-colors"
-            >
-              <PanelLeftOpen className="h-4 w-4" />
-            </button>
-            <ThemeCycleButton />
-          </>
-        ) : (
-          <div className="w-full px-7 pb-1 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/45">
+    <aside className="hidden sm:flex h-screen flex-col justify-between overflow-hidden sticky top-0 left-0 bg-sidebar text-sidebar-foreground border-r border-sidebar-border/60">
+      {!collapsed && (
+        <div className="shrink-0 pt-4 pb-2 px-4">
+          <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/45">
             Operação
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* NAVEGAÇÃO */}
-      <nav className="w-full flex-1 overflow-y-auto space-y-1 px-2 py-1">
+      <nav className="flex-1 overflow-y-auto space-y-0.5 px-2 py-1">
         {ORG_NAV_ITEMS.map((n) => {
-          const targetPath = `/app/o/${slug}/${n.segment}`;
-          const active = activePath.startsWith(targetPath);
+          const to = `/app/o/${slug}/${n.segment}`;
+          const active = activePath.startsWith(to);
           const Icon = n.icon;
           return (
             <Link
               key={n.segment}
-              to={targetPath}
+              to={to}
               preload="intent"
               title={n.label}
-              className={`group relative flex items-center gap-2.5 py-2.5 rounded-lg text-[13px] font-medium transition-colors w-full ${
-                collapsed ? "justify-center px-0" : "px-3"
-              } ${
-                active
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-              }`}
+              className={`group relative flex items-center gap-2.5 py-2 rounded-lg text-[13px] font-medium transition-colors ${collapsed ? "justify-center px-2" : "px-3"} ${active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"}`}
             >
               {active && (
                 <span className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[3px] rounded-r-full bg-sidebar-primary" />
               )}
               <Icon
-                className={`h-[18px] w-[18px] shrink-0 ${
-                  active
-                    ? "text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground/65 group-hover:text-sidebar-foreground"
-                }`}
+                className={`h-[17px] w-[17px] shrink-0 ${active ? "text-sidebar-accent-foreground" : "text-sidebar-foreground/65 group-hover:text-sidebar-foreground"}`}
                 strokeWidth={1.9}
               />
               {!collapsed && n.label}
@@ -105,21 +79,18 @@ export function OrgSidebar({
                 </span>
               )}
               {n.label === "Fila" && newCount > 0 && collapsed && (
-                <span className="absolute top-1.5 right-3 h-2 w-2 rounded-full bg-sidebar-primary" />
+                <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-sidebar-primary" />
               )}
             </Link>
           );
         })}
       </nav>
 
-      {/* RODAPÉ */}
-      <div className="w-full mt-auto shrink-0 border-t border-sidebar-border bg-sidebar p-2 flex flex-col items-center">
-        <div
-          className={`w-full flex items-center ${
-            collapsed ? "justify-center" : "justify-between gap-1"
-          }`}
-        >
-          <div className="flex items-center justify-center w-full min-w-0">
+      {/* Footer: único lugar com o toggle de collapse — não existe mais um
+          segundo botão no topo. Fica sempre ao lado do ThemeCycleButton. */}
+      <div className="mt-auto shrink-0 border-t border-sidebar-border bg-sidebar p-2">
+        <div className={`flex items-center gap-1.5 ${collapsed ? "flex-col" : ""}`}>
+          <div className="min-w-0 flex-1">
             <UserMenu
               name={user?.name ?? "Usuário"}
               email={user?.email}
@@ -129,20 +100,17 @@ export function OrgSidebar({
               onSignOut={onSignOut}
             />
           </div>
-
-          {!collapsed && (
-            <div className="flex items-center gap-0.5">
-              <ThemeCycleButton />
-              <button
-                onClick={onToggle}
-                aria-label="Recolher menu"
-                title="Recolher menu"
-                className="flex items-center justify-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground transition-colors"
-              >
-                <PanelLeftClose className="h-4 w-4" />
-              </button>
-            </div>
-          )}
+          <div className={`flex shrink-0 items-center ${collapsed ? "flex-col gap-1" : "gap-0.5"}`}>
+            <ThemeCycleButton />
+            <button
+              onClick={onToggle}
+              aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
+              title={collapsed ? "Expandir menu" : "Recolher menu"}
+              className="grid place-items-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+            >
+              {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
       </div>
     </aside>
