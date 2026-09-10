@@ -1,4 +1,4 @@
-import { createFileRoute, Link, Outlet, useNavigate, useParams, useLocation } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useNavigate, useParams, useLocation } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useCallback, useEffect, useState } from "react";
@@ -6,12 +6,12 @@ import { toast } from "sonner";
 import { getOrgBySlug } from "@/lib/orgs.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrgRealtime } from "@/hooks/use-org-realtime";
-import { UserMenu, ThemeCycleButton } from "@/components/user-menu";
+import { useSidebarCollapsed } from "@/hooks/use-sidebar-collapsed";
+import { OrgSidebar } from "@/components/org-sidebar";
+import { OrgMobileNav } from "@/components/org-mobile-nav";
 import { PageFade, TopProgressBar, ListSkeleton } from "@/components/skeletons";
-import { Inbox, LayoutDashboard, Settings, AlertTriangle, Users, Bell, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 const ROLE_LABEL: Record<string, string> = {
-
   owner: "Proprietário",
   admin: "Administrador",
   gerente: "Gerente",
@@ -29,29 +29,27 @@ function OrgLayout() {
   const navigate = useNavigate();
   const fn = useServerFn(getOrgBySlug);
   const { data: org, isLoading, error } = useQuery({
-    queryKey: ["org", slug], queryFn: () => fn({ data: { slug } }), retry: false,
+    queryKey: ["org", slug],
+    queryFn: () => fn({ data: { slug } }),
+    retry: false,
   });
   const [newCount, setNewCount] = useState(0);
-  const [collapsed, setCollapsed] = useState(false);
+  const { collapsed, toggle: toggleCollapsed } = useSidebarCollapsed();
   const [user, setUser] = useState<{ name: string; email: string | null } | null>(null);
 
-  useEffect(() => { if (location.pathname.endsWith("/fila")) setNewCount(0); }, [location.pathname]);
+  useEffect(() => {
+    if (location.pathname.endsWith("/fila")) setNewCount(0);
+  }, [location.pathname]);
 
   useEffect(() => {
-    const stored = localStorage.getItem("fluxo-sidebar-collapsed");
-    if (stored === "1") setCollapsed(true);
     supabase.auth.getUser().then(({ data }) => {
       const u = data.user;
       if (!u) return;
       const meta: any = u.user_metadata ?? {};
-      setUser({ name: meta.full_name ?? meta.name ?? (u.email ? u.email.split("@")[0]! : "Usuário"), email: u.email ?? null });
-    });
-  }, []);
-
-  const toggleCollapsed = useCallback(() => {
-    setCollapsed((c) => {
-      localStorage.setItem("fluxo-sidebar-collapsed", c ? "0" : "1");
-      return !c;
+      setUser({
+        name: meta.full_name ?? meta.name ?? (u.email ? u.email.split("@")[0]! : "Usuário"),
+        email: u.email ?? null,
+      });
     });
   }, []);
 
@@ -80,99 +78,31 @@ function OrgLayout() {
         <main className="p-4 sm:p-8">
           <div className="h-7 w-52 shimmer rounded-md" />
           <div className="mt-2 h-3 w-72 shimmer rounded-md" />
-          <div className="mt-6"><ListSkeleton rows={5} /></div>
+          <div className="mt-6">
+            <ListSkeleton rows={5} />
+          </div>
         </main>
       </div>
     );
   if (error || !org) return <div className="p-6 text-sm text-destructive">Sem acesso a esta organização.</div>;
 
-  const nav = [
-    { route: "/app/o/$slug/fila", to: `/app/o/${slug}/fila`, label: "Fila", icon: Inbox },
-    { route: "/app/o/$slug/alertas", to: `/app/o/${slug}/alertas`, label: "Alertas SLA", icon: AlertTriangle },
-    { route: "/app/o/$slug/dashboard", to: `/app/o/${slug}/dashboard`, label: "Dashboard", icon: LayoutDashboard },
-    { route: "/app/o/$slug/equipe", to: `/app/o/${slug}/equipe`, label: "Equipe", icon: Users },
-    { route: "/app/o/$slug/configuracoes", to: `/app/o/${slug}/configuracoes`, label: "Configurações", icon: Settings },
-  ] as const;
+  const roleLabel = ROLE_LABEL[org.role] ?? org.role;
 
   return (
     <div
       className="min-h-screen grid grid-cols-[1fr] bg-surface text-foreground sm:grid-cols-[var(--rail)_1fr]"
       style={{ ["--rail" as any]: collapsed ? "68px" : "256px" }}
     >
-      <aside className="hidden sm:flex h-screen flex-col justify-between overflow-hidden sticky top-0 left-0 bg-sidebar text-sidebar-foreground border-r border-sidebar-border/60">
-        {!collapsed && (
-          <div className="shrink-0 pt-4 pb-2 px-4">
-            <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/45">
-              Operação
-            </div>
-          </div>
-        )}
-
-        {collapsed && (
-          <div className="shrink-0 flex justify-end pt-2 pb-1 px-2">
-            <button
-              onClick={toggleCollapsed}
-              aria-label="Expandir menu"
-              title="Expandir menu"
-              className="grid place-items-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-            >
-              <PanelLeftOpen className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-
-        <nav className="flex-1 overflow-y-auto space-y-0.5 px-2 py-1">
-          {nav.map((n) => {
-            const active = location.pathname.startsWith(n.to);
-
-            const Icon = n.icon;
-            return (
-              <Link key={n.to} to={n.route} params={{ slug }} preload="intent" title={n.label}
-                className={`group relative flex items-center gap-2.5 py-2 rounded-lg text-[13px] font-medium transition-colors ${collapsed ? "justify-center px-2" : "px-3"} ${active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"}`}>
-                {active && <span className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[3px] rounded-r-full bg-sidebar-primary" />}
-                <Icon className={`h-[17px] w-[17px] shrink-0 ${active ? "text-sidebar-accent-foreground" : "text-sidebar-foreground/65 group-hover:text-sidebar-foreground"}`} strokeWidth={1.9} />
-                {!collapsed && n.label}
-                {n.label === "Fila" && newCount > 0 && !collapsed && (
-                  <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-sidebar-primary text-sidebar-primary-foreground">
-                    <Bell className="h-3 w-3" /> {newCount}
-                  </span>
-                )}
-                {n.label === "Fila" && newCount > 0 && collapsed && (
-                  <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-sidebar-primary" />
-                )}
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="mt-auto shrink-0 border-t border-sidebar-border bg-sidebar p-2">
-          <div className={`flex items-center gap-1.5 ${collapsed ? "flex-col" : ""}`}>
-            <div className="min-w-0 flex-1">
-              <UserMenu
-                name={user?.name ?? "Usuário"}
-                email={user?.email}
-                role={ROLE_LABEL[org.role] ?? org.role}
-                collapsed={collapsed}
-                settingsTo={`/app/o/${slug}/configuracoes`}
-                onSignOut={signOut}
-              />
-            </div>
-            <div className={`flex shrink-0 items-center ${collapsed ? "flex-col gap-1" : "gap-0.5"}`}>
-              <ThemeCycleButton />
-              {!collapsed && (
-                <button
-                  onClick={toggleCollapsed}
-                  aria-label="Recolher menu"
-                  title="Recolher menu"
-                  className="grid place-items-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-                >
-                  <PanelLeftClose className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </aside>
+      <OrgSidebar
+        slug={slug}
+        activePath={location.pathname}
+        collapsed={collapsed}
+        onToggle={toggleCollapsed}
+        newCount={newCount}
+        user={user}
+        roleLabel={roleLabel}
+        onSignOut={signOut}
+      />
 
       <main className="min-w-0 overflow-auto bg-surface">
         <TopProgressBar />
@@ -180,28 +110,13 @@ function OrgLayout() {
           <Outlet />
         </PageFade>
 
-        <nav className="sm:hidden fixed bottom-0 inset-x-0 z-30 grid grid-cols-6 bg-sidebar text-sidebar-foreground border-t border-sidebar-border">
-          {nav.map((n) => {
-            const active = location.pathname.startsWith(n.to);
-            const Icon = n.icon;
-            return (
-              <Link key={n.to} to={n.route} params={{ slug }} preload="intent" className={`flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium ${active ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/60"}`}>
-                <Icon className="h-[18px] w-[18px]" strokeWidth={1.9} />
-                <span className="truncate max-w-full px-1">{n.label}</span>
-              </Link>
-            );
-          })}
-          <div className="flex items-center justify-center py-1.5">
-            <UserMenu
-              name={user?.name ?? "Usuário"}
-              email={user?.email}
-              role={ROLE_LABEL[org.role] ?? org.role}
-              collapsed
-              settingsTo={`/app/o/${slug}/configuracoes`}
-              onSignOut={signOut}
-            />
-          </div>
-        </nav>
+        <OrgMobileNav
+          slug={slug}
+          activePath={location.pathname}
+          user={user}
+          roleLabel={roleLabel}
+          onSignOut={signOut}
+        />
       </main>
     </div>
   );
