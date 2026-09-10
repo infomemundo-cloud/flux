@@ -70,6 +70,7 @@ export function UserMenu({
   collapsed,
   settingsTo,
   onSignOut,
+  showTooltip = true,
 }: {
   name: string;
   email?: string | null;
@@ -77,6 +78,10 @@ export function UserMenu({
   collapsed?: boolean;
   settingsTo: string;
   onSignOut: () => void;
+  // Tooltip de hover só faz sentido em contexto de mouse (sidebar desktop recolhida).
+  // Em touch (mobile), o Radix Tooltip pode ficar "preso" aberto porque não existe
+  // mouse-leave real — por isso o OrgMobileNav passa showTooltip={false}.
+  showTooltip?: boolean;
 }) {
   const { theme } = useTheme();
   const initials = name
@@ -109,7 +114,7 @@ export function UserMenu({
 
   return (
     <DropdownMenu>
-      {collapsed ? (
+      {collapsed && showTooltip ? (
         <TooltipProvider delayDuration={200}>
           <Tooltip>
             <TooltipTrigger asChild>{trigger}</TooltipTrigger>

@@ -39,6 +39,7 @@ export function OrgMobileNav({ slug, activePath, user, roleLabel, onSignOut }: O
           email={user?.email}
           role={roleLabel}
           collapsed
+          showTooltip={false}
           settingsTo={`/app/o/${slug}/configuracoes`}
           onSignOut={onSignOut}
         />
