@@ -3,7 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { slaAlerts } from "@/lib/demandas.functions";
-import { StateBadge, PriorityBadge, formatRelative, ProtocolChip, ContactLine, DueChip, UrgentTag } from "@/components/demandas-ui";
+import { getOrgBySlug } from "@/lib/orgs.functions";
+import { PriorityBadge, STATE_LABEL, formatRelative, ProtocolChip, ContactLine, DueChip, UrgentTag } from "@/components/demandas-ui";
+import { STATE_COLOR } from "@/lib/state-colors";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, Clock, ChevronRight, ShieldCheck } from "lucide-react";
 import { ListSkeleton } from "@/components/skeletons";
 
@@ -11,6 +14,10 @@ export const Route = createFileRoute("/_authenticated/app/o/$slug/alertas")({
   head: () => ({ meta: [{ title: "Alertas de SLA — Fluxo" }] }),
   component: AlertasPage,
 });
+
+function initials(name: string) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join("");
+}
 
 function severity(iso: string) {
   const days = (Date.now() - new Date(iso).getTime()) / 86400000;
@@ -36,19 +43,14 @@ function severity(iso: string) {
 function AlertasPage() {
   const { slug } = useParams({ from: "/_authenticated/app/o/$slug/alertas" });
   const fn = useServerFn(slaAlerts);
-  // Need orgId — fetch via first alert or use org lookup; reuse org query
-  const orgQ = useQuery<{ id: string }>({
-    queryKey: ["org-id", slug],
-    queryFn: async () => {
-      const { getOrgBySlug } = await import("@/lib/orgs.functions");
-      return (await getOrgBySlug({ data: { slug } })) as any;
-    },
-  });
+  const orgFn = useServerFn(getOrgBySlug);
+  const orgQ = useQuery({ queryKey: ["org", slug], queryFn: () => orgFn({ data: { slug } }) });
   const orgId = orgQ.data?.id;
+  const [staleDays, setStaleDays] = useState(2);
   const { data, isLoading } = useQuery({
-    queryKey: ["sla-alerts", orgId],
+    queryKey: ["sla-alerts", orgId, staleDays],
     enabled: !!orgId,
-    queryFn: () => fn({ data: { orgId: orgId!, staleDays: 2 } }),
+    queryFn: () => fn({ data: { orgId: orgId!, staleDays } }),
     refetchInterval: 60000,
   });
 
@@ -58,7 +60,6 @@ function AlertasPage() {
   const items = useMemo(() => (data ?? []).slice(0, visible), [data, visible]);
   const hasMore = visible < total;
 
-  // Reset when dataset changes size (refetch, filter changes)
   useEffect(() => { setVisible(PAGE_SIZE); }, [total]);
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -77,18 +78,41 @@ function AlertasPage() {
 
   return (
     <div className="p-4 sm:p-8 pb-24 sm:pb-10 max-w-6xl mx-auto">
-      <div className="flex items-center gap-2.5 mb-1">
-        <span className="grid place-items-center h-9 w-9 rounded-xl bg-destructive/10 text-destructive shrink-0">
-          <AlertTriangle className="h-[18px] w-[18px]" strokeWidth={2.2} />
-        </span>
-        <h1 className="text-[22px] sm:text-[28px] font-extrabold tracking-tight truncate">Alertas de SLA</h1>
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="grid place-items-center h-9 w-9 rounded-xl bg-destructive/10 text-destructive shrink-0">
+            <AlertTriangle className="h-[18px] w-[18px]" strokeWidth={2.2} />
+          </span>
+          <h1 className="text-[22px] sm:text-[28px] font-extrabold tracking-tight truncate">Alertas de SLA</h1>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-xs text-muted-foreground hidden sm:inline">Alertar após</span>
+          <Select value={String(staleDays)} onValueChange={(v) => setStaleDays(Number(v))}>
+            <SelectTrigger className="h-9 w-[104px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[1, 2, 3, 5, 7, 14].map((n) => (
+                <SelectItem key={n} value={String(n)} className="text-xs">
+                  {n} {n === 1 ? "dia" : "dias"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
-      <p className="text-[13px] text-muted-foreground mb-5 sm:mb-6">
-        Demandas pendentes sem qualquer atualização no histórico nos últimos 2 dias.
+
+      <div className="flex items-center gap-2 mb-5 sm:mb-6">
+        <p className="text-[13px] text-muted-foreground">
+          Demandas paradas sem nenhuma atualização há {staleDays} {staleDays === 1 ? "dia" : "dias"} ou mais.
+        </p>
         {total > 0 && (
-          <span className="ml-1">Mostrando <b>{items.length}</b> de <b>{total}</b>.</span>
+          <span className="inline-flex items-center rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-semibold text-destructive shrink-0">
+            {items.length} de {total}
+          </span>
         )}
-      </p>
+      </div>
 
       {isLoading && !data && <ListSkeleton rows={4} height="h-[92px]" />}
       {!isLoading && data && data.length === 0 && (
@@ -101,44 +125,53 @@ function AlertasPage() {
         </div>
       )}
 
-      <div className="space-y-2">
+      <div className="space-y-2 scrollbar-thin">
         {items.map((d: any) => {
           const sev = severity(d.last_activity_at);
           const urgent = d.priority === "urgente";
           const overdue = d.due_at && new Date(d.due_at) < new Date();
+          const contactName = d.contacts?.name || d.contacts?.phone || "Sem contato";
           return (
             <Link
               key={d.id}
-              to="/app/o/$slug/demandas/$id"
+              to="/app/o/$slug/fila/demandas/$id"
               params={{ slug, id: d.id }}
-              className={`group relative block overflow-hidden rounded-xl border bg-card shadow-[var(--shadow-card)] pl-4 pr-3 py-3.5 transition-all hover:shadow-[var(--shadow-pop)] ${sev.ring}`}
+              className={`group relative flex items-start gap-3 overflow-hidden rounded-xl border bg-card shadow-[var(--shadow-card)] pl-4 pr-3 py-3.5 transition-all hover:shadow-[var(--shadow-pop)] ${sev.ring}`}
             >
               <span className={`absolute left-0 top-0 h-full w-[3px] ${sev.bar}`} />
-              <div className="flex items-start gap-3">
-                <AlertTriangle
-                  className={`h-[18px] w-[18px] mt-0.5 shrink-0 ${sev.cls} ${sev.blink ? "animate-alert-blink" : ""}`}
-                  strokeWidth={2.3}
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${sev.pill}`}>
-                      {sev.label}
-                    </span>
-                    <ProtocolChip protocol={d.protocol} id={d.id} />
-                    <StateBadge state={d.state} />
-                    {urgent ? <UrgentTag /> : <PriorityBadge priority={d.priority} />}
-                  </div>
-                  <div className="mt-2 font-semibold text-[15px] leading-snug truncate group-hover:text-primary transition-colors">{d.title}</div>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <ContactLine contact={d.contacts} channel={d.channels} />
-                    <span className={`inline-flex items-center gap-1 text-xs font-medium ${sev.cls}`}>
-                      <Clock className="h-3.5 w-3.5" strokeWidth={2.2} /> sem atualização {formatRelative(d.last_activity_at)}
-                    </span>
-                    {d.due_at && <DueChip dueAt={d.due_at} overdue={!!overdue} />}
-                  </div>
+
+              <div className="relative shrink-0 mt-0.5">
+                <div className="h-9 w-9 rounded-full bg-primary/10 text-primary grid place-items-center text-[11px] font-bold">
+                  {initials(contactName) || "?"}
                 </div>
-                <ChevronRight className="h-4 w-4 shrink-0 self-center text-muted-foreground/50 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+                <span className={`absolute -bottom-1 -right-1 grid place-items-center h-4 w-4 rounded-full bg-card ${sev.cls}`}>
+                  <AlertTriangle className={`h-3 w-3 ${sev.blink ? "animate-alert-blink" : ""}`} strokeWidth={2.5} />
+                </span>
               </div>
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${sev.pill}`}>
+                    {sev.label}
+                  </span>
+                  <ProtocolChip protocol={d.protocol} id={d.id} />
+                  <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <span className={`h-2 w-2 rounded-full ${STATE_COLOR[d.state] ?? "bg-muted-foreground/40"}`} />
+                    {STATE_LABEL[d.state] ?? d.state}
+                  </span>
+                  {urgent && <UrgentTag />}
+                  {!urgent && <PriorityBadge priority={d.priority} />}
+                </div>
+                <div className="mt-2 font-semibold text-[15px] leading-snug truncate group-hover:text-primary transition-colors">{d.title}</div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <ContactLine contact={d.contacts} channel={d.channels} />
+                  <span className={`inline-flex items-center gap-1 text-xs font-medium ${sev.cls}`}>
+                    <Clock className="h-3.5 w-3.5" strokeWidth={2.2} /> sem atualização {formatRelative(d.last_activity_at)}
+                  </span>
+                  {d.due_at && <DueChip dueAt={d.due_at} overdue={!!overdue} />}
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 self-center text-muted-foreground/50 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
             </Link>
           );
         })}

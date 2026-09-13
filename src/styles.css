@@ -272,6 +272,29 @@
   }
 }
 
+/* Barra de rolagem fina, na cor do tema — Firefox via scrollbar-width/color,
+   Chrome/Edge/Safari via ::-webkit-scrollbar. Usa --border/--muted-foreground
+   direto, então já respeita claro/escuro/corporate sem duplicar cor. */
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+
+  &::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+    border-radius: 9999px;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background-color: var(--muted-foreground);
+  }
+}
+
 @keyframes alert-blink {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.45; transform: scale(0.9); }

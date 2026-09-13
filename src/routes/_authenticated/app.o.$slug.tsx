@@ -10,6 +10,7 @@ import { useSidebarCollapsed } from "@/hooks/use-sidebar-collapsed";
 import { OrgSidebar } from "@/components/org-sidebar";
 import { OrgMobileNav } from "@/components/org-mobile-nav";
 import { PageFade, TopProgressBar, ListSkeleton } from "@/components/skeletons";
+import { OrgSidebarContext } from "@/lib/org-sidebar-context";
 
 const ROLE_LABEL: Record<string, string> = {
   owner: "Proprietário",
@@ -34,7 +35,7 @@ function OrgLayout() {
     retry: false,
   });
   const [newCount, setNewCount] = useState(0);
-  const { collapsed, toggle: toggleCollapsed } = useSidebarCollapsed();
+  const { collapsed, setCollapsed, toggle: toggleCollapsed } = useSidebarCollapsed();
   const [user, setUser] = useState<{ name: string; email: string | null } | null>(null);
 
   useEffect(() => {
@@ -104,10 +105,12 @@ function OrgLayout() {
         onSignOut={signOut}
       />
 
-      <main className="min-w-0 overflow-auto bg-surface">
+      <main className="min-w-0 overflow-auto scrollbar-thin bg-surface">
         <TopProgressBar />
         <PageFade key={location.pathname}>
-          <Outlet />
+          <OrgSidebarContext.Provider value={{ collapsed, setCollapsed }}>
+            <Outlet />
+          </OrgSidebarContext.Provider>
         </PageFade>
 
         <OrgMobileNav

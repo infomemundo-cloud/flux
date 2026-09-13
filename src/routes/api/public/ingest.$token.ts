@@ -158,32 +158,45 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
         if (!norm.ok) return json(norm.body, norm.status);
         const b = norm.value;
 
-        // 1. Busca ou cria o contato associado (grupo ou pessoa) pelo external_id
+        // 1. Busca ou cria o contato associado (grupo ou pessoa) garantindo integridade
         let contactId: string | null = null;
         if (b.contact?.external_id || b.contact?.phone) {
-          const { data: found } = await supabaseAdmin
-            .from("contacts")
-            .select("id")
-            .eq("org_id", tok.org_id)
-            .or(`external_id.eq.${b.contact.external_id},phone.eq.${b.contact.phone}`)
-            .maybeSingle();
-
-          if (found) {
-            contactId = found.id;
-          } else {
-            const { data: c } = await supabaseAdmin
+          try {
+            // Tenta primeiro realizar uma busca direta pelo external_id ou pelo telefone
+            const { data: found } = await supabaseAdmin
               .from("contacts")
-              .insert({
-                org_id: tok.org_id,
-                name: b.contact.name ?? null,
-                phone: b.contact.phone ?? null,
-                email: b.contact.email ?? null,
-                external_id: b.contact.external_id ?? null,
-              })
               .select("id")
-              .single();
+              .eq("org_id", tok.org_id)
+              .or(`external_id.eq.${b.contact.external_id}${b.contact.phone ? `,phone.eq.${b.contact.phone}` : ''}`)
+              .maybeSingle();
 
-            contactId = c?.id ?? null;
+            if (found?.id) {
+              contactId = found.id;
+            } else {
+              // Se não encontrou, realiza o upsert para evitar erros de duplicidade/chave única
+              const { data: newContact, error: contactErr } = await supabaseAdmin
+                .from("contacts")
+                .upsert(
+                  {
+                    org_id: tok.org_id,
+                    name: b.contact.name ?? `Contato ${b.contact.phone ?? ''}`,
+                    phone: b.contact.phone ?? null,
+                    email: b.contact.email ?? null,
+                    external_id: b.contact.external_id ?? null,
+                  },
+                  { onConflict: "org_id, external_id" }
+                )
+                .select("id")
+                .single();
+
+              if (contactErr) {
+                console.error("[ingest] Erro ao fazer upsert do contato:", contactErr);
+              } else {
+                contactId = newContact?.id ?? null;
+              }
+            }
+          } catch (err) {
+            console.error("[ingest] Exceção ao processar contato:", err);
           }
         }
 
@@ -197,7 +210,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             .select("id")
             .eq("org_id", tok.org_id)
             .eq("contact_id", contactId)
-            .in("state", ["novo", "em_analise", "aguardando_cliente"]) // APENAS ESTADOS ABERTOS
+            .neq("state", "concluido") // aberto = qualquer estado que não seja concluído
             .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();

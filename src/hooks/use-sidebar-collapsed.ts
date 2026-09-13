@@ -8,9 +8,13 @@ import { useCallback, useState } from "react";
  * acesso ao localStorage do navegador. Se no futuro quiser lembrar a
  * escolha do usuário sem o flash, a saída correta é migrar para cookie
  * (lido no servidor antes de renderizar) em vez de localStorage.
+ *
+ * `setCollapsed` (além do `toggle`) é exposto porque a página da fila
+ * precisa FORÇAR a sidebar pro modo ícone ao abrir uma demanda — toggle
+ * sozinho não serve pra isso (alternaria errado se já estivesse recolhida).
  */
 export function useSidebarCollapsed() {
   const [collapsed, setCollapsed] = useState(false);
   const toggle = useCallback(() => setCollapsed((c) => !c), []);
-  return { collapsed, toggle };
+  return { collapsed, setCollapsed, toggle };
 }
