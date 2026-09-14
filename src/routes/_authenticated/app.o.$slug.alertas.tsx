@@ -6,6 +6,7 @@ import { slaAlerts } from "@/lib/demandas.functions";
 import { getOrgBySlug } from "@/lib/orgs.functions";
 import { PriorityBadge, STATE_LABEL, formatRelative, ProtocolChip, ContactLine, DueChip, UrgentTag } from "@/components/demandas-ui";
 import { STATE_COLOR } from "@/lib/state-colors";
+import { resolveContactName } from "@/lib/resolve-contact-name";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, Clock, ChevronRight, ShieldCheck } from "lucide-react";
 import { ListSkeleton } from "@/components/skeletons";
@@ -130,7 +131,7 @@ function AlertasPage() {
           const sev = severity(d.last_activity_at);
           const urgent = d.priority === "urgente";
           const overdue = d.due_at && new Date(d.due_at) < new Date();
-          const contactName = d.contacts?.name || d.contacts?.phone || "Sem contato";
+          const contactName = resolveContactName(d);
           return (
             <Link
               key={d.id}

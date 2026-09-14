@@ -6,7 +6,7 @@ import { getOrgBySlug, listOperators } from "@/lib/orgs.functions";
 import { orgDashboard, listDemandas } from "@/lib/demandas.functions";
 import { STATE_LABEL, PriorityBadge } from "@/components/demandas-ui";
 import { AiSuggestionsCard, MemberAvatar, Sparkline, TeamSelector, type TeamOption } from "@/components/dashboard-ui";
-import { AlertTriangle, CheckCircle2, Inbox, Layers, TrendingUp } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Inbox, Layers, Target, TrendingUp } from "lucide-react";
 import { DashboardSkeleton } from "@/components/skeletons";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/dashboard")({
@@ -128,16 +128,19 @@ function CommandPanel({ dash }: { dash: any }) {
   const resolvidas = dash.timeline.map((t: any) => t.resolvidas as number);
   const totalSerie = dash.timeline.map((t: any) => (t.novas as number) + (t.resolvidas as number));
   const sum = (a: number[]) => a.reduce((x: number, y: number) => x + y, 0);
-  const trend = (a: number[]) => {
+  const trend = (a: number[]): number | null => {
     const half = Math.floor(a.length / 2);
     const prev = sum(a.slice(0, half));
     const cur = sum(a.slice(half));
-    if (prev === 0) return cur === 0 ? 0 : 100;
+    // Sem base na primeira metade da janela: "foi de 0 pra qualquer coisa"
+    // não é uma % de crescimento de verdade — normal em contas novas, com
+    // pouco histórico. Sinaliza "sem histórico" em vez de inventar um número.
+    if (prev === 0) return null;
     return Math.round(((cur - prev) / prev) * 100);
   };
 
   return (
-    <section className="grid gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <section className="grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
       <Kpi
         icon={Inbox}
         label="Demandas abertas"
@@ -174,8 +177,16 @@ function CommandPanel({ dash }: { dash: any }) {
         series={totalSerie}
         delta={trend(totalSerie)}
       />
+      <Kpi
+        icon={Target}
+        label="Taxa de conclusão"
+        value={dash.total ? Math.round(((dash.counts.concluido ?? 0) / dash.total) * 100) : 0}
+        unit="%"
+        hint="Concluídas sobre o total do escopo"
+        tone="success"
+      />
 
-      <div className="sm:col-span-2 xl:col-span-4 rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-card)]">
+      <div className="sm:col-span-2 lg:col-span-3 xl:col-span-5 rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-card)]">
         <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
           <TrendingUp className="h-3.5 w-3.5" strokeWidth={2.4} /> Distribuição por estado
         </div>
@@ -248,7 +259,7 @@ function TaskColumns({
                 return (
                 <Link
                   key={d.id}
-                  to="/app/o/$slug/demandas/$id"
+                  to="/app/o/$slug/fila/demandas/$id"
                   params={{ slug, id: d.id }}
                   className="block rounded-xl border border-border bg-background hover:border-primary/35 hover:bg-primary/[0.03] transition-colors p-2.5"
                 >
@@ -285,16 +296,25 @@ function TaskColumns({
 }
 
 function Timeline({ dash }: { dash: any }) {
+  const BAR_AREA = 128; // px — altura fixa da área de barras (o resto do h-40 é a legenda de data embaixo)
   const max = Math.max(1, ...dash.timeline.map((t: any) => Math.max(t.novas, t.resolvidas)));
   return (
     <div className="rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-card)]">
       <div className="text-sm font-semibold">Últimos 14 dias</div>
-      <div className="mt-4 flex items-end gap-2 h-40">
+      <div className="mt-4 flex items-stretch gap-2 h-40">
         {dash.timeline.map((t: any) => (
           <div key={t.date} className="flex-1 flex flex-col items-center gap-1">
-            <div className="w-full flex flex-col gap-0.5 justify-end h-full">
-              <div title={`Novas: ${t.novas}`} className="bg-primary/70 rounded-t" style={{ height: `${(t.novas / max) * 100}%` }} />
-              <div title={`Resolvidas: ${t.resolvidas}`} className="bg-[oklch(0.6_0.17_160)] rounded-b" style={{ height: `${(t.resolvidas / max) * 100}%` }} />
+            <div className="w-full flex flex-col justify-end gap-0.5" style={{ height: BAR_AREA }}>
+              <div
+                title={`Novas: ${t.novas}`}
+                className="bg-primary/70 rounded-t w-full transition-all"
+                style={{ height: `${Math.round((t.novas / max) * BAR_AREA)}px` }}
+              />
+              <div
+                title={`Resolvidas: ${t.resolvidas}`}
+                className="bg-[oklch(0.6_0.17_160)] rounded-b w-full transition-all"
+                style={{ height: `${Math.round((t.resolvidas / max) * BAR_AREA)}px` }}
+              />
             </div>
             <div className="text-[10px] text-muted-foreground">{t.date.slice(5)}</div>
           </div>
@@ -309,16 +329,17 @@ function Timeline({ dash }: { dash: any }) {
 }
 
 function Kpi({
-  icon: Icon, label, value, hint, series, delta, tone, invert,
+  icon: Icon, label, value, hint, series, delta, tone, invert, unit,
 }: {
   icon: any;
   label: string;
   value: number;
   hint?: string;
-  series: number[];
-  delta: number;
+  series?: number[];
+  delta?: number | null;
   tone?: "primary" | "destructive" | "success";
   invert?: boolean;
+  unit?: string;
 }) {
   const accent =
     tone === "destructive"
@@ -336,32 +357,44 @@ function Kpi({
         : tone === "primary"
           ? "bg-primary/10"
           : "bg-secondary";
-  const good = invert ? delta <= 0 : delta >= 0;
+  const good = delta == null ? true : invert ? delta <= 0 : delta >= 0;
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-[var(--shadow-card)] hover:border-primary/25 transition-colors">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground truncate">{label}</div>
-          <div className="mt-1.5 text-3xl font-bold tracking-tight tabular-nums">{value}</div>
+          <div className="mt-1.5 text-3xl font-bold tracking-tight tabular-nums">
+            {value}
+            {unit && <span className="text-lg text-muted-foreground font-semibold">{unit}</span>}
+          </div>
         </div>
         <span className={`grid place-items-center h-10 w-10 shrink-0 rounded-xl ${accentBg} ${accent}`}>
           <Icon className="h-[19px] w-[19px]" strokeWidth={2.2} />
         </span>
       </div>
-      <div className="mt-2 flex items-center gap-2">
-        <span
-          className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${
-            good ? "bg-[oklch(0.62_0.15_162/0.14)] text-[oklch(0.4_0.13_162)]" : "bg-destructive/12 text-destructive"
-          }`}
-        >
-          {delta > 0 ? "+" : ""}
-          {delta}%
-        </span>
-        {hint && <span className="text-[11px] text-muted-foreground truncate">{hint}</span>}
-      </div>
-      <div className={`mt-3 -mb-1 ${accent}`}>
-        <Sparkline values={series.length ? series : [0, 0]} className={accent} />
-      </div>
+      {(delta !== undefined || hint) && (
+        <div className="mt-2 flex items-center gap-2">
+          {delta !== undefined && (
+            <span
+              className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${
+                delta == null
+                  ? "bg-secondary text-muted-foreground"
+                  : good
+                    ? "bg-[oklch(0.62_0.15_162/0.14)] text-[oklch(0.4_0.13_162)]"
+                    : "bg-destructive/12 text-destructive"
+              }`}
+            >
+              {delta == null ? "Sem histórico" : `${delta > 0 ? "+" : ""}${delta}%`}
+            </span>
+          )}
+          {hint && <span className="text-[11px] text-muted-foreground truncate">{hint}</span>}
+        </div>
+      )}
+      {series && series.length > 0 && (
+        <div className={`mt-3 -mb-1 ${accent}`}>
+          <Sparkline values={series.length ? series : [0, 0]} className={accent} />
+        </div>
+      )}
     </div>
   );
 }

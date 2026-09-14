@@ -11,6 +11,7 @@ import { DetailSkeleton } from "@/components/skeletons";
 import { friendlyError } from "@/lib/friendly-error";
 import { useFilaSidebar } from "@/lib/fila-sidebar-context";
 import { STATE_COLOR } from "@/lib/state-colors";
+import { resolveContactName } from "@/lib/resolve-contact-name";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -183,7 +184,7 @@ function DemandaDetail() {
     const r = actorOf(uid)?.role;
     return r ? (ROLE_LABEL[r] ?? r) : null;
   };
-  const contactName = d.contacts?.name || d.contacts?.phone || "Sem contato";
+  const contactName = resolveContactName(d);
   const effectiveViaWhatsapp = viaWhatsapp && !!d.whatsapp_jid;
 
   return (

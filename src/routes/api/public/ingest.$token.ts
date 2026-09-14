@@ -25,6 +25,9 @@ type Normalized = z.infer<typeof Body> & {
   whatsapp_jid?: string | null;
   instance_name?: string | null;
   message_id?: string | null;
+  // Nome de quem mandou a mensagem, só relevante em grupos (o "contato" ali é
+  // o grupo, não a pessoa — mas não queremos perder essa informação).
+  participant_name?: string | null;
 };
 
 const EvolutionPayload = z.object({
@@ -87,15 +90,24 @@ function normalize(payload: unknown):
     const jid = d.key.remoteJid;
     const isGroup = jid.endsWith("@g.us");
 
-    // Formata o telefone/ID limpo
-    const phone = jid
-      .replace(/@s\.whatsapp\.net$/i, "")
-      .replace(/@c\.us$/i, "")
-      .replace(/@g\.us$/i, "");
+    // Telefone só faz sentido pra contato individual — um grupo não tem
+    // telefone, o que sobraria aqui seria o ID numérico do grupo fingindo
+    // ser um telefone (é a origem do "[Grupo] 101077928144947" feio e sem
+    // sentido que você viu na tela).
+    const phone = isGroup
+      ? undefined
+      : jid.replace(/@s\.whatsapp\.net$/i, "").replace(/@c\.us$/i, "");
 
-    // Para grupos, monta um nome legível indicando o autor da mensagem no grupo
-    const senderName = d.pushName ?? (isGroup ? "Participante de Grupo" : "Contato WhatsApp");
-    const contactName = isGroup ? `[Grupo] ${senderName}` : senderName;
+    // pushName é o nome de QUEM MANDOU a mensagem — num grupo isso é o
+    // participante, não o grupo em si. Usar como nome do "contato" (que aqui
+    // representa a conversa com o grupo inteiro) fazia o nome mudar toda vez
+    // que uma pessoa diferente mandasse mensagem no mesmo grupo. Um grupo
+    // sempre se chama "Grupo" pra nós por enquanto (a Evolution API não manda
+    // o nome/assunto real do grupo nesse mesmo evento — pra ter o nome de
+    // verdade precisaria de uma chamada extra à API, que ainda não fizemos).
+    // O nome de quem mandou não se perde: vai junto no metadata do evento.
+    const contactName = isGroup ? "Grupo" : d.pushName?.trim() || "Contato WhatsApp";
+    const participantName = isGroup ? d.pushName?.trim() || null : null;
 
     return {
       ok: true,
@@ -112,6 +124,7 @@ function normalize(payload: unknown):
         instance_name: parsed.data.instance ?? null,
         message_id: d.key.id ?? null,
         external_ref: d.key.id ?? undefined,
+        participant_name: participantName,
       },
     };
   }
@@ -158,45 +171,82 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
         if (!norm.ok) return json(norm.body, norm.status);
         const b = norm.value;
 
-        // 1. Busca ou cria o contato associado (grupo ou pessoa) garantindo integridade
+        // 1. Busca ou cria o contato associado (grupo ou pessoa) pelo external_id
         let contactId: string | null = null;
         if (b.contact?.external_id || b.contact?.phone) {
-          try {
-            // Tenta primeiro realizar uma busca direta pelo external_id ou pelo telefone
-            const { data: found } = await supabaseAdmin
-              .from("contacts")
-              .select("id")
-              .eq("org_id", tok.org_id)
-              .or(`external_id.eq.${b.contact.external_id}${b.contact.phone ? `,phone.eq.${b.contact.phone}` : ''}`)
-              .maybeSingle();
+          // Cada lado do OR só entra na string se realmente existir — antes,
+          // external_id sempre entrava mesmo undefined, virando um filtro
+          // malformado ("external_id.eq.undefined") quando só havia telefone.
+          const orParts = [
+            b.contact.external_id ? `external_id.eq.${b.contact.external_id}` : null,
+            b.contact.phone ? `phone.eq.${b.contact.phone}` : null,
+          ].filter(Boolean).join(",");
 
-            if (found?.id) {
-              contactId = found.id;
-            } else {
-              // Se não encontrou, realiza o upsert para evitar erros de duplicidade/chave única
-              const { data: newContact, error: contactErr } = await supabaseAdmin
+          const { data: found, error: findErr } = await supabaseAdmin
+            .from("contacts")
+            .select("id, name")
+            .eq("org_id", tok.org_id)
+            .or(orParts)
+            .maybeSingle();
+
+          if (findErr) {
+            // Antes, um erro aqui sumia sem deixar rastro — a demanda seguia
+            // sendo criada, só que sem contato vinculado, sem ninguém saber
+            // por quê. Agora fica registrado no log com o contexto todo.
+            console.error("[ingest] falha ao buscar contato", {
+              org_id: tok.org_id,
+              external_id: b.contact.external_id,
+              phone: b.contact.phone,
+              error: findErr,
+            });
+          }
+
+          if (found) {
+            contactId = found.id;
+            // Contato já existia: se a mensagem atual trouxe um nome (ex:
+            // pushName da Evolution) e ele é diferente do que está salvo,
+            // atualiza. Isso é o que faltava — antes o nome nunca era
+            // corrigido depois da primeira vez que o contato era criado,
+            // então um contato criado sem nome ficava "Sem contato" pra
+            // sempre, mesmo com mensagens novas trazendo o nome certo.
+            if (b.contact.name && b.contact.name !== found.name) {
+              const { error: updateErr } = await supabaseAdmin
                 .from("contacts")
-                .upsert(
-                  {
-                    org_id: tok.org_id,
-                    name: b.contact.name ?? `Contato ${b.contact.phone ?? ''}`,
-                    phone: b.contact.phone ?? null,
-                    email: b.contact.email ?? null,
-                    external_id: b.contact.external_id ?? null,
-                  },
-                  { onConflict: "org_id, external_id" }
-                )
-                .select("id")
-                .single();
-
-              if (contactErr) {
-                console.error("[ingest] Erro ao fazer upsert do contato:", contactErr);
-              } else {
-                contactId = newContact?.id ?? null;
+                .update({ name: b.contact.name })
+                .eq("id", contactId);
+              if (updateErr) {
+                console.error("[ingest] falha ao atualizar nome do contato", {
+                  contact_id: contactId,
+                  novo_nome: b.contact.name,
+                  error: updateErr,
+                });
               }
             }
-          } catch (err) {
-            console.error("[ingest] Exceção ao processar contato:", err);
+          } else if (!findErr) {
+            // Só tenta criar se a busca realmente não achou nada — se a busca
+            // deu erro (findErr truthy), não faz sentido tentar criar às cegas.
+            const { data: c, error: insertErr } = await supabaseAdmin
+              .from("contacts")
+              .insert({
+                org_id: tok.org_id,
+                name: b.contact.name ?? null,
+                phone: b.contact.phone ?? null,
+                email: b.contact.email ?? null,
+                external_id: b.contact.external_id ?? null,
+              })
+              .select("id")
+              .single();
+
+            if (insertErr) {
+              console.error("[ingest] falha ao criar contato", {
+                org_id: tok.org_id,
+                external_id: b.contact.external_id,
+                phone: b.contact.phone,
+                error: insertErr,
+              });
+            }
+
+            contactId = c?.id ?? null;
           }
         }
 
@@ -210,7 +260,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             .select("id")
             .eq("org_id", tok.org_id)
             .eq("contact_id", contactId)
-            .neq("state", "concluido") // aberto = qualquer estado que não seja concluído
+            .neq("state", "concluido") // aberto = qualquer estado que não seja concluído (evita esquecer estado novo no futuro)
             .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
@@ -279,6 +329,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             whatsapp_jid: b.whatsapp_jid ?? null,
             instance_name: b.instance_name ?? null,
             message_id: b.message_id ?? null,
+            participant_name: b.participant_name ?? null,
           },
         });
 

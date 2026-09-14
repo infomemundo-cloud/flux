@@ -14,6 +14,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { FilaSidebarContext } from "@/lib/fila-sidebar-context";
 import { useOrgSidebar } from "@/lib/org-sidebar-context";
 import { STATE_COLOR } from "@/lib/state-colors";
+import { resolveContactName } from "@/lib/resolve-contact-name";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/fila")({
   head: () => ({ meta: [{ title: "Fila — Fluxo" }] }),
@@ -207,7 +208,7 @@ function FilaPage() {
                         className="relative grid place-items-center h-8 w-8 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition"
                       >
                         <Filter className="h-4 w-4" />
-                        {state && <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-primary" />}
+                        {state && <span className={`absolute top-1 right-1 h-1.5 w-1.5 rounded-full ${STATE_COLOR[state] ?? "bg-primary"}`} />}
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-52">
@@ -257,7 +258,7 @@ function FilaPage() {
                 const overdue = isOverdueDemanda(d);
                 const urgent = d.priority === "urgente";
                 const flagged = d.state !== "concluido" && (urgent || overdue);
-                const contactName = d.contacts?.name || d.contacts?.phone || "Sem contato";
+                const contactName = resolveContactName(d);
                 const stateColor = STATE_COLOR[d.state] ?? "bg-muted-foreground/40";
 
                 return (
