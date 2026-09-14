@@ -41,6 +41,7 @@ function OrgPicker() {
           <span className="inline-block h-7 w-7 rounded-md bg-primary" /> Fluxo
         </div>
         <h1 className="text-2xl font-bold tracking-tight">Suas organizações</h1>
+        <p className="text-xs text-muted-foreground mt-1">Fluxo</p>
         <p className="text-sm text-muted-foreground mt-1">Escolha uma para abrir o painel, ou crie uma nova.</p>
 
         <div className="mt-6 space-y-2">
