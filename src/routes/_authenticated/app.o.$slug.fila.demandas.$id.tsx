@@ -298,7 +298,10 @@ function DemandaDetail() {
                 );
               }
 
-              const author = isClient ? contactName : nameOf(e.actor_id, "Atendente");
+              // Para mensagens recebidas em grupos, o participant_name do metadata
+              // indica quem realmente enviou — contactName seria o nome do grupo.
+              const participantName = isClient ? (e.metadata?.participant_name as string | null | undefined) : null;
+              const author = isClient ? (participantName || contactName) : nameOf(e.actor_id, "Atendente");
               const authorRole = isClient ? "Cliente" : roleOf(e.actor_id);
               const isAI = actorOf(e.actor_id)?.role === "agente_ia";
               const messageLabel = isClient ? "mensagem recebida" : isOutgoing ? "resposta enviada" : "comentário";
