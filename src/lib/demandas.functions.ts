@@ -50,7 +50,7 @@ export const listDemandas = createServerFn({ method: "GET" })
         { count: "exact" },
       )
       .eq("org_id", data.orgId)
-      .order("created_at", { ascending: false })
+      .order("updated_at", { ascending: false })
       .range(data.offset, data.offset + data.limit - 1);
     if (data.state) q = q.eq("state", data.state);
     if (data.assignedToMe) q = q.eq("assignee_id", context.userId);
