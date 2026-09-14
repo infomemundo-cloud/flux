@@ -247,6 +247,15 @@ export const updateDemanda = createServerFn({ method: "POST" })
 
     const patch: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(rest)) if (v !== undefined) patch[k] = v;
+    // Ninguém preenchia resolved_at em lugar nenhum do sistema — o contador
+    // "Concluídas" contava certo (bate em state), mas o gráfico "Últimos 14
+    // dias" e o KPI de tendência dependem desse campo, que ficava sempre
+    // null. Preenche ao concluir, limpa se for reaberta depois (mantém o
+    // dado condizente com o estado atual, não uma marca permanente do
+    // primeiro dia em que foi concluída).
+    if ("state" in patch) {
+      patch.resolved_at = patch.state === "concluido" ? new Date().toISOString() : null;
+    }
     // Usa context.supabase (cliente autenticado) em vez de supabaseAdmin para que o trigger
     // log_demanda_changes consiga resolver auth.uid() e gravar actor_id corretamente.
     // A permissão já foi verificada acima via assertMember + OP_ROLES.
