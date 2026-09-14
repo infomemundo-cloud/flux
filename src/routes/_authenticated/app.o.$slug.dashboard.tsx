@@ -372,17 +372,19 @@ function Kpi({
           <Icon className="h-[19px] w-[19px]" strokeWidth={2.2} />
         </span>
       </div>
-      {(delta || hint) && (
+      {(delta !== undefined || hint) && (
         <div className="mt-2 flex items-center gap-2">
-          {delta != null && (
+          {delta !== undefined && (
             <span
               className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${
-                good
-                  ? "bg-[oklch(0.62_0.15_162/0.14)] text-[oklch(0.4_0.13_162)]"
-                  : "bg-destructive/12 text-destructive"
+                delta == null
+                  ? "bg-secondary text-muted-foreground"
+                  : good
+                    ? "bg-[oklch(0.62_0.15_162/0.14)] text-[oklch(0.4_0.13_162)]"
+                    : "bg-destructive/12 text-destructive"
               }`}
             >
-              {`${delta > 0 ? "+" : ""}${delta}%`}
+              {delta == null ? "Sem histórico" : `${delta > 0 ? "+" : ""}${delta}%`}
             </span>
           )}
           {hint && <span className="text-[11px] text-muted-foreground truncate">{hint}</span>}

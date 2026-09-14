@@ -297,10 +297,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           protocol = dem.protocol as string | null;
         } else {
           // Atualiza os metadados na demanda existente
-          const patch: Record<string, unknown> = {
-            last_message_id: b.message_id ?? null,
-            updated_at: new Date().toISOString(),
-          };
+          const patch: Record<string, unknown> = { last_message_id: b.message_id ?? null };
           if (b.whatsapp_jid) {
             patch["whatsapp_jid"] = b.whatsapp_jid;
             patch["channel_type"] = b.channel_type;
