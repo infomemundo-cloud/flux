@@ -117,14 +117,14 @@ function isFlaggedDemanda(d: any) {
   return d.state !== "concluido" && (d.priority === "urgente" || isOverdueDemanda(d));
 }
 
-  // Atrasadas e urgentes (com pip vermelho no avatar) sobem pro topo em 1º lugar.
-  // Entre as prioritárias (e entre as normais abaixo), a ordem de chegada
-  // de novas mensagens (updated_at) é mantida.
+  // 1° critério: demandas atrasadas (pip vermelho) sempre no topo.
+  // 2° critério: ordem de chegada — created_at crescente (quem chegou
+  // primeiro aparece primeiro dentro de cada grupo).
   const data = [...loadedRows].sort((a, b) => {
-    const flagA = isFlaggedDemanda(a);
-    const flagB = isFlaggedDemanda(b);
-    if (flagA !== flagB) return Number(flagB) - Number(flagA);
-    return new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime();
+    const overdueA = isOverdueDemanda(a);
+    const overdueB = isOverdueDemanda(b);
+    if (overdueA !== overdueB) return Number(overdueB) - Number(overdueA);
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
   });
   const hasMore = data.length < total;
   const loadingFirstPage = isFetching && data.length === 0;
