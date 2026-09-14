@@ -113,19 +113,13 @@ function FilaPage() {
     .sort((a, b) => a - b)
     .flatMap((k) => pages[k]);
 
-function isFlaggedDemanda(d: any) {
-  return d.state !== "concluido" && (d.priority === "urgente" || isOverdueDemanda(d));
-}
-
-  // 1° critério: demandas atrasadas (pip vermelho) sempre no topo.
-  // 2° critério: ordem de chegada — created_at crescente (quem chegou
-  // primeiro aparece primeiro dentro de cada grupo).
-  const data = [...loadedRows].sort((a, b) => {
-    const overdueA = isOverdueDemanda(a);
-    const overdueB = isOverdueDemanda(b);
-    if (overdueA !== overdueB) return Number(overdueB) - Number(overdueA);
-    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-  });
+  // Atrasadas sobem pro topo, sem precisar de filtro — o resto mantém a
+  // ordem de chegada porque Array.sort é estável (JS garante isso desde
+  // 2019), então dois itens "empatados" (ambos atrasados, ou ambos não)
+  // nunca trocam de posição entre si.
+  const data = [...loadedRows].sort(
+    (a, b) => Number(isOverdueDemanda(b)) - Number(isOverdueDemanda(a)),
+  );
   const hasMore = data.length < total;
   const loadingFirstPage = isFetching && data.length === 0;
 
