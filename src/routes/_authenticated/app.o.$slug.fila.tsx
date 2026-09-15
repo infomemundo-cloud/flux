@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { ListSkeleton } from "@/components/skeletons";
-import { listDemandas, createDemanda } from "@/lib/demandas.functions";
+import { listDemandas, createDemanda } from "@/lib/demandas/demandas.functions";
 import { getOrgBySlug } from "@/lib/orgs.functions";
 import { toast } from "sonner";
 import { friendlyError } from "@/lib/friendly-error";

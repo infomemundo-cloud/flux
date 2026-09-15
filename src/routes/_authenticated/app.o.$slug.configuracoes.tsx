@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { getOrgBySlug, listMembers } from "@/lib/orgs.functions";
-import { listWebhookTokens, createWebhookToken, deleteWebhookToken } from "@/lib/demandas.functions";
+import { listWebhookTokens, createWebhookToken, deleteWebhookToken } from "@/lib/demandas/webhook-tokens.functions";
 import { getWhatsappConnection, connectWhatsapp, disconnectWhatsapp, setWhatsappAutoReply } from "@/lib/whatsapp.functions";
 import { friendlyError } from "@/lib/friendly-error";
 import { SectionTitle, StatCard } from "@/components/section-ui";

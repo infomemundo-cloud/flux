@@ -2,7 +2,7 @@ import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { slaAlerts } from "@/lib/demandas.functions";
+import { slaAlerts } from "@/lib/demandas/demandas-analytics.functions";
 import { getOrgBySlug } from "@/lib/orgs.functions";
 import { PriorityBadge, STATE_LABEL, formatRelative, ProtocolChip, ContactLine, DueChip, UrgentTag } from "@/components/demandas-ui";
 import { STATE_COLOR } from "@/lib/demandas/state-colors";

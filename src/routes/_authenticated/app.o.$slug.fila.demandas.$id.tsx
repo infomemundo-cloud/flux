@@ -2,7 +2,7 @@ import { createFileRoute, Link, useParams, useNavigate } from "@tanstack/react-r
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
-import { getDemanda, updateDemanda, addComment, deleteDemanda } from "@/lib/demandas.functions";
+import { getDemanda, updateDemanda, addComment, deleteDemanda } from "@/lib/demandas/demandas.functions";
 import { sendWhatsAppMessage } from "@/lib/whatsapp.functions";
 import { getOrgBySlug, listOperators } from "@/lib/orgs.functions";
 import { STATE_LABEL, formatRelative } from "@/components/demandas-ui";
