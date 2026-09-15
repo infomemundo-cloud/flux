@@ -11,10 +11,10 @@ import { Plus, Search, X, PanelLeftOpen, Inbox, Filter } from "lucide-react";
 import { formatRelative } from "@/components/demandas-ui";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { FilaSidebarContext } from "@/lib/fila-sidebar-context";
+import { FilaSidebarContext } from "@/lib/demandas/fila-sidebar-context";
 import { useOrgSidebar } from "@/lib/org-sidebar-context";
-import { STATE_COLOR } from "@/lib/state-colors";
-import { resolveContactName } from "@/lib/resolve-contact-name";
+import { STATE_COLOR } from "@/lib/demandas/state-colors";
+import { resolveContactName } from "@/lib/demandas/resolve-contact-name";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/fila")({
   head: () => ({ meta: [{ title: "Fila — Fluxo" }] }),
