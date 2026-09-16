@@ -7,7 +7,7 @@ import { listDemandas } from "@/lib/demandas/demandas.functions";
 import { orgDashboard } from "@/lib/demandas/demandas-analytics.functions";
 import { STATE_LABEL, PriorityBadge } from "@/components/demandas-ui";
 import { AiSuggestionsCard, MemberAvatar, Sparkline, TeamSelector, type TeamOption } from "@/components/dashboard-ui";
-import { AlertTriangle, CheckCircle2, Inbox, Layers, Target, TrendingUp } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Inbox, Info, Layers, Target, TrendingUp } from "lucide-react";
 import { DashboardSkeleton } from "@/components/skeletons";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/dashboard")({
@@ -129,14 +129,16 @@ function CommandPanel({ dash }: { dash: any }) {
   const resolvidas = dash.timeline.map((t: any) => t.resolvidas as number);
   const totalSerie = dash.timeline.map((t: any) => (t.novas as number) + (t.resolvidas as number));
   const sum = (a: number[]) => a.reduce((x: number, y: number) => x + y, 0);
+  // Quantas demandas a primeira metade da janela precisa ter pra uma % fazer
+  // sentido. Com uma base muito pequena (ex: foi de 1 pra 10), a conta dá
+  // "+900%" — matematicamente certo, mas engana quem olha, porque parece um
+  // salto real e é só reflexo de ainda não ter histórico suficiente.
+  const MIN_BASE_PARA_COMPARAR = 3;
   const trend = (a: number[]): number | null => {
     const half = Math.floor(a.length / 2);
     const prev = sum(a.slice(0, half));
     const cur = sum(a.slice(half));
-    // Sem base na primeira metade da janela: "foi de 0 pra qualquer coisa"
-    // não é uma % de crescimento de verdade — normal em contas novas, com
-    // pouco histórico. Sinaliza "sem histórico" em vez de inventar um número.
-    if (prev === 0) return null;
+    if (prev < MIN_BASE_PARA_COMPARAR) return null; // "Sem histórico" em vez de % exagerada
     return Math.round(((cur - prev) / prev) * 100);
   };
 
@@ -147,6 +149,7 @@ function CommandPanel({ dash }: { dash: any }) {
         label="Demandas abertas"
         value={dash.openTotal}
         hint="Em andamento agora"
+        info="Quantas demandas ainda estão em aberto neste momento, sem contar as já concluídas. O selo compara a última semana com a semana anterior."
         series={novas}
         delta={trend(novas)}
         tone="primary"
@@ -156,6 +159,7 @@ function CommandPanel({ dash }: { dash: any }) {
         label="Vencidas"
         value={dash.overdue}
         hint="Fora do prazo"
+        info="Demandas em aberto cujo prazo já passou. O selo compara a última semana com a semana anterior."
         series={novas.map((_: number, i: number) => Math.max(0, novas[i] - resolvidas[i]))}
         delta={trend(novas.map((_: number, i: number) => Math.max(0, novas[i] - resolvidas[i])))}
         tone="destructive"
@@ -165,7 +169,8 @@ function CommandPanel({ dash }: { dash: any }) {
         icon={CheckCircle2}
         label="Concluídas"
         value={dash.counts.concluido ?? 0}
-        hint="Últimos 14 dias em alta"
+        hint="Total desde o início"
+        info="Total de demandas já finalizadas desde que a organização começou a usar o Fluxo (não é só dos últimos 14 dias). O selo compara a última semana com a semana anterior."
         series={resolvidas}
         delta={trend(resolvidas)}
         tone="success"
@@ -175,6 +180,7 @@ function CommandPanel({ dash }: { dash: any }) {
         label="Total no escopo"
         value={dash.total}
         hint="Volume acumulado"
+        info="Soma de todas as demandas dentro do filtro selecionado no topo da página (concluídas ou não)."
         series={totalSerie}
         delta={trend(totalSerie)}
       />
@@ -184,6 +190,7 @@ function CommandPanel({ dash }: { dash: any }) {
         value={dash.total ? Math.round(((dash.counts.concluido ?? 0) / dash.total) * 100) : 0}
         unit="%"
         hint="Concluídas sobre o total do escopo"
+        info="De cada 100 demandas dentro do filtro atual, quantas já foram concluídas."
         tone="success"
       />
 
@@ -329,8 +336,35 @@ function Timeline({ dash }: { dash: any }) {
   );
 }
 
+/** Ícone "i" pequeno com balãozinho explicativo — hover no desktop, toque no celular. */
+function InfoTip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="group relative inline-flex">
+      <button
+        type="button"
+        aria-label="O que é este número?"
+        onClick={() => setOpen((o) => !o)}
+        onBlur={() => setOpen(false)}
+        className="grid h-4 w-4 place-items-center rounded-full text-muted-foreground/60 hover:text-foreground focus:text-foreground transition-colors"
+      >
+        <Info className="h-3.5 w-3.5" strokeWidth={2.2} />
+      </button>
+      <span
+        role="tooltip"
+        className={`pointer-events-none absolute bottom-full left-1/2 z-50 mb-2.5 w-60 -translate-x-1/2 rounded-xl border border-border bg-popover px-3.5 py-2.5 text-left text-[12px] font-normal normal-case leading-relaxed tracking-normal text-popover-foreground shadow-[var(--shadow-pop)] transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 ${
+          open ? "opacity-100" : "opacity-0"
+        }`}
+      >
+        {text}
+        <span className="absolute left-1/2 top-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-border bg-popover" />
+      </span>
+    </span>
+  );
+}
+
 function Kpi({
-  icon: Icon, label, value, hint, series, delta, tone, invert, unit,
+  icon: Icon, label, value, hint, series, delta, tone, invert, unit, info,
 }: {
   icon: any;
   label: string;
@@ -341,6 +375,7 @@ function Kpi({
   tone?: "primary" | "destructive" | "success";
   invert?: boolean;
   unit?: string;
+  info?: string;
 }) {
   const accent =
     tone === "destructive"
@@ -363,7 +398,10 @@ function Kpi({
     <div className="rounded-2xl border border-border bg-card p-5 shadow-[var(--shadow-card)] hover:border-primary/25 transition-colors">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground truncate">{label}</div>
+          <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+            <span className="truncate">{label}</span>
+            {info && <InfoTip text={info} />}
+          </div>
           <div className="mt-1.5 text-3xl font-bold tracking-tight tabular-nums">
             {value}
             {unit && <span className="text-lg text-muted-foreground font-semibold">{unit}</span>}
