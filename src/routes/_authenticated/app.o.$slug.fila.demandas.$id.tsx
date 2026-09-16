@@ -12,6 +12,7 @@ import { friendlyError } from "@/lib/friendly-error";
 import { useFilaSidebar } from "@/lib/demandas/fila-sidebar-context";
 import { STATE_COLOR } from "@/lib/demandas/state-colors";
 import { resolveContactName } from "@/lib/demandas/resolve-contact-name";
+import { ContactAvatar } from "@/components/contact-avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -104,6 +105,7 @@ function initials(name: string) {
     .join("");
 }
 
+/** Avatar de equipe/IA (bolhas de saída e comentários) — sem foto externa. */
 function Avatar({
   name,
   isAI,
@@ -449,7 +451,7 @@ function DemandaDetail() {
           >
             <PanelLeftClose className="h-4 w-4" />
           </button>
-          <Avatar name={contactName} tone="client" />
+          <ContactAvatar url={d.contacts?.avatar_url ?? null} name={contactName} tone="client" />
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-1.5 min-w-0">
               <span className="truncate text-sm font-semibold text-foreground">{contactName}</span>
@@ -556,7 +558,11 @@ function DemandaDetail() {
 
               return (
                 <li key={e.id} className={`flex gap-2.5 pt-2 ${isClient ? "" : "sm:pl-8"}`}>
-                  <Avatar name={author} isAI={isAI} tone={isClient ? "client" : "team"} size="sm" />
+                  {isClient ? (
+                    <ContactAvatar url={d.contacts?.avatar_url ?? null} name={author} size="sm" tone="client" />
+                  ) : (
+                    <Avatar name={author} isAI={isAI} tone="team" size="sm" />
+                  )}
                   <div
                     className={`min-w-0 flex-1 rounded-xl px-3.5 py-2.5 ${
                       isClient
@@ -706,7 +712,6 @@ function DemandaDetail() {
               <PanelRightClose className="h-3.5 w-3.5" />
             </button>
           </div>
-
           <div className="divide-y divide-border/50 text-xs">
             <div className="p-2.5 space-y-1">
               <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -728,7 +733,6 @@ function DemandaDetail() {
                 </SelectContent>
               </Select>
             </div>
-
             <div className="p-2.5 space-y-1">
               <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 <Flag className="h-3 w-3 text-primary/70" strokeWidth={2.2} /> Prioridade
@@ -746,14 +750,12 @@ function DemandaDetail() {
                 </SelectContent>
               </Select>
             </div>
-
             <div className="p-2.5 space-y-1">
               <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 <CalendarClock className="h-3 w-3 text-primary/70" strokeWidth={2.2} /> Prazo
               </label>
               <DueDatePicker value={d.due_at ?? null} onChange={(iso) => update.mutate({ due_at: iso })} />
             </div>
-
             {org && (
               <div className="p-2.5 space-y-1">
                 <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -791,7 +793,6 @@ function DemandaDetail() {
               </div>
             )}
           </div>
-
           {canDelete && (
             <div className="mt-auto border-t border-border/60 p-2.5 bg-card/40">
               {!confirmDelete ? (

@@ -10,15 +10,12 @@ import { resolveContactName } from "@/lib/demandas/resolve-contact-name";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, Clock, ChevronRight, ShieldCheck } from "lucide-react";
 import { ListSkeleton } from "@/components/skeletons";
+import { ContactAvatar } from "@/components/contact-avatar";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/alertas")({
   head: () => ({ meta: [{ title: "Alertas de SLA — Fluxo" }] }),
   component: AlertasPage,
 });
-
-function initials(name: string) {
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join("");
-}
 
 function severity(iso: string) {
   const days = (Date.now() - new Date(iso).getTime()) / 86400000;
@@ -54,15 +51,12 @@ function AlertasPage() {
     queryFn: () => fn({ data: { orgId: orgId!, staleDays } }),
     refetchInterval: 60000,
   });
-
   const PAGE_SIZE = 20;
   const [visible, setVisible] = useState(PAGE_SIZE);
   const total = data?.length ?? 0;
   const items = useMemo(() => (data ?? []).slice(0, visible), [data, visible]);
   const hasMore = visible < total;
-
   useEffect(() => { setVisible(PAGE_SIZE); }, [total]);
-
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!hasMore) return;
@@ -86,7 +80,6 @@ function AlertasPage() {
           </span>
           <h1 className="text-[22px] sm:text-[28px] font-extrabold tracking-tight truncate">Alertas de SLA</h1>
         </div>
-
         <div className="flex items-center gap-2 shrink-0">
           <span className="text-xs text-muted-foreground hidden sm:inline">Alertar após</span>
           <Select value={String(staleDays)} onValueChange={(v) => setStaleDays(Number(v))}>
@@ -103,7 +96,6 @@ function AlertasPage() {
           </Select>
         </div>
       </div>
-
       <div className="flex items-center gap-2 mb-5 sm:mb-6">
         <p className="text-[13px] text-muted-foreground">
           Demandas paradas sem nenhuma atualização há {staleDays} {staleDays === 1 ? "dia" : "dias"} ou mais.
@@ -114,7 +106,6 @@ function AlertasPage() {
           </span>
         )}
       </div>
-
       {isLoading && !data && <ListSkeleton rows={4} height="h-[92px]" />}
       {!isLoading && data && data.length === 0 && (
         <div className="rounded-2xl border border-dashed border-border bg-card/60 p-12 text-center">
@@ -125,7 +116,6 @@ function AlertasPage() {
           <p className="mt-1 text-[13px] text-muted-foreground">Todo o time está dentro do SLA. Tudo em dia!</p>
         </div>
       )}
-
       <div className="space-y-2 scrollbar-thin">
         {items.map((d: any) => {
           const sev = severity(d.last_activity_at);
@@ -140,16 +130,12 @@ function AlertasPage() {
               className={`group relative flex items-start gap-3 overflow-hidden rounded-xl border bg-card shadow-[var(--shadow-card)] pl-4 pr-3 py-3.5 transition-all hover:shadow-[var(--shadow-pop)] ${sev.ring}`}
             >
               <span className={`absolute left-0 top-0 h-full w-[3px] ${sev.bar}`} />
-
               <div className="relative shrink-0 mt-0.5">
-                <div className="h-9 w-9 rounded-full bg-primary/10 text-primary grid place-items-center text-[11px] font-bold">
-                  {initials(contactName) || "?"}
-                </div>
+                <ContactAvatar url={d.contacts?.avatar_url ?? null} name={contactName} tone="neutral" />
                 <span className={`absolute -bottom-1 -right-1 grid place-items-center h-4 w-4 rounded-full bg-card ${sev.cls}`}>
                   <AlertTriangle className={`h-3 w-3 ${sev.blink ? "animate-alert-blink" : ""}`} strokeWidth={2.5} />
                 </span>
               </div>
-
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${sev.pill}`}>
@@ -177,7 +163,6 @@ function AlertasPage() {
           );
         })}
       </div>
-
       {hasMore && (
         <>
           <div ref={sentinelRef} aria-hidden className="h-8" />

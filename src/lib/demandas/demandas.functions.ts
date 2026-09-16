@@ -21,51 +21,41 @@ export const listDemandas = createServerFn({ method: "GET" })
   )
   .handler(async ({ data, context }) => {
     await assertMember(context.supabase, data.orgId, context.userId);
-
     // 1. Monta a query com os filtros, mas SEM o .range() ainda
     let q = context.supabase
       .from("demandas")
       .select(
-        "id, protocol, title, state, priority, due_at, assignee_id, contact_id, whatsapp_jid, created_at, updated_at, contacts:contact_id(name, phone), channels:channel_id(kind, name)",
-        { count: "exact" }
+        "id, protocol, title, state, priority, due_at, assignee_id, contact_id, whatsapp_jid, created_at, updated_at, contacts:contact_id(name, phone, avatar_url), channels:channel_id(kind, name)",
+        { count: "exact" },
       )
       .eq("org_id", data.orgId);
-
     if (data.state) q = q.eq("state", data.state);
     if (data.assignedToMe) q = q.eq("assignee_id", context.userId);
     if (data.assigneeId === null) q = q.is("assignee_id", null);
     else if (typeof data.assigneeId === "string") q = q.eq("assignee_id", data.assigneeId);
     if (data.search) q = q.ilike("title", `%${data.search}%`);
-
     const { data: rows, count, error } = await q;
     if (error) throw new Error(error.message);
-
     const now = Date.now();
-
     // 2. Ordenação customizada no lado do servidor
     // Regra 1: Atrasadas primeiro (due_at < now e state != 'concluido')
     // Regra 2: Dentro dos grupos, ordenar por updated_at (mais recente primeiro)
     const sortedRows = (rows ?? []).sort((a: any, b: any) => {
       const isOverdueA = a.due_at && new Date(a.due_at).getTime() < now && a.state !== "concluido";
       const isOverdueB = b.due_at && new Date(b.due_at).getTime() < now && b.state !== "concluido";
-
       if (isOverdueA && !isOverdueB) return -1;
       if (!isOverdueA && isOverdueB) return 1;
-
       const dateA = new Date(a.updated_at).getTime();
       const dateB = new Date(b.updated_at).getTime();
       return dateB - dateA;
     });
-
     // 3. Aplica a paginação manualmente no array já ordenado
     const paginatedRows = sortedRows.slice(data.offset, data.offset + data.limit);
-
     // Resolve nomes dos responsáveis em batch (apenas dos itens paginados)
     const assignees: Record<string, { id: string; name: string }> = {};
     const assigneeIds = [
       ...new Set((paginatedRows ?? []).map((r: any) => r.assignee_id).filter(Boolean) as string[]),
     ];
-
     if (assigneeIds.length > 0) {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       await Promise.all(
@@ -78,10 +68,9 @@ export const listDemandas = createServerFn({ method: "GET" })
             (typeof meta.name === "string" && meta.name) ||
             (email ? email.split("@")[0] : `Usuário ${uid.slice(0, 6)}`);
           assignees[uid] = { id: uid, name: name as string };
-        })
+        }),
       );
     }
-
     return {
       rows: paginatedRows,
       assignees,
@@ -97,18 +86,16 @@ export const getDemanda = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const { data: dem, error } = await context.supabase
       .from("demandas")
-      .select("*, contacts:contact_id(id, name, phone, email), channels:channel_id(id, kind, name)")
+      .select("*, contacts:contact_id(id, name, phone, email, avatar_url), channels:channel_id(id, kind, name)")
       .eq("id", data.id)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!dem) throw new Error("Demanda não encontrada");
-
     const { data: events } = await context.supabase
       .from("demanda_events")
       .select("*")
       .eq("demanda_id", data.id)
       .order("created_at");
-
     // Identidade dos personagens: quem criou, mudou status, comentou e é responsável.
     const ids = new Set<string>();
     if (dem.created_by) ids.add(dem.created_by as string);
@@ -120,12 +107,10 @@ export const getDemanda = createServerFn({ method: "GET" })
         if (e.to_value) ids.add(e.to_value as string);
       }
     }
-
     const actors: Record<
       string,
       { id: string; name: string; email: string | null; role: string | null }
     > = {};
-
     if (ids.size) {
       const idList = [...ids];
       const { data: mems } = await context.supabase
@@ -135,7 +120,6 @@ export const getDemanda = createServerFn({ method: "GET" })
         .in("user_id", idList);
       const roleById = new Map((mems ?? []).map((m: any) => [m.user_id, m.role as string]));
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-
       await Promise.all(
         idList.map(async (uid) => {
           const { data: u } = await supabaseAdmin.auth.admin.getUserById(uid);
@@ -146,7 +130,7 @@ export const getDemanda = createServerFn({ method: "GET" })
             (typeof meta.name === "string" && meta.name) ||
             (email ? email.split("@")[0] : `Usuário ${uid.slice(0, 6)}`);
           actors[uid] = { id: uid, name: name as string, email, role: roleById.get(uid) ?? null };
-        })
+        }),
       );
     }
     return { demanda: dem, events: events ?? [], actors, viewerId: context.userId };
@@ -184,10 +168,8 @@ export const createDemanda = createServerFn({ method: "POST" })
     const role = await assertMember(context.supabase, data.orgId, context.userId);
     if (!OP_ROLES.includes(role as (typeof OP_ROLES)[number]))
       throw new Error("Sem permissão para criar");
-
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     let contactId: string | null = null;
-
     if (data.contact_name || data.contact_phone) {
       const { data: c, error: ce } = await supabaseAdmin
         .from("contacts")
@@ -201,7 +183,6 @@ export const createDemanda = createServerFn({ method: "POST" })
       if (ce) throw new Error(ce.message);
       contactId = c.id;
     }
-
     const { data: dem, error } = await supabaseAdmin
       .from("demandas")
       .insert({
@@ -215,7 +196,6 @@ export const createDemanda = createServerFn({ method: "POST" })
       })
       .select("id, protocol")
       .single();
-
     if (error) throw new Error(error.message);
     return dem;
   });
@@ -251,17 +231,13 @@ export const updateDemanda = createServerFn({ method: "POST" })
       .select("org_id")
       .eq("id", id)
       .maybeSingle();
-
     if (curErr) throw new Error(curErr.message);
     if (!currentDem) throw new Error("Demanda não encontrada");
-
     const role = await assertMember(context.supabase, currentDem.org_id, context.userId);
     if (!OP_ROLES.includes(role as (typeof OP_ROLES)[number]))
       throw new Error("Sem permissão para editar");
-
     const patch: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(rest)) if (v !== undefined) patch[k] = v;
-
     // Ninguém preenchia resolved_at em lugar nenhum do sistema — o contador
     // "Concluídas" contava certo (bate em state), mas o gráfico "Últimos 14
     // dias" e o KPI de tendência dependem desse campo, que ficava sempre
@@ -269,7 +245,6 @@ export const updateDemanda = createServerFn({ method: "POST" })
     if ("state" in patch) {
       patch.resolved_at = patch.state === "concluido" ? new Date().toISOString() : null;
     }
-
     // Usa context.supabase (cliente autenticado) em vez de supabaseAdmin para que o trigger
     // log_demanda_changes consiga resolver auth.uid() e gravar actor_id corretamente.
     const { data: dem, error } = await context.supabase
@@ -278,7 +253,6 @@ export const updateDemanda = createServerFn({ method: "POST" })
       .eq("id", id)
       .select("id, state")
       .single();
-
     if (error) throw new Error(error.message);
     return dem;
   });
@@ -320,14 +294,11 @@ export const deleteDemanda = createServerFn({ method: "POST" })
       .select("org_id")
       .eq("id", data.id)
       .maybeSingle();
-
     if (fetchErr) throw new Error(fetchErr.message);
     if (!dem) throw new Error("Demanda não encontrada");
-
     const role = await assertMember(context.supabase, dem.org_id, context.userId);
     if (!["owner", "admin"].includes(role))
       throw new Error("Apenas owners e admins podem excluir demandas.");
-
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("demandas").delete().eq("id", data.id);
     if (error) throw new Error(error.message);

@@ -78,7 +78,7 @@ export const slaAlerts = createServerFn({ method: "GET" })
     const { data: rows, error } = await context.supabase
       .from("demandas")
       .select(
-        "id, protocol, title, state, priority, due_at, whatsapp_jid, created_at, updated_at, contacts:contact_id(name, phone), channels:channel_id(kind, name)",
+        "id, protocol, title, state, priority, due_at, whatsapp_jid, created_at, updated_at, contacts:contact_id(name, phone, avatar_url), channels:channel_id(kind, name)",
       )
       .eq("org_id", data.orgId)
       .not("state", "in", "(aguardando_revisao_humana,concluido)")
