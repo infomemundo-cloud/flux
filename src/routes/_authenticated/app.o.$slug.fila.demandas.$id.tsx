@@ -15,12 +15,31 @@ import { resolveContactName } from "@/lib/demandas/resolve-contact-name";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  PanelLeftClose, PanelRightClose, PanelRightOpen, X, Lock, MessageCircle, GitBranch, AlertCircle, Send, Trash2, UserCheck,
-  Flag, CalendarClock, UserCog, Activity, Circle, CheckCircle2, Paperclip, Smile, Sticker,
-  ChevronLeft, ChevronRight, Clock,
+  PanelLeftClose,
+  PanelRightClose,
+  PanelRightOpen,
+  X,
+  Lock,
+  MessageCircle,
+  GitBranch,
+  AlertCircle,
+  Send,
+  Trash2,
+  UserCheck,
+  Flag,
+  CalendarClock,
+  UserCog,
+  Activity,
+  Circle,
+  CheckCircle2,
+  Paperclip,
+  Smile,
+  Sticker,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
 } from "lucide-react";
 
-// Rota aninhada dentro de /fila — renderiza no <Outlet/> de app.o.$slug.fila.tsx.
 export const Route = createFileRoute("/_authenticated/app/o/$slug/fila/demandas/$id")({
   head: () => ({ meta: [{ title: "Demanda — Fluxo" }] }),
   component: DemandaDetail,
@@ -37,15 +56,22 @@ const ROLE_LABEL: Record<string, string> = {
   agente_ia: "Agente de IA",
 };
 
-// Estilo único dos controles do trilho — sua versão em caixa (borda + fundo
-// card), consolidada aqui em vez de repetida 3 vezes, pra ficar fácil de
-// ajustar num lugar só depois.
 const RAIL_TRIGGER_CLS =
   "w-full h-8 px-2 rounded-md border border-border/60 bg-card text-xs font-medium text-left hover:bg-accent/50 focus:ring-1 focus:ring-ring transition-colors";
 
 const MONTHS_PT = [
-  "janeiro", "fevereiro", "março", "abril", "maio", "junho",
-  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+  "janeiro",
+  "fevereiro",
+  "março",
+  "abril",
+  "maio",
+  "junho",
+  "julho",
+  "agosto",
+  "setembro",
+  "outubro",
+  "novembro",
+  "dezembro",
 ];
 const WEEKDAYS_PT = ["D", "S", "T", "Q", "Q", "S", "S"];
 
@@ -61,15 +87,34 @@ function startOfDay(d: Date) {
 
 function formatDueLabel(iso: string) {
   return new Date(iso).toLocaleString("pt-BR", {
-    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
 function initials(name: string) {
-  return name.split(/[\s._@-]+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join("");
+  return name
+    .split(/[\s._@-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]!.toUpperCase())
+    .join("");
 }
 
-function Avatar({ name, isAI, tone, size = "md" }: { name: string; isAI?: boolean; tone?: "client" | "team"; size?: "sm" | "md" }) {
+function Avatar({
+  name,
+  isAI,
+  tone,
+  size = "md",
+}: {
+  name: string;
+  isAI?: boolean;
+  tone?: "client" | "team";
+  size?: "sm" | "md";
+}) {
   return (
     <div
       className={`${size === "sm" ? "h-7 w-7 text-[10px]" : "h-9 w-9 text-[11px]"} shrink-0 rounded-full grid place-items-center font-bold ${
@@ -82,7 +127,6 @@ function Avatar({ name, isAI, tone, size = "md" }: { name: string; isAI?: boolea
   );
 }
 
-/** Linha de propriedade do trilho: label pequeno + valor/controle compacto. */
 function RailRow({ icon: Icon, label, children }: { icon: typeof Flag; label: string; children: React.ReactNode }) {
   return (
     <div className="px-3 py-2.5">
@@ -96,7 +140,6 @@ function RailRow({ icon: Icon, label, children }: { icon: typeof Flag; label: st
   );
 }
 
-/** Linha fina de timeline para eventos de sistema. */
 function SystemLine({ icon: Icon, children, when }: { icon: typeof GitBranch; children: React.ReactNode; when: string }) {
   return (
     <li className="relative pl-9">
@@ -111,13 +154,6 @@ function SystemLine({ icon: Icon, children, when }: { icon: typeof GitBranch; ch
   );
 }
 
-/**
- * Seletor de data + hora customizado pro campo "Prazo" do trilho.
- * Substitui o <input type="datetime-local"> nativo (feio e sem animação)
- * por um calendário próprio com micro-interações: scale no clique,
- * hover suave, "hoje" marcado e dia selecionado em destaque.
- * Sem dependências novas — só React + Tailwind, dentro do Popover existente.
- */
 function DueDatePicker({ value, onChange }: { value: string | null; onChange: (iso: string | null) => void }) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState(() => startOfDay(value ? new Date(value) : new Date()));
@@ -202,8 +238,6 @@ function DueDatePicker({ value, onChange }: { value: string | null; onChange: (i
           <CalendarClock className="h-3 w-3 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-primary" />
         </button>
       </PopoverTrigger>
-
-      {/* ✅ Abre para a ESQUERDA (área livre), nunca cortado na borda direita/baixo */}
       <PopoverContent
         side="left"
         align="center"
@@ -211,7 +245,6 @@ function DueDatePicker({ value, onChange }: { value: string | null; onChange: (i
         collisionPadding={12}
         className="w-[252px] rounded-xl border-border/60 p-3 shadow-lg max-h-[calc(100vh-24px)] overflow-y-auto scrollbar-thin"
       >
-        {/* Cabeçalho do mês */}
         <div className="mb-2 flex items-center justify-between">
           <button
             type="button"
@@ -233,8 +266,6 @@ function DueDatePicker({ value, onChange }: { value: string | null; onChange: (i
             <ChevronRight className="h-3.5 w-3.5" />
           </button>
         </div>
-
-        {/* Dias da semana */}
         <div className="mb-1 grid grid-cols-7 gap-0.5">
           {WEEKDAYS_PT.map((w, i) => (
             <div key={i} className="grid h-6 place-items-center text-[10px] font-semibold text-muted-foreground/60">
@@ -242,8 +273,6 @@ function DueDatePicker({ value, onChange }: { value: string | null; onChange: (i
             </div>
           ))}
         </div>
-
-        {/* Grade de dias */}
         <div className="grid grid-cols-7 gap-0.5">
           {cells.map((c, i) => {
             const ms = startOfDay(c.date).getTime();
@@ -269,24 +298,24 @@ function DueDatePicker({ value, onChange }: { value: string | null; onChange: (i
             );
           })}
         </div>
-
-        {/* Hora */}
         <div className="mt-3 flex items-center gap-1.5 border-t border-border/50 pt-2.5">
           <Clock className="h-3 w-3 shrink-0 text-muted-foreground/60" />
           <select aria-label="Hora" value={hour} onChange={(e) => changeHour(Number(e.target.value))} className={timeSelect}>
             {Array.from({ length: 24 }, (_, h) => (
-              <option key={h} value={h}>{pad2(h)}</option>
+              <option key={h} value={h}>
+                {pad2(h)}
+              </option>
             ))}
           </select>
           <span className="text-xs font-semibold text-muted-foreground">:</span>
           <select aria-label="Minuto" value={minute} onChange={(e) => changeMinute(Number(e.target.value))} className={timeSelect}>
             {Array.from({ length: 60 }, (_, m) => (
-              <option key={m} value={m}>{pad2(m)}</option>
+              <option key={m} value={m}>
+                {pad2(m)}
+              </option>
             ))}
           </select>
         </div>
-
-        {/* Ações rápidas */}
         <div className="mt-2.5 flex items-center justify-between border-t border-border/50 pt-2">
           <button
             type="button"
@@ -325,25 +354,34 @@ function DemandaDetail() {
   const [railCollapsed, setRailCollapsed] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+
   const { data: org } = useQuery({ queryKey: ["org", slug], queryFn: () => orgFn({ data: { slug } }) });
   const canDelete = org?.role === "owner" || org?.role === "admin";
   const isManager = !!org && MANAGER_ROLES.has(org.role);
+
   const opsFn = useServerFn(listOperators);
   const { data: operators } = useQuery({
     queryKey: ["operators", org?.id],
     enabled: !!org?.id && isManager,
     queryFn: () => opsFn({ data: { orgId: org!.id } }),
   });
+
   const { data, isLoading } = useQuery({
     queryKey: ["demanda", id],
     queryFn: () => getFn({ data: { id } }),
     refetchInterval: 8000,
   });
+
   const update = useMutation({
     mutationFn: (patch: any) => updateFn({ data: { id, ...patch } }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["demanda", id] }); qc.invalidateQueries({ queryKey: ["demandas"] }); toast.success("Atualizado"); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["demanda", id] });
+      qc.invalidateQueries({ queryKey: ["demandas"] });
+      toast.success("Atualizado");
+    },
     onError: (e) => toast.error(friendlyError(e)),
   });
+
   const send = useMutation({
     mutationFn: () => {
       const goViaWhatsapp = viaWhatsapp && !!data?.demanda?.whatsapp_jid;
@@ -358,6 +396,7 @@ function DemandaDetail() {
     },
     onError: (e) => toast.error(friendlyError(e)),
   });
+
   const remove = useMutation({
     mutationFn: () => deleteFn({ data: { id } }),
     onSuccess: () => {
@@ -367,19 +406,20 @@ function DemandaDetail() {
     },
     onError: (e) => toast.error(friendlyError(e)),
   });
-  // Pula direto pro final da conversa: ao trocar de demanda, ao carregar o
-  // histórico, e a cada evento novo (mensagem enviada/recebida). É o mesmo
-  // comportamento do WhatsApp Web — a rolagem manual só serve pra ver o
-  // que já ficou pra trás, nunca pra achar a mensagem mais recente.
+
   const eventsLength = data?.events?.length ?? 0;
   const lastEventId = data?.events?.[eventsLength - 1]?.id;
+
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [id, lastEventId]);
+
   if (isLoading || !data) return <DetailSkeleton />;
+
   const d: any = data.demanda;
-  const actors: Record<string, { id: string; name: string; email: string | null; role: string | null }> = (data as any).actors ?? {};
+  const actors: Record<string, { id: string; name: string; email: string | null; role: string | null }> =
+    (data as any).actors ?? {};
   const viewerId: string | undefined = (data as any).viewerId;
   const actorOf = (uid?: string | null) => (uid ? actors[uid] : undefined);
   const nameOf = (uid?: string | null, fallback = "Sistema") => {
@@ -392,13 +432,14 @@ function DemandaDetail() {
     const r = actorOf(uid)?.role;
     return r ? (ROLE_LABEL[r] ?? r) : null;
   };
+
   const contactName = resolveContactName(d);
+  const isGroupChat = !!d.whatsapp_jid?.endsWith("@g.us");
   const effectiveViaWhatsapp = viaWhatsapp && !!d.whatsapp_jid;
+
   return (
     <div className="relative flex h-full">
-      {/* Coluna principal: Área 1 (cabeçalho) + Área 2 (conversa) + Área 3 (digitação) */}
       <div className="flex flex-col min-w-0 flex-1">
-        {/* Área 1 — cabeçalho horizontal, fixo */}
         <div className="shrink-0 border-b border-border bg-card p-3 flex items-center gap-2.5">
           <button
             onClick={() => filaSidebar?.setCollapsed(true)}
@@ -412,6 +453,11 @@ function DemandaDetail() {
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-1.5 min-w-0">
               <span className="truncate text-sm font-semibold text-foreground">{contactName}</span>
+              {isGroupChat && (
+                <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide pill-brand">
+                  Grupo
+                </span>
+              )}
               <span className="shrink-0 text-xs text-muted-foreground">· {d.protocol}</span>
             </div>
             {d.contacts?.phone && (
@@ -420,7 +466,6 @@ function DemandaDetail() {
               </div>
             )}
           </div>
-          {/* Botão de abrir o painel lateral quando recolhido */}
           {railCollapsed && (
             <button
               onClick={() => setRailCollapsed(false)}
@@ -441,7 +486,7 @@ function DemandaDetail() {
             <X className="h-4 w-4" />
           </Link>
         </div>
-        {/* Área 2 — histórico da conversa */}
+
         <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-thin p-4">
           {d.description && (
             <div className="mb-4 rounded-lg border border-dashed border-border bg-card/60 p-3 text-xs text-muted-foreground whitespace-pre-wrap">
@@ -455,6 +500,7 @@ function DemandaDetail() {
               const isComment = e.kind === "commented";
               const isChatMessage = isClient || isOutgoing || isComment;
               const when = formatRelative(e.created_at);
+
               if (!isChatMessage) {
                 const fallbackByKind: Record<string, string> = {
                   created: "Entrada externa",
@@ -464,6 +510,7 @@ function DemandaDetail() {
                 };
                 const fallback = fallbackByKind[e.kind] ?? "Sistema";
                 const who = <span className="font-semibold text-foreground/80">{nameOf(e.actor_id, fallback)}</span>;
+
                 if (e.kind === "state_changed")
                   return (
                     <SystemLine key={e.id} icon={GitBranch} when={when}>
@@ -474,7 +521,8 @@ function DemandaDetail() {
                 if (e.kind === "priority_changed")
                   return (
                     <SystemLine key={e.id} icon={Flag} when={when}>
-                      {who} mudou a prioridade de <b className="text-foreground/80">{e.from_value}</b> para <b className="text-foreground/80">{e.to_value}</b>
+                      {who} mudou a prioridade de <b className="text-foreground/80">{e.from_value}</b> para{" "}
+                      <b className="text-foreground/80">{e.to_value}</b>
                     </SystemLine>
                   );
                 if (e.kind === "created")
@@ -496,10 +544,16 @@ function DemandaDetail() {
                   </SystemLine>
                 );
               }
-              const author = isClient ? contactName : nameOf(e.actor_id, "Atendente");
+
+              const author = isClient
+                ? isGroupChat
+                  ? e.metadata?.participant_name ?? contactName
+                  : contactName
+                : nameOf(e.actor_id, "Atendente");
               const authorRole = isClient ? "Cliente" : roleOf(e.actor_id);
               const isAI = actorOf(e.actor_id)?.role === "agente_ia";
               const messageLabel = isClient ? "mensagem recebida" : isOutgoing ? "resposta enviada" : "comentário";
+
               return (
                 <li key={e.id} className={`flex gap-2.5 pt-2 ${isClient ? "" : "sm:pl-8"}`}>
                   <Avatar name={author} isAI={isAI} tone={isClient ? "client" : "team"} size="sm" />
@@ -515,24 +569,29 @@ function DemandaDetail() {
                     <div className="flex flex-wrap items-center gap-x-1.5 text-xs">
                       <span className="font-semibold text-foreground">{author}</span>
                       {authorRole && (
-                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${isClient ? "pill-green" : isAI ? "pill-violet" : "pill-brand"}`}>
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                            isClient ? "pill-green" : isAI ? "pill-violet" : "pill-brand"
+                          }`}
+                        >
                           {authorRole}
                         </span>
                       )}
                       <span className="text-muted-foreground inline-flex items-center gap-1">
-                        · {isOutgoing ? <CheckCircle2 className="h-3 w-3 text-primary" /> : <MessageCircle className="h-3 w-3" />} {messageLabel} · {when}
+                        · {isOutgoing ? <CheckCircle2 className="h-3 w-3 text-primary" /> : <MessageCircle className="h-3 w-3" />}{" "}
+                        {messageLabel} · {when}
                       </span>
                     </div>
-                    {e.content && <div className="mt-1.5 whitespace-pre-wrap break-words text-sm text-foreground/90">{e.content}</div>}
+                    {e.content && (
+                      <div className="mt-1.5 whitespace-pre-wrap break-words text-sm text-foreground/90">{e.content}</div>
+                    )}
                   </div>
                 </li>
               );
             })}
           </ul>
         </div>
-        {/* Área 3 — digitação. Anexo/emoji/figurinha aparecem como placeholders
-            (avisam "em breve" ao clicar) pra já dar a sensação de área
-            profissional completa, mesmo sem a função pronta ainda. */}
+
         <div className="shrink-0 border-t border-border bg-card p-3">
           {d.whatsapp_jid && (
             <div className="mb-2 flex items-center gap-1.5">
@@ -553,9 +612,7 @@ function DemandaDetail() {
                 onClick={() => setViaWhatsapp(false)}
                 title="Comentário interno — só sua equipe vê"
                 className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
-                  !effectiveViaWhatsapp
-                    ? "bg-secondary text-foreground ring-1 ring-border"
-                    : "text-muted-foreground hover:bg-secondary"
+                  !effectiveViaWhatsapp ? "bg-secondary text-foreground ring-1 ring-border" : "text-muted-foreground hover:bg-secondary"
                 }`}
               >
                 <Lock className="h-3.5 w-3.5" strokeWidth={2.3} /> Interno
@@ -585,7 +642,11 @@ function DemandaDetail() {
                   if (comment.trim() && !send.isPending) send.mutate();
                 }
               }}
-              placeholder={effectiveViaWhatsapp ? "Escreva a resposta que será enviada ao cliente..." : "Comentário interno (não vai pro cliente)..."}
+              placeholder={
+                effectiveViaWhatsapp
+                  ? "Escreva a resposta que será enviada ao cliente..."
+                  : "Comentário interno (não vai pro cliente)..."
+              }
               className="w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-sm placeholder:text-muted-foreground outline-none scrollbar-thin"
             />
             <div className="flex items-center justify-between px-2 pb-2">
@@ -616,7 +677,9 @@ function DemandaDetail() {
                 </button>
               </div>
               <button
-                onClick={() => { if (comment.trim() && !send.isPending) send.mutate(); }}
+                onClick={() => {
+                  if (comment.trim() && !send.isPending) send.mutate();
+                }}
                 disabled={send.isPending || !comment.trim()}
                 title={effectiveViaWhatsapp ? "Enviar no WhatsApp" : "Salvar comentário interno"}
                 className={`grid place-items-center h-8 w-8 rounded-lg text-white transition disabled:opacity-40 ${
@@ -629,14 +692,11 @@ function DemandaDetail() {
           </div>
         </div>
       </div>
-      {/* Trilho vertical ultra-compacto e refinado à direita */}
+
       {!railCollapsed && (
         <aside className="hidden md:flex md:flex-col w-[195px] shrink-0 border-l border-border/80 bg-muted/15 select-none overflow-y-auto scrollbar-thin">
-          {/* Cabeçalho da Sidebar */}
           <div className="flex items-center justify-between px-3 py-2 border-b border-border/60 bg-card/50">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
-              Propriedades
-            </span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">Propriedades</span>
             <button
               onClick={() => setRailCollapsed(true)}
               title="Recolher painel"
@@ -646,9 +706,8 @@ function DemandaDetail() {
               <PanelRightClose className="h-3.5 w-3.5" />
             </button>
           </div>
-          {/* Seções de Atributos */}
+
           <div className="divide-y divide-border/50 text-xs">
-            {/* Estado */}
             <div className="p-2.5 space-y-1">
               <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 <Activity className="h-3 w-3 text-primary/70" strokeWidth={2.2} /> Estado
@@ -669,7 +728,7 @@ function DemandaDetail() {
                 </SelectContent>
               </Select>
             </div>
-            {/* Prioridade */}
+
             <div className="p-2.5 space-y-1">
               <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 <Flag className="h-3 w-3 text-primary/70" strokeWidth={2.2} /> Prioridade
@@ -680,19 +739,21 @@ function DemandaDetail() {
                 </SelectTrigger>
                 <SelectContent align="end" className="text-xs">
                   {PRIORITIES.map((p) => (
-                    <SelectItem key={p} value={p} className="text-xs capitalize">{p}</SelectItem>
+                    <SelectItem key={p} value={p} className="text-xs capitalize">
+                      {p}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            {/* Prazo — seletor customizado (substitui o datetime-local nativo) */}
+
             <div className="p-2.5 space-y-1">
               <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 <CalendarClock className="h-3 w-3 text-primary/70" strokeWidth={2.2} /> Prazo
               </label>
               <DueDatePicker value={d.due_at ?? null} onChange={(iso) => update.mutate({ due_at: iso })} />
             </div>
-            {/* Responsável */}
+
             {org && (
               <div className="p-2.5 space-y-1">
                 <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -704,7 +765,9 @@ function DemandaDetail() {
                       <SelectValue placeholder="Sem responsável" />
                     </SelectTrigger>
                     <SelectContent align="end" className="text-xs">
-                      <SelectItem value="none" className="text-xs">— Sem responsável —</SelectItem>
+                      <SelectItem value="none" className="text-xs">
+                        — Sem responsável —
+                      </SelectItem>
                       {(operators ?? []).map((o) => (
                         <SelectItem key={o.user_id} value={o.user_id} className="text-xs">
                           {o.email ?? o.user_id.slice(0, 8)}
@@ -728,7 +791,7 @@ function DemandaDetail() {
               </div>
             )}
           </div>
-          {/* Rodapé / Ação Perigosa */}
+
           {canDelete && (
             <div className="mt-auto border-t border-border/60 p-2.5 bg-card/40">
               {!confirmDelete ? (
