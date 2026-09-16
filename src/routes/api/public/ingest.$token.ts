@@ -30,6 +30,30 @@ type Normalized = z.infer<typeof Body> & {
   evolution_apikey?: string | null;
 };
 
+// Schema para o evento contacts.update da Evolution.
+// Traz updates de foto de perfil e nome (pushName) dos contatos.
+// `data` pode vir como array de updates OU como objeto único.
+const ContactsUpdatePayload = z.object({
+  event: z.string().optional(),
+  instance: z.string().max(120).optional(),
+  data: z.union([
+    z.array(
+      z.object({
+        remoteJid: z.string().max(180),
+        pushName: z.string().max(120).nullish(),
+        profilePicUrl: z.string().max(500).nullable().optional(),
+        instanceId: z.string().max(180).optional(),
+      }),
+    ),
+    z.object({
+      remoteJid: z.string().max(180),
+      pushName: z.string().max(120).nullish(),
+      profilePicUrl: z.string().max(500).nullable().optional(),
+      instanceId: z.string().max(180).optional(),
+    }),
+  ]),
+});
+
 const EvolutionPayload = z.object({
   event: z.string().optional(),
   instance: z.string().max(120).optional(),
@@ -82,6 +106,67 @@ async function fetchGroupSubject(
   }
   console.error("[ingest] não consegui buscar o assunto do grupo", { groupJid, instance });
   return null;
+}
+
+// Trata eventos contacts.update da Evolution: atualiza o avatar do contato
+// existente no banco. Regras pra nunca quebrar nada:
+//   - Contato que não existe no banco: ignora silenciosamente.
+//   - profilePicUrl null: marca avatar_fetched_at mas mantém avatar_url atual
+//     (não apaga foto antiga; pode ter sido transitório).
+//   - profilePicUrl string: atualiza os dois.
+//   - profilePicUrl undefined/ausente: item ignorado (update sem foto).
+async function handleContactsUpdate(
+  orgId: string,
+  payload: z.infer<typeof ContactsUpdatePayload>,
+): Promise<void> {
+  const items = Array.isArray(payload.data) ? payload.data : [payload.data];
+  for (const item of items) {
+    if (typeof item.profilePicUrl !== "string" && item.profilePicUrl !== null) continue;
+
+    const { data: found, error: findErr } = await (
+      await import("@/integrations/supabase/client.server")
+    ).supabaseAdmin
+      .from("contacts")
+      .select("id")
+      .eq("org_id", orgId)
+      .eq("external_id", item.remoteJid)
+      .maybeSingle();
+
+    if (findErr) {
+      console.error("[ingest] falha ao buscar contato para avatar", {
+        org_id: orgId,
+        remoteJid: item.remoteJid,
+        error: findErr,
+      });
+      continue;
+    }
+    if (!found) {
+      // Contato não existe ainda no banco. Ignora e segue.
+      continue;
+    }
+
+    const patch = {
+      avatar_fetched_at: new Date().toISOString(),
+      ...(typeof item.profilePicUrl === "string" && item.profilePicUrl.trim()
+        ? { avatar_url: item.profilePicUrl }
+        : {}),
+    };
+
+    const { error: updErr } = await (
+      await import("@/integrations/supabase/client.server")
+    ).supabaseAdmin
+      .from("contacts")
+      .update(patch)
+      .eq("id", found.id);
+
+    if (updErr) {
+      console.error("[ingest] falha ao atualizar avatar", {
+        contact_id: found.id,
+        remoteJid: item.remoteJid,
+        error: updErr,
+      });
+    }
+  }
 }
 
 function normalize(payload: unknown):
@@ -167,6 +252,27 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           payload = await request.json();
         } catch {
           return json({ error: "invalid_json" }, 400);
+        }
+
+        // CONTATOS: evento especial que não segue o fluxo de demanda.
+        // Detecta pelo envelope da Evolution e despacha direto pro handler dedicado,
+        // sem passar por normalize(). Responde 200 sempre pra Evolution considerar entregue.
+        const looksLikeContactsUpdate =
+          looksLikeEvolution(payload) &&
+          typeof (payload as any).event === "string" &&
+          (payload as any).event.replace(/_/g, ".").toLowerCase() === "contacts.update";
+
+        if (looksLikeContactsUpdate) {
+          const parsed = ContactsUpdatePayload.safeParse(payload);
+          if (parsed.success) {
+            await handleContactsUpdate(tok.org_id, parsed.data);
+          } else {
+            console.error("[ingest] contacts.update inválido", parsed.error.flatten());
+          }
+          return new Response(
+            JSON.stringify({ ok: true, event: "contacts.update" }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
         }
 
         const norm = normalize(payload);
