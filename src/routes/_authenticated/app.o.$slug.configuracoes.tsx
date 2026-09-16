@@ -1,57 +1,196 @@
-import { createFileRoute, useParams } from "@tanstack/react-router";
+import { createFileRoute, Navigate, useParams } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getOrgBySlug, listMembers } from "@/lib/orgs.functions";
 import { listWebhookTokens, createWebhookToken, deleteWebhookToken } from "@/lib/demandas/webhook-tokens.functions";
 import { getWhatsappConnection, connectWhatsapp, disconnectWhatsapp, setWhatsappAutoReply } from "@/lib/whatsapp.functions";
 import { friendlyError } from "@/lib/friendly-error";
 import { SectionTitle, StatCard } from "@/components/section-ui";
-import { ThemeToggleInline } from "@/components/user-menu";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Copy, Trash2, Plus, Users, KeyRound, Webhook, Palette, Settings2, MessageCircle, Loader2, QrCode, PowerOff, RefreshCw, X, Smartphone } from "lucide-react";
-import { useEffect } from "react";
+import {
+  Copy, Trash2, Plus, Users, KeyRound, Webhook, Settings2, MessageCircle, Loader2,
+  QrCode, PowerOff, RefreshCw, X, Smartphone, Eye, EyeOff, Tags, CreditCard, SlidersHorizontal, Shuffle,
+} from "lucide-react";
 import { FormSkeleton } from "@/components/skeletons";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/configuracoes")({
   head: () => ({
     meta: [
       { title: "Configurações — Fluxo" },
-      { name: "description", content: "Ajuste tema, membros e tokens de integração da sua organização no Fluxo." },
+      { name: "description", content: "Ajuste membros e integrações da sua organização no Fluxo." },
     ],
   }),
   component: Config,
 });
 
-const EXAMPLE_BODY = `{
-  "message": "Cliente pediu segunda via da fatura",
-  "contact": { "name": "Maria", "phone": "+5511999999999" },
-  "channel_kind": "whatsapp",
-  "priority": "media"
-}`;
+const EXAMPLE_BODY = `{ "message": "Cliente pediu segunda via da fatura", "contact": { "name": "Maria", "phone": "+5511999999999" }, "channel_kind": "whatsapp", "priority": "media" }`;
+
+/** Mostra só o começo/fim do token por padrão — é um segredo de verdade. */
+function maskToken(token: string) {
+  if (token.length <= 12) return token;
+  return `${token.slice(0, 7)}${"•".repeat(10)}${token.slice(-4)}`;
+}
+
+/** Estado "em breve" reutilizável pras abas que ainda não existem de verdade. */
+function ComingSoon({ icon: Icon, title, description }: { icon: typeof Tags; title: string; description: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-border bg-card/60 p-10 text-center">
+      <span className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-primary/10 text-primary">
+        <Icon className="h-5 w-5" strokeWidth={2.2} />
+      </span>
+      <div className="mt-3 text-sm font-semibold">{title}</div>
+      <p className="mx-auto mt-1 max-w-sm text-[13px] text-muted-foreground">{description}</p>
+      <span className="mt-3 inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+        Em breve
+      </span>
+    </div>
+  );
+}
+
+/** Seção estática de Distribuição Automática de Demandas */
+function AutomaticDistributionSection() {
+  const [isEnabled, setIsEnabled] = useState(false);
+  const [distributionMode, setDistributionMode] = useState<"round-robin" | "lowest-load">("round-robin");
+  const handleSave = () => {
+    console.log("Salvando configurações de distribuição:", { isEnabled, distributionMode });
+    toast.success("Configurações de distribuição salvas com sucesso!");
+  };
+  return (
+    <div className="card-elevated space-y-4 p-4 sm:p-6">
+      <div className="flex items-start gap-3">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+          <Shuffle className="h-5 w-5" strokeWidth={2.2} />
+        </div>
+        <div>
+          <h3 className="text-base font-semibold">Distribuição Automática de Demandas</h3>
+          <p className="text-sm text-muted-foreground">
+            Atribua novas demandas recebidas via WhatsApp automaticamente entre os membros da equipe.
+          </p>
+        </div>
+      </div>
+      <div className="space-y-4 pt-2">
+        {/* Toggle Switch */}
+        <label className="flex items-center justify-between gap-3 rounded-lg border border-border p-4 cursor-pointer hover:bg-secondary/30 transition-colors">
+          <div className="min-w-0">
+            <span className="block text-sm font-semibold">Ativar distribuição automática</span>
+            <span className="block text-xs text-muted-foreground">
+              Quando ligado, as novas demandas serão distribuídas conforme a regra selecionada abaixo.
+            </span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isEnabled}
+            aria-label="Ativar distribuição automática"
+            onClick={() => setIsEnabled(!isEnabled)}
+            className={`relative h-6 w-11 shrink-0 rounded-full transition ${isEnabled ? "bg-primary" : "bg-secondary"}`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-card shadow transition-all ${
+                isEnabled ? "left-[22px]" : "left-0.5"
+              }`}
+            />
+          </button>
+        </label>
+        {/* Modo de Distribuição (visualmente desabilitado quando o toggle está off) */}
+        <div className={`space-y-3 transition-all duration-300 ${isEnabled ? "opacity-100" : "opacity-50 pointer-events-none"}`}>
+          <span className="block text-sm font-medium text-muted-foreground">Modo de Distribuição</span>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label
+              className={`flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-all ${
+                distributionMode === "round-robin"
+                  ? "border-primary bg-primary/5"
+                  : "border-border bg-card hover:bg-secondary/30"
+              }`}
+            >
+              <input
+                type="radio"
+                name="distributionMode"
+                value="round-robin"
+                checked={distributionMode === "round-robin"}
+                onChange={() => setDistributionMode("round-robin")}
+                className="mt-1 h-4 w-4 accent-primary"
+              />
+              <div className="min-w-0">
+                <span className="block text-sm font-semibold">Round-Robin (Revezamento)</span>
+                <span className="block text-xs text-muted-foreground mt-1">
+                  Distribui as demandas em fila circular sequencial entre os operadores.
+                </span>
+              </div>
+            </label>
+            <label
+              className={`flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-all ${
+                distributionMode === "lowest-load"
+                  ? "border-primary bg-primary/5"
+                  : "border-border bg-card hover:bg-secondary/30"
+              }`}
+            >
+              <input
+                type="radio"
+                name="distributionMode"
+                value="lowest-load"
+                checked={distributionMode === "lowest-load"}
+                onChange={() => setDistributionMode("lowest-load")}
+                className="mt-1 h-4 w-4 accent-primary"
+              />
+              <div className="min-w-0">
+                <span className="block text-sm font-semibold">Menor Carga de Trabalho</span>
+                <span className="block text-xs text-muted-foreground mt-1">
+                  Atribui para o operador com menor número de demandas em aberto.
+                </span>
+              </div>
+            </label>
+          </div>
+        </div>
+        <div className="flex justify-end pt-2">
+          <button
+            type="button"
+            onClick={handleSave}
+            className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
+          >
+            Salvar Alterações
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function Config() {
   const { slug } = useParams({ from: "/_authenticated/app/o/$slug/configuracoes" });
   const orgFn = useServerFn(getOrgBySlug);
   const { data: org } = useQuery({ queryKey: ["org", slug], queryFn: () => orgFn({ data: { slug } }) });
 
+  // Página restrita: a UI esconde o link, e aqui a rota devolve pra Fila
+  // se alguém colar a URL direto no navegador.
+  const isOwnerOrAdmin = org?.role === "owner" || org?.role === "admin";
+
   const membersFn = useServerFn(listMembers);
   const { data: members } = useQuery({
-    queryKey: ["members", org?.id], enabled: !!org?.id,
+    queryKey: ["members", org?.id],
+    enabled: !!org?.id && isOwnerOrAdmin,
     queryFn: () => membersFn({ data: { orgId: org!.id } }),
   });
-
   const tokensFn = useServerFn(listWebhookTokens);
   const { data: tokens } = useQuery({
-    queryKey: ["tokens", org?.id], enabled: !!org?.id,
+    queryKey: ["tokens", org?.id],
+    enabled: !!org?.id && isOwnerOrAdmin,
     queryFn: () => tokensFn({ data: { orgId: org!.id } }),
   });
-
   const createTok = useServerFn(createWebhookToken);
   const deleteTok = useServerFn(deleteWebhookToken);
   const qc = useQueryClient();
   const [tokName, setTokName] = useState("");
-
+  const [revealedTokens, setRevealedTokens] = useState<Set<string>>(new Set());
+  const [confirmDeleteTokenId, setConfirmDeleteTokenId] = useState<string | null>(null);
+  const toggleReveal = (id: string) =>
+    setRevealedTokens((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   const createM = useMutation({
     mutationFn: () => createTok({ data: { orgId: org!.id, name: tokName } }),
     onSuccess: () => { setTokName(""); qc.invalidateQueries({ queryKey: ["tokens"] }); toast.success("Token criado"); },
@@ -59,92 +198,125 @@ function Config() {
   });
   const deleteM = useMutation({
     mutationFn: (id: string) => deleteTok({ data: { id } }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["tokens"] }); toast.success("Removido"); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["tokens"] }); toast.success("Removido"); setConfirmDeleteTokenId(null); },
   });
-
   const origin = typeof window !== "undefined" ? window.location.origin : "";
 
   if (!org) return <FormSkeleton sections={3} />;
+  if (!isOwnerOrAdmin) return <Navigate to="/app/o/$slug/fila" params={{ slug }} />;
 
   return (
     <div className="p-4 sm:p-6 pb-24 sm:pb-6 max-w-4xl">
       <h1 className="flex items-center gap-2 text-xl sm:text-2xl font-bold tracking-tight">
         <Settings2 className="h-5 w-5 text-primary" strokeWidth={2.2} /> Configurações
       </h1>
-      <p className="text-xs sm:text-sm text-muted-foreground">Aparência, acessos e integrações desta organização.</p>
-
-      <div className="mt-5 grid gap-3 sm:grid-cols-3">
-        <StatCard icon={Users} label="Total de membros" value={members?.length ?? "—"} />
-        <StatCard icon={KeyRound} label="Tokens ativos" value={tokens?.length ?? "—"} tone="green" />
-        <StatCard icon={Webhook} label="Canal de entrada" value="Webhook" tone="violet" />
-      </div>
-
-      <section className="mt-8">
-        <SectionTitle icon={Palette} title="Aparência" hint="Escolha o tema desta interface. A preferência fica salva neste navegador." />
-        <div className="card-elevated p-3.5">
-          <ThemeToggleInline className="max-w-xs" />
+      <p className="text-xs sm:text-sm text-muted-foreground">Acessos, atendimento e integrações desta organização.</p>
+      <Tabs defaultValue="geral" className="mt-6">
+        <div className="overflow-x-auto scrollbar-thin">
+          <TabsList>
+            <TabsTrigger value="geral">Geral</TabsTrigger>
+            <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
+            <TabsTrigger value="integracoes">Integrações</TabsTrigger>
+            <TabsTrigger value="etapas">Etapas do Atendimento</TabsTrigger>
+            <TabsTrigger value="faturamento">Faturamento</TabsTrigger>
+          </TabsList>
         </div>
-      </section>
-
-      <section className="mt-8">
-        <SectionTitle icon={Users} title="Membros" hint="Quem tem acesso a esta organização." />
-        <div className="card-elevated overflow-hidden">
-          {members?.map((m: any) => (
-            <div key={m.id} className="row-zebra flex items-center justify-between gap-3 border-b border-border p-3 last:border-0">
-              <div className="min-w-0 truncate text-sm">{m.email ?? m.user_id}</div>
-              <span className="shrink-0 rounded-md pill-brand px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">{m.role}</span>
-            </div>
-          ))}
-          {members?.length === 0 && <div className="p-4 text-sm text-muted-foreground">Nenhum membro.</div>}
-        </div>
-      </section>
-
-      <WhatsappSection orgId={org.id} />
-
-      <section className="mt-8">
-        <SectionTitle icon={Webhook} title="Webhook — Entrada de demandas" hint="Aponte a Evolution API (ou qualquer sistema) para este endpoint. Cada mensagem vira uma demanda." />
-
-        <div className="card-elevated space-y-2 p-4 font-mono text-xs">
-          <div><span className="text-muted-foreground">POST</span> {origin}/api/public/ingest/<b>{"{token}"}</b></div>
-          <div className="text-muted-foreground">Body:</div>
-          <pre className="overflow-x-auto rounded-md bg-secondary/60 p-3">{EXAMPLE_BODY}</pre>
-        </div>
-
-        <form className="mt-4 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (tokName.trim()) createM.mutate(); }}>
-          <input value={tokName} onChange={(e) => setTokName(e.target.value)} placeholder="Nome do token (ex: Evolution WhatsApp)"
-            className="h-10 flex-1 min-w-0 rounded-lg border border-border bg-card px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40" />
-          <button className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:opacity-90">
-            <Plus className="h-4 w-4" /> Gerar token
-          </button>
-        </form>
-
-        <div className="card-elevated mt-4 overflow-hidden">
-          {tokens?.length === 0 && <div className="p-4 text-sm text-muted-foreground">Nenhum token gerado ainda.</div>}
-          {tokens?.map((t: any) => (
-            <div key={t.id} className="row-zebra flex items-center gap-3 border-b border-border p-3 last:border-0">
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg pill-green">
-                <KeyRound className="h-4 w-4" strokeWidth={2.2} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold">{t.name}</div>
-                <code className="break-all text-xs text-muted-foreground">{t.token}</code>
-              </div>
-              <button title="Copiar" aria-label="Copiar token" onClick={() => { navigator.clipboard.writeText(t.token); toast.success("Copiado"); }}
-                className="rounded-md p-2 hover:bg-secondary"><Copy className="h-4 w-4" /></button>
-              <button title="Remover" aria-label="Remover token" onClick={() => deleteM.mutate(t.id)}
-                className="rounded-md p-2 text-destructive hover:bg-destructive/10"><Trash2 className="h-4 w-4" /></button>
-            </div>
-          ))}
-        </div>
-      </section>
+        {/* Geral — visão rápida, sem duplicar a página de Equipe */}
+        <TabsContent value="geral" className="mt-5">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <StatCard icon={Users} label="Total de membros" value={members?.length ?? "—"} />
+            <StatCard icon={KeyRound} label="Tokens ativos" value={tokens?.length ?? "—"} tone="green" />
+            <StatCard icon={Webhook} label="Canal de entrada" value="Webhook" tone="violet" />
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Pra convidar, aprovar ou trocar o papel de alguém, use a página <b>Equipe</b> no menu lateral.
+          </p>
+        </TabsContent>
+        {/* WhatsApp */}
+        <TabsContent value="whatsapp" className="mt-5">
+          <WhatsappSection orgId={org.id} />
+        </TabsContent>
+        {/* Integrações — webhook de entrada */}
+        <TabsContent value="integracoes" className="mt-5">
+          <SectionTitle icon={Webhook} title="Webhook — Entrada de demandas" hint="Aponte a Evolution API (ou qualquer sistema) para este endpoint. Cada mensagem vira uma demanda." />
+          <div className="card-elevated space-y-2 p-4 font-mono text-xs">
+            <div><span className="text-muted-foreground">POST</span> {origin}/api/public/ingest/<b>{"{token}"}</b></div>
+            <div className="text-muted-foreground">Body:</div>
+            <pre className="overflow-x-auto rounded-md bg-secondary/60 p-3">{EXAMPLE_BODY}</pre>
+          </div>
+          <form className="mt-4 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (tokName.trim()) createM.mutate(); }}>
+            <input value={tokName} onChange={(e) => setTokName(e.target.value)} placeholder="Nome do token (ex: Evolution WhatsApp)"
+              className="h-10 flex-1 min-w-0 rounded-lg border border-border bg-card px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40" />
+            <button className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:opacity-90">
+              <Plus className="h-4 w-4" /> Gerar token
+            </button>
+          </form>
+          <div className="card-elevated mt-4 overflow-hidden">
+            {tokens?.length === 0 && <div className="p-4 text-sm text-muted-foreground">Nenhum token gerado ainda.</div>}
+            {tokens?.map((t: any) => {
+              const revealed = revealedTokens.has(t.id);
+              return (
+                <div key={t.id} className="row-zebra flex flex-wrap items-center gap-3 border-b border-border p-3 last:border-0">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg pill-green">
+                    <KeyRound className="h-4 w-4" strokeWidth={2.2} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold">{t.name}</div>
+                    <code className="break-all text-xs text-muted-foreground">{revealed ? t.token : maskToken(t.token)}</code>
+                  </div>
+                  <button title={revealed ? "Ocultar token" : "Revelar token"} aria-label={revealed ? "Ocultar token" : "Revelar token"}
+                    onClick={() => toggleReveal(t.id)} className="rounded-md p-2 hover:bg-secondary shrink-0">
+                    {revealed ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                  <button title="Copiar" aria-label="Copiar token" onClick={() => { navigator.clipboard.writeText(t.token); toast.success("Copiado"); }}
+                    className="rounded-md p-2 hover:bg-secondary shrink-0"><Copy className="h-4 w-4" /></button>
+                  {confirmDeleteTokenId === t.id ? (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button onClick={() => deleteM.mutate(t.id)} disabled={deleteM.isPending}
+                        className="h-8 px-2.5 rounded-md bg-destructive text-destructive-foreground text-xs font-semibold disabled:opacity-60">
+                        {deleteM.isPending ? "..." : "Confirmar"}
+                      </button>
+                      <button onClick={() => setConfirmDeleteTokenId(null)} className="h-8 px-2.5 rounded-md border border-border text-xs hover:bg-secondary">
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    <button title="Remover" aria-label="Remover token" onClick={() => setConfirmDeleteTokenId(t.id)}
+                      className="rounded-md p-2 text-destructive hover:bg-destructive/10 shrink-0"><Trash2 className="h-4 w-4" /></button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </TabsContent>
+        {/* Etapas do Atendimento */}
+        <TabsContent value="etapas" className="mt-5 space-y-6">
+          <SectionTitle icon={SlidersHorizontal} title="Etapas do Atendimento" hint="Nomeie e escolha a cor de cada etapa da sua fila, do seu jeito." />
+          <AutomaticDistributionSection />
+          <ComingSoon
+            icon={Tags}
+            title="Personalize as etapas"
+            description="Em breve você vai poder renomear e escolher a cor de cada etapa (hoje: Novo, Em análise, Aguardando cliente, Aguardando revisão, Concluído) pra combinar com o seu negócio — por exemplo, 'Novo Lead' em vez de 'Novo', numa loja que vende pelo WhatsApp."
+          />
+        </TabsContent>
+        {/* Faturamento — módulo financeiro, ainda não existe */}
+        <TabsContent value="faturamento" className="mt-5">
+          <SectionTitle icon={CreditCard} title="Faturamento" hint="Plano atual e histórico de cobranças desta organização." />
+          <ComingSoon
+            icon={CreditCard}
+            title="Plano e cobrança"
+            description="Em breve você vai poder ver seu plano atual, mudar de plano e consultar o histórico de cobranças por aqui."
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
 
 const STATUS_META = {
-  connected: { label: "Conectado", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-500" },
-  connecting: { label: "Conectando", cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400", dot: "bg-amber-500 animate-pulse" },
-  disconnected: { label: "Desconectado", cls: "bg-destructive/10 text-destructive", dot: "bg-destructive" },
+  connected: { label: "Conectado", pill: "pill-green" },
+  connecting: { label: "Conectando", pill: "pill-amber" },
+  disconnected: { label: "Desconectado", pill: "pill-red" },
 } as const;
 
 function WhatsappSection({ orgId }: { orgId: string }) {
@@ -153,18 +325,16 @@ function WhatsappSection({ orgId }: { orgId: string }) {
   const disconnectFn = useServerFn(disconnectWhatsapp);
   const autoFn = useServerFn(setWhatsappAutoReply);
   const qc = useQueryClient();
-
   const [qrOpen, setQrOpen] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
   const [pairCode, setPairCode] = useState<string | null>(null);
-
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const { data: conn, isLoading, error } = useQuery({
     queryKey: ["whatsapp-connection", orgId],
     queryFn: () => getFn({ data: { orgId } }),
     retry: false,
     refetchInterval: qrOpen ? 5000 : false,
   });
-
   const status = (conn?.status ?? "disconnected") as keyof typeof STATUS_META;
   const meta = STATUS_META[status];
 
@@ -188,17 +358,15 @@ function WhatsappSection({ orgId }: { orgId: string }) {
     },
     onError: (e) => toast.error(friendlyError(e)),
   });
-
   const disconnect = useMutation({
     mutationFn: () => disconnectFn({ data: { orgId, deleteInstance: true } }),
     onSuccess: () => {
-      setQrOpen(false); setQr(null); setPairCode(null);
+      setQrOpen(false); setQr(null); setPairCode(null); setConfirmDisconnect(false);
       qc.invalidateQueries({ queryKey: ["whatsapp-connection", orgId] });
       toast.success("WhatsApp desconectado");
     },
     onError: (e) => toast.error(friendlyError(e)),
   });
-
   const auto = useMutation({
     mutationFn: (enabled: boolean) => autoFn({ data: { orgId, enabled } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["whatsapp-connection", orgId] }),
@@ -206,9 +374,8 @@ function WhatsappSection({ orgId }: { orgId: string }) {
   });
 
   if (error) return null;
-
   return (
-    <section className="mt-8">
+    <section>
       <SectionTitle icon={MessageCircle} title="Integração WhatsApp" hint="Conecte o WhatsApp desta organização lendo um QR Code. As mensagens entram e saem apenas por aqui." />
       {isLoading ? (
         <FormSkeleton sections={1} />
@@ -216,25 +383,24 @@ function WhatsappSection({ orgId }: { orgId: string }) {
         <div className="card-elevated space-y-4 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${meta.pill}`}>
                 <Smartphone className="h-5 w-5" strokeWidth={2.2} />
               </span>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${meta.cls}`}>
-                    <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} /> {meta.label}
+                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${meta.pill}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full bg-current ${status === "connecting" ? "animate-pulse" : ""}`} /> {meta.label}
                   </span>
                 </div>
                 <div className="mt-0.5 truncate text-xs text-muted-foreground">
                   {status === "connected" && conn?.connected_number
                     ? `Número ${conn.connected_number}`
                     : conn?.service_ready
-                      ? "Uma conexão exclusiva desta organização."
-                      : "Serviço de WhatsApp indisponível no momento."}
+                    ? "Uma conexão exclusiva desta organização."
+                    : "Serviço de WhatsApp indisponível no momento."}
                 </div>
               </div>
             </div>
-
             <div className="flex flex-wrap gap-2">
               {status !== "connected" && (
                 <button type="button" disabled={connect.isPending || !conn?.service_ready} onClick={() => connect.mutate()}
@@ -244,15 +410,28 @@ function WhatsappSection({ orgId }: { orgId: string }) {
                 </button>
               )}
               {(status !== "disconnected" || conn?.instance_name) && (
-                <button type="button" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}
-                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-destructive/40 px-4 text-sm font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-60">
-                  {disconnect.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <PowerOff className="h-4 w-4" />}
-                  Desconectar / Excluir instância
-                </button>
+                confirmDisconnect ? (
+                  <div className="flex items-center gap-2">
+                    <span className="hidden sm:inline text-xs text-muted-foreground">Desconectar?</span>
+                    <button type="button" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}
+                      className="inline-flex h-10 items-center gap-2 rounded-lg bg-destructive px-4 text-sm font-semibold text-destructive-foreground transition disabled:opacity-60">
+                      {disconnect.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirmar"}
+                    </button>
+                    <button type="button" onClick={() => setConfirmDisconnect(false)}
+                      className="inline-flex h-10 items-center rounded-lg border border-border px-4 text-sm font-semibold hover:bg-secondary">
+                      Cancelar
+                    </button>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => setConfirmDisconnect(true)}
+                    className="inline-flex h-10 items-center gap-2 rounded-lg border border-destructive/40 px-4 text-sm font-semibold text-destructive transition hover:bg-destructive/10">
+                    <PowerOff className="h-4 w-4" />
+                    Desconectar / Excluir instância
+                  </button>
+                )
               )}
             </div>
           </div>
-
           <label className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
             <span className="min-w-0">
               <span className="block text-sm font-semibold">Resposta automática por IA</span>
@@ -264,7 +443,6 @@ function WhatsappSection({ orgId }: { orgId: string }) {
               <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-card shadow transition-all ${conn?.auto_reply_enabled ? "left-[22px]" : "left-0.5"}`} />
             </button>
           </label>
-
           {conn?.webhook_url && (
             <div className="rounded-lg bg-secondary/50 p-3">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Endereço de entrada configurado automaticamente</div>
@@ -273,7 +451,6 @@ function WhatsappSection({ orgId }: { orgId: string }) {
           )}
         </div>
       )}
-
       {qrOpen && (
         <div role="dialog" aria-modal="true" aria-label="Conectar WhatsApp"
           className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
@@ -287,7 +464,6 @@ function WhatsappSection({ orgId }: { orgId: string }) {
                 <X className="h-4 w-4" />
               </button>
             </div>
-
             <div className="mt-4 grid place-items-center rounded-xl bg-white p-3">
               {qr ? (
                 <img src={qr} alt="QR Code para conectar o WhatsApp" className="h-56 w-56" />
@@ -297,13 +473,11 @@ function WhatsappSection({ orgId }: { orgId: string }) {
                 </div>
               )}
             </div>
-
             {pairCode && (
               <div className="mt-3 text-center text-xs text-muted-foreground">
                 Código de pareamento: <code className="font-bold text-foreground">{pairCode}</code>
               </div>
             )}
-
             <button type="button" disabled={connect.isPending} onClick={() => connect.mutate()}
               className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-border text-sm font-semibold transition hover:bg-secondary disabled:opacity-60">
               {connect.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Gerar novo QR Code

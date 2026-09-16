@@ -9,17 +9,26 @@ import {
   Settings,
   Users,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { ThemeCycleButton, UserMenu } from "@/components/user-menu";
 
 // Fonte única da navegação da org — usada aqui e no OrgMobileNav.
 // Adicionar uma rota nova (ex: módulo financeiro) é mexer só nesta lista.
-export const ORG_NAV_ITEMS = [
+// `adminOnly` esconde o item de quem não é owner/admin (flag vem do layout).
+export type OrgNavItem = {
+  segment: string;
+  label: string;
+  icon: LucideIcon;
+  adminOnly?: boolean;
+};
+
+export const ORG_NAV_ITEMS: OrgNavItem[] = [
   { segment: "fila", label: "Fila", icon: Inbox },
   { segment: "alertas", label: "Alertas SLA", icon: AlertTriangle },
   { segment: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { segment: "equipe", label: "Equipe", icon: Users },
-  { segment: "configuracoes", label: "Configurações", icon: Settings },
-] as const;
+  { segment: "configuracoes", label: "Configurações", icon: Settings, adminOnly: true },
+];
 
 type OrgSidebarProps = {
   slug: string;
@@ -29,6 +38,7 @@ type OrgSidebarProps = {
   newCount: number;
   user: { name: string; email: string | null } | null;
   roleLabel: string;
+  isOwnerOrAdmin: boolean;
   onSignOut: () => void;
 };
 
@@ -40,8 +50,10 @@ export function OrgSidebar({
   newCount,
   user,
   roleLabel,
+  isOwnerOrAdmin,
   onSignOut,
 }: OrgSidebarProps) {
+  const visibleItems = ORG_NAV_ITEMS.filter((n) => !n.adminOnly || isOwnerOrAdmin);
   return (
     <aside className="hidden sm:flex h-screen flex-col justify-between overflow-hidden sticky top-0 left-0 bg-sidebar text-sidebar-foreground border-r border-sidebar-border/60">
       {!collapsed && (
@@ -51,9 +63,8 @@ export function OrgSidebar({
           </div>
         </div>
       )}
-
       <nav className="flex-1 overflow-y-auto space-y-0.5 px-2 py-1">
-        {ORG_NAV_ITEMS.map((n) => {
+        {visibleItems.map((n) => {
           const to = `/app/o/${slug}/${n.segment}`;
           const active = activePath.startsWith(to);
           const Icon = n.icon;
@@ -85,7 +96,6 @@ export function OrgSidebar({
           );
         })}
       </nav>
-
       {/* Footer: único lugar com o toggle de collapse — não existe mais um
           segundo botão no topo. Fica sempre ao lado do ThemeCycleButton. */}
       <div className="mt-auto shrink-0 border-t border-sidebar-border bg-sidebar p-2">
@@ -96,7 +106,7 @@ export function OrgSidebar({
               email={user?.email}
               role={roleLabel}
               collapsed={collapsed}
-              settingsTo={`/app/o/${slug}/configuracoes`}
+              settingsTo={isOwnerOrAdmin ? `/app/o/${slug}/configuracoes` : undefined}
               onSignOut={onSignOut}
             />
           </div>

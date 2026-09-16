@@ -32,9 +32,7 @@ export function ThemeToggleInline({ className = "" }: { className?: string }) {
             aria-pressed={active}
             title={t.hint}
             className={`flex flex-col items-center gap-1 rounded-md px-1.5 py-1.5 text-[10px] font-semibold transition-colors ${
-              active
-                ? "bg-card text-foreground shadow-[var(--shadow-card)]"
-                : "text-muted-foreground hover:text-foreground"
+              active ? "bg-card text-foreground shadow-[var(--shadow-card)]" : "text-muted-foreground hover:text-foreground"
             }`}
           >
             <Icon className="h-3.5 w-3.5" strokeWidth={2.1} />
@@ -76,7 +74,8 @@ export function UserMenu({
   email?: string | null;
   role?: string | null;
   collapsed?: boolean;
-  settingsTo: string;
+  // Opcional: sem ele, o item "Configurações" some do menu (usuário sem permissão).
+  settingsTo?: string;
   onSignOut: () => void;
   // Tooltip de hover só faz sentido em contexto de mouse (sidebar desktop recolhida).
   // Em touch (mobile), o Radix Tooltip pode ficar "preso" aberto porque não existe
@@ -127,16 +126,13 @@ export function UserMenu({
       ) : (
         trigger
       )}
-
       <DropdownMenuContent
         align={collapsed ? "start" : "end"}
         side="top"
         sideOffset={10}
         collisionPadding={16}
         avoidCollisions
-        className={`z-50 min-w-[var(--radix-dropdown-menu-trigger-width)] max-w-xs ${
-          collapsed ? "w-64" : ""
-        }`}
+        className={`z-50 min-w-[var(--radix-dropdown-menu-trigger-width)] max-w-xs ${collapsed ? "w-64" : ""}`}
       >
         <DropdownMenuLabel className="pb-1">
           <div className="truncate text-sm font-semibold">{name}</div>
@@ -148,7 +144,6 @@ export function UserMenu({
           )}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-
         <div className="px-2 py-1.5">
           <div className="mb-1.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
             Tema
@@ -159,13 +154,16 @@ export function UserMenu({
           <ThemeToggleInline />
         </div>
         <DropdownMenuSeparator />
-
-        <DropdownMenuItem asChild>
-          <a href={settingsTo} className="cursor-pointer">
-            <Settings className="h-4 w-4" /> Configurações de conta
-          </a>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
+        {settingsTo && (
+          <>
+            <DropdownMenuItem asChild>
+              <a href={settingsTo} className="cursor-pointer">
+                <Settings className="h-4 w-4" /> Configurações de conta
+              </a>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         <DropdownMenuItem
           onClick={onSignOut}
           className="cursor-pointer font-semibold text-destructive focus:bg-destructive/10 focus:text-destructive"

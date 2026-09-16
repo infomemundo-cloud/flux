@@ -88,6 +88,8 @@ function OrgLayout() {
   if (error || !org) return <div className="p-6 text-sm text-destructive">Sem acesso a esta organização.</div>;
 
   const roleLabel = ROLE_LABEL[org.role] ?? org.role;
+  // Fonte única da regra: só owner/admin veem (e acessam) Configurações.
+  const isOwnerOrAdmin = org.role === "owner" || org.role === "admin";
 
   return (
     <div
@@ -102,9 +104,9 @@ function OrgLayout() {
         newCount={newCount}
         user={user}
         roleLabel={roleLabel}
+        isOwnerOrAdmin={isOwnerOrAdmin}
         onSignOut={signOut}
       />
-
       <main className="min-w-0 overflow-auto scrollbar-thin bg-surface">
         <TopProgressBar />
         <PageFade key={location.pathname}>
@@ -112,12 +114,12 @@ function OrgLayout() {
             <Outlet />
           </OrgSidebarContext.Provider>
         </PageFade>
-
         <OrgMobileNav
           slug={slug}
           activePath={location.pathname}
           user={user}
           roleLabel={roleLabel}
+          isOwnerOrAdmin={isOwnerOrAdmin}
           onSignOut={signOut}
         />
       </main>

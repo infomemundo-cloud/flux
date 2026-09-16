@@ -7,13 +7,20 @@ type OrgMobileNavProps = {
   activePath: string;
   user: { name: string; email: string | null } | null;
   roleLabel: string;
+  isOwnerOrAdmin: boolean;
   onSignOut: () => void;
 };
 
-export function OrgMobileNav({ slug, activePath, user, roleLabel, onSignOut }: OrgMobileNavProps) {
+export function OrgMobileNav({ slug, activePath, user, roleLabel, isOwnerOrAdmin, onSignOut }: OrgMobileNavProps) {
+  const visibleItems = ORG_NAV_ITEMS.filter((n) => !n.adminOnly || isOwnerOrAdmin);
+  // 5 itens + menu do usuário = 6 colunas (owner/admin); 4 itens + menu = 5 (demais).
+  // Classes estáticas pra o Tailwind gerar as duas variantes.
+  const columns = visibleItems.length + 1 >= 6 ? "grid-cols-6" : "grid-cols-5";
   return (
-    <nav className="sm:hidden fixed bottom-0 inset-x-0 z-30 grid grid-cols-6 gap-0.5 bg-sidebar text-sidebar-foreground border-t border-sidebar-border px-1 py-1.5">
-      {ORG_NAV_ITEMS.map((n) => {
+    <nav
+      className={`sm:hidden fixed bottom-0 inset-x-0 z-30 grid gap-0.5 bg-sidebar text-sidebar-foreground border-t border-sidebar-border px-1 py-1.5 ${columns}`}
+    >
+      {visibleItems.map((n) => {
         const to = `/app/o/${slug}/${n.segment}`;
         const active = activePath.startsWith(to);
         const Icon = n.icon;
@@ -23,9 +30,7 @@ export function OrgMobileNav({ slug, activePath, user, roleLabel, onSignOut }: O
             to={to}
             preload="intent"
             className={`flex flex-col items-center gap-1 py-1.5 rounded-lg text-[10px] font-medium transition-colors ${
-              active
-                ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                : "text-sidebar-foreground/60"
+              active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/60"
             }`}
           >
             <Icon className="h-[18px] w-[18px]" strokeWidth={1.9} />
@@ -40,7 +45,7 @@ export function OrgMobileNav({ slug, activePath, user, roleLabel, onSignOut }: O
           role={roleLabel}
           collapsed
           showTooltip={false}
-          settingsTo={`/app/o/${slug}/configuracoes`}
+          settingsTo={isOwnerOrAdmin ? `/app/o/${slug}/configuracoes` : undefined}
           onSignOut={onSignOut}
         />
       </div>

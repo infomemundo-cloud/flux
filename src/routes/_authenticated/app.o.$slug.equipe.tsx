@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { friendlyError } from "@/lib/friendly-error";
 import { Copy, Check, X, Trash2, UserPlus, Bot, Users, MailPlus } from "lucide-react";
 import { SectionTitle, StatCard } from "@/components/section-ui";
-
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/equipe")({
   head: () => ({ meta: [{ title: "Gestão de Equipe — Fluxo" }] }),
@@ -16,7 +16,7 @@ export const Route = createFileRoute("/_authenticated/app/o/$slug/equipe")({
 });
 
 const ROLE_LABEL: Record<string, string> = {
-  owner: "Owner",
+  owner: "Proprietário",
   admin: "Administrador",
   gerente: "Gerente",
   operador: "Operador",
@@ -25,6 +25,40 @@ const ROLE_LABEL: Record<string, string> = {
 
 const ROLE_OPTIONS = ["admin", "gerente", "operador", "agente_ia"] as const;
 const MANAGER_ROLES = new Set(["owner", "admin", "gerente"]);
+
+function initials(text: string) {
+  return text.split(/[\s._@-]+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join("");
+}
+
+function MemberAvatar({ isAI, label }: { isAI: boolean; label: string }) {
+  return (
+    <span className={`h-8 w-8 shrink-0 rounded-full grid place-items-center text-[11px] font-bold ${isAI ? "pill-violet" : "pill-brand"}`}>
+      {isAI ? "IA" : initials(label) || "?"}
+    </span>
+  );
+}
+
+/** Select do shadcn estilizado no mesmo tom compacto usado no resto do app. */
+function RoleSelect({
+  value, onChange, className = "",
+}: {
+  value: (typeof ROLE_OPTIONS)[number];
+  onChange: (v: (typeof ROLE_OPTIONS)[number]) => void;
+  className?: string;
+}) {
+  return (
+    <Select value={value} onValueChange={(v) => onChange(v as (typeof ROLE_OPTIONS)[number])}>
+      <SelectTrigger className={`h-8 text-xs ${className}`}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {ROLE_OPTIONS.map((r) => (
+          <SelectItem key={r} value={r} className="text-xs">{ROLE_LABEL[r]}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 function EquipePage() {
   const { slug } = useParams({ from: "/_authenticated/app/o/$slug/equipe" });
@@ -52,6 +86,7 @@ function EquipePage() {
 
   const [suggestedRole, setSuggestedRole] = useState<(typeof ROLE_OPTIONS)[number]>("operador");
   const [email, setEmail] = useState("");
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
 
   const createM = useMutation({
     mutationFn: () => createFn({ data: { orgId: org!.id, suggestedRole, email: email || undefined } }),
@@ -75,7 +110,7 @@ function EquipePage() {
   });
   const removeM = useMutation({
     mutationFn: (userId: string) => removeMemberFn({ data: { orgId: org!.id, userId } }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["members"] }); toast.success("Membro removido"); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["members"] }); toast.success("Membro removido"); setConfirmRemoveId(null); },
     onError: (e) => toast.error(friendlyError(e)),
   });
 
@@ -94,7 +129,6 @@ function EquipePage() {
         <StatCard icon={MailPlus} label="Convites pendentes" value={(invites ?? []).filter((i: any) => i.status === "pending").length} tone="amber" />
       </div>
 
-
       {isManager && (
         <section className="mt-6 rounded-lg border border-border bg-card p-4">
           <h2 className="font-semibold flex items-center gap-2 text-sm"><UserPlus className="h-4 w-4" /> Novo convite</h2>
@@ -104,10 +138,7 @@ function EquipePage() {
           >
             <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="E-mail (opcional, informativo)"
               className="h-10 px-3 rounded-md border border-input bg-background text-sm" />
-            <select value={suggestedRole} onChange={(e) => setSuggestedRole(e.target.value as any)}
-              className="h-10 px-3 rounded-md border border-input bg-background text-sm">
-              {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-            </select>
+            <RoleSelect value={suggestedRole} onChange={setSuggestedRole} className="h-10" />
             <button disabled={createM.isPending} className="h-10 px-4 rounded-md bg-primary text-primary-foreground font-medium disabled:opacity-60 text-sm">
               {createM.isPending ? "Gerando..." : "Gerar link"}
             </button>
@@ -120,7 +151,6 @@ function EquipePage() {
         <section className="mt-6">
           <SectionTitle icon={MailPlus} title="Convites" hint="Links gerados e solicitações aguardando aprovação." />
           <div className="card-elevated overflow-hidden">
-
             {(invites ?? []).length === 0 && <div className="p-4 text-sm text-muted-foreground">Nenhum convite.</div>}
             {invites?.map((inv: any) => {
               const link = `${origin}/convite/${inv.token}`;
@@ -162,32 +192,59 @@ function EquipePage() {
       <section className="mt-8">
         <SectionTitle icon={Users} title="Membros" hint="Papéis definem o que cada pessoa pode fazer." />
         <div className="card-elevated overflow-hidden">
-          {members?.map((m: any) => (
-            <div key={m.id} className="row-zebra flex flex-wrap items-center gap-2 p-3 border-b border-border last:border-0">
+          {members?.map((m: any) => {
+            const isAI = m.role === "agente_ia";
+            const label = m.email ?? m.user_id.slice(0, 8);
+            const isMe = m.user_id === org?.userId;
+            return (
+              <div key={m.id} className="row-zebra flex flex-wrap items-center gap-3 p-3 border-b border-border last:border-0">
+                <MemberAvatar isAI={isAI} label={label} />
+                <div className="flex items-center gap-1.5 flex-1 min-w-0 text-sm">
+                  <span className="truncate">{label}</span>
+                  {isMe && <span className="shrink-0 text-[10px] font-semibold text-primary">Você</span>}
+                </div>
 
-              <div className="flex items-center gap-2 flex-1 min-w-0 text-sm">
-                {m.role === "agente_ia" && <Bot className="h-4 w-4 text-primary shrink-0" />}
-                <span className="truncate">{m.email ?? m.user_id}</span>
+                {isManager && m.role !== "owner" ? (
+                  <RoleSelect
+                    value={m.role}
+                    onChange={(role) => roleM.mutate({ userId: m.user_id, role })}
+                    className="w-[150px]"
+                  />
+                ) : (
+                  <span className="text-xs px-2 py-0.5 rounded bg-secondary text-secondary-foreground">{ROLE_LABEL[m.role] ?? m.role}</span>
+                )}
+
+                {isManager && m.role !== "owner" && (
+                  confirmRemoveId === m.user_id ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-muted-foreground hidden sm:inline">Remover?</span>
+                      <button
+                        onClick={() => removeM.mutate(m.user_id)}
+                        disabled={removeM.isPending}
+                        className="h-8 px-2.5 rounded-md bg-destructive text-destructive-foreground text-xs font-semibold disabled:opacity-60"
+                      >
+                        {removeM.isPending ? "..." : "Confirmar"}
+                      </button>
+                      <button
+                        onClick={() => setConfirmRemoveId(null)}
+                        className="h-8 px-2.5 rounded-md border border-border text-xs hover:bg-secondary"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmRemoveId(m.user_id)}
+                      className="p-2 rounded-md hover:bg-destructive/10 text-destructive"
+                      title="Remover"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )
+                )}
               </div>
-              {isManager && m.role !== "owner" ? (
-                <select
-                  value={m.role}
-                  onChange={(e) => roleM.mutate({ userId: m.user_id, role: e.target.value as any })}
-                  className="h-8 px-2 rounded border border-input bg-background text-xs"
-                >
-                  {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-                </select>
-              ) : (
-                <span className="text-xs px-2 py-0.5 rounded bg-secondary text-secondary-foreground">{ROLE_LABEL[m.role] ?? m.role}</span>
-              )}
-              {isManager && m.role !== "owner" && (
-                <button onClick={() => { if (confirm("Remover este membro?")) removeM.mutate(m.user_id); }}
-                  className="p-2 rounded-md hover:bg-destructive/10 text-destructive" title="Remover">
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
     </div>
@@ -209,10 +266,7 @@ function ApproveControls({ onApprove, defaultRole }: { onApprove: (role: (typeof
   const [role, setRole] = useState<(typeof ROLE_OPTIONS)[number]>(initial);
   return (
     <div className="flex items-center gap-1">
-      <select value={role} onChange={(e) => setRole(e.target.value as any)}
-        className="h-9 px-2 rounded-md border border-input bg-background text-xs">
-        {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-      </select>
+      <RoleSelect value={role} onChange={setRole} className="w-[140px]" />
       <button onClick={() => onApprove(role)} className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-sm inline-flex items-center gap-1">
         <Check className="h-4 w-4" /> Aprovar
       </button>

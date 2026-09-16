@@ -28,6 +28,10 @@ type Normalized = z.infer<typeof Body> & {
   // Nome de quem mandou a mensagem, só relevante em grupos (o "contato" ali é
   // o grupo, não a pessoa — mas não queremos perder essa informação).
   participant_name?: string | null;
+  // NOVO: o envelope do webhook da Evolution já vem com server_url e apikey —
+  // usamos SOMENTE pra buscar o assunto (nome real) do grupo quando necessário.
+  evolution_server_url?: string | null;
+  evolution_apikey?: string | null;
 };
 
 const EvolutionPayload = z.object({
@@ -56,6 +60,37 @@ function looksLikeEvolution(payload: any): boolean {
     typeof payload.event === "string" ||
     (typeof payload.instance === "string" && Boolean(payload.data))
   );
+}
+
+// NOVO: busca o assunto (nome real) do grupo na Evolution API. O messages.upsert
+// não traz o subject do grupo — só o pushName de quem mandou — então fazemos uma
+// consulta pontual em /group/info. Tenta as duas ordens de parâmetro da rota por
+// segurança; qualquer falha vira null (silencioso) e o fluxo segue como "Grupo",
+// pra nunca adicionar um ponto de quebra no ingest.
+async function fetchGroupSubject(
+  serverUrl: string,
+  apikey: string,
+  groupJid: string,
+  instance: string,
+): Promise<string | null> {
+  const base = serverUrl.replace(/\/+$/, "");
+  const candidates = [
+    `${base}/group/info/${encodeURIComponent(groupJid)}/${encodeURIComponent(instance)}`,
+    `${base}/group/info/${encodeURIComponent(instance)}/${encodeURIComponent(groupJid)}`,
+  ];
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url, { headers: { apikey } });
+      if (!res.ok) continue;
+      const json: any = await res.json();
+      const subject = json?.subject ?? json?.data?.subject;
+      if (typeof subject === "string" && subject.trim()) return subject.trim();
+    } catch {
+      // segue pro próximo candidato; se nenhum funcionar, desiste em silêncio
+    }
+  }
+  console.error("[ingest] não consegui buscar o assunto do grupo", { groupJid, instance });
+  return null;
 }
 
 function normalize(payload: unknown):
@@ -99,13 +134,9 @@ function normalize(payload: unknown):
       : jid.replace(/@s\.whatsapp\.net$/i, "").replace(/@c\.us$/i, "");
 
     // pushName é o nome de QUEM MANDOU a mensagem — num grupo isso é o
-    // participante, não o grupo em si. Usar como nome do "contato" (que aqui
-    // representa a conversa com o grupo inteiro) fazia o nome mudar toda vez
-    // que uma pessoa diferente mandasse mensagem no mesmo grupo. Um grupo
-    // sempre se chama "Grupo" pra nós por enquanto (a Evolution API não manda
-    // o nome/assunto real do grupo nesse mesmo evento — pra ter o nome de
-    // verdade precisaria de uma chamada extra à API, que ainda não fizemos).
-    // O nome de quem mandou não se perde: vai junto no metadata do evento.
+    // participante, não o grupo em si. O nome do grupo de verdade vem depois,
+    // via fetchGroupSubject (assunto do grupo na Evolution). O nome de quem
+    // mandou não se perde: vai junto no metadata do evento.
     const contactName = isGroup ? "Grupo" : d.pushName?.trim() || "Contato WhatsApp";
     const participantName = isGroup ? d.pushName?.trim() || null : null;
 
@@ -125,6 +156,9 @@ function normalize(payload: unknown):
         message_id: d.key.id ?? null,
         external_ref: d.key.id ?? undefined,
         participant_name: participantName,
+        // NOVO: repassa o envelope pra etapa de contato decidir se busca o assunto
+        evolution_server_url: typeof raw.server_url === "string" ? raw.server_url : null,
+        evolution_apikey: typeof raw.apikey === "string" ? raw.apikey : null,
       },
     };
   }
@@ -201,6 +235,34 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             });
           }
 
+          // NOVO: nome real do grupo (assunto), sem mexer em mais nada do fluxo.
+          if (b.contact) {
+            const isGroup = !!b.whatsapp_jid?.endsWith("@g.us");
+            const savedName = found?.name ?? null;
+            const savedIsGeneric = !savedName || savedName === "Grupo";
+            if (isGroup && !savedIsGeneric) {
+              // Contato já tem nome real salvo: não deixa o "Grupo" genérico
+              // passar por cima dele nas mensagens seguintes.
+              b.contact.name = savedName;
+            } else if (
+              isGroup &&
+              savedIsGeneric &&
+              b.evolution_server_url &&
+              b.evolution_apikey &&
+              b.instance_name
+            ) {
+              // Primeira vez (ou nome ainda genérico): busca o assunto do grupo
+              // uma única vez — depois disso o nome salvo cuida do resto.
+              const subject = await fetchGroupSubject(
+                b.evolution_server_url,
+                b.evolution_apikey,
+                b.whatsapp_jid as string,
+                b.instance_name,
+              );
+              if (subject) b.contact.name = subject;
+            }
+          }
+
           if (found) {
             contactId = found.id;
             // Contato já existia: se a mensagem atual trouxe um nome (ex:
@@ -236,7 +298,6 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               })
               .select("id")
               .single();
-
             if (insertErr) {
               console.error("[ingest] falha ao criar contato", {
                 org_id: tok.org_id,
@@ -245,7 +306,6 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
                 error: insertErr,
               });
             }
-
             contactId = c?.id ?? null;
           }
         }
