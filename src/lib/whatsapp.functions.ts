@@ -95,7 +95,7 @@ async function ensureWebhookToken(orgId: string) {
   return token;
 }
 
-const WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "CONNECTION_UPDATE"];
+const WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "CONNECTION_UPDATE", "CONTACTS_UPDATE", "GROUPS_UPSERT", "GROUP_UPDATE", "GROUP_PARTICIPANTS_UPDATE"];
 
 async function evo(baseUrl: string, key: string, path: string, init?: RequestInit) {
   const res = await fetch(`${baseUrl}${path}`, {
