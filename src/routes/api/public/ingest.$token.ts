@@ -31,8 +31,6 @@ type Normalized = z.infer<typeof Body> & {
 };
 
 // Schema para o evento contacts.update da Evolution.
-// Traz updates de foto de perfil e nome (pushName) dos contatos.
-// `data` pode vir como array de updates OU como objeto único.
 const ContactsUpdatePayload = z.object({
   event: z.string().optional(),
   instance: z.string().max(120).optional(),
@@ -108,20 +106,18 @@ async function fetchGroupSubject(
   return null;
 }
 
-// Trata eventos contacts.update da Evolution: atualiza o avatar do contato
-// existente no banco. Regras pra nunca quebrar nada:
-//   - Contato que não existe no banco: ignora silenciosamente.
-//   - profilePicUrl null: marca avatar_fetched_at mas mantém avatar_url atual
-//     (não apaga foto antiga; pode ter sido transitório).
-//   - profilePicUrl string: atualiza os dois.
-//   - profilePicUrl undefined/ausente: item ignorado (update sem foto).
+// Trata eventos contacts.update da Evolution: atualiza o avatar e o nome do contato no banco.
 async function handleContactsUpdate(
   orgId: string,
   payload: z.infer<typeof ContactsUpdatePayload>,
 ): Promise<void> {
   const items = Array.isArray(payload.data) ? payload.data : [payload.data];
   for (const item of items) {
-    if (typeof item.profilePicUrl !== "string" && item.profilePicUrl !== null) continue;
+    const hasPhoto = typeof item.profilePicUrl === "string" || item.profilePicUrl === null;
+    const hasName = typeof item.pushName === "string" && item.pushName.trim().length > 0;
+
+    // Se não houver nada relevante para atualizar, ignora
+    if (!hasPhoto && !hasName) continue;
 
     const { data: found, error: findErr } = await (
       await import("@/integrations/supabase/client.server")
@@ -133,7 +129,7 @@ async function handleContactsUpdate(
       .maybeSingle();
 
     if (findErr) {
-      console.error("[ingest] falha ao buscar contato para avatar", {
+      console.error("[ingest] falha ao buscar contato para atualização", {
         org_id: orgId,
         remoteJid: item.remoteJid,
         error: findErr,
@@ -141,16 +137,21 @@ async function handleContactsUpdate(
       continue;
     }
     if (!found) {
-      // Contato não existe ainda no banco. Ignora e segue.
       continue;
     }
 
-    const patch = {
-      avatar_fetched_at: new Date().toISOString(),
-      ...(typeof item.profilePicUrl === "string" && item.profilePicUrl.trim()
-        ? { avatar_url: item.profilePicUrl }
-        : {}),
-    };
+    const patch: Record<string, any> = {};
+
+    if (hasPhoto) {
+      patch.avatar_fetched_at = new Date().toISOString();
+      if (typeof item.profilePicUrl === "string" && item.profilePicUrl.trim()) {
+        patch.avatar_url = item.profilePicUrl.trim();
+      }
+    }
+
+    if (hasName) {
+      patch.name = item.pushName!.trim();
+    }
 
     const { error: updErr } = await (
       await import("@/integrations/supabase/client.server")
@@ -160,7 +161,7 @@ async function handleContactsUpdate(
       .eq("id", found.id);
 
     if (updErr) {
-      console.error("[ingest] falha ao atualizar avatar", {
+      console.error("[ingest] falha ao atualizar contato", {
         contact_id: found.id,
         remoteJid: item.remoteJid,
         error: updErr,
@@ -253,15 +254,9 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
         } catch {
           return json({ error: "invalid_json" }, 400);
         }
-        
-        // -------------------------------------------------------------
-        // ADICIONE ESTA LINHA AQUI:
-        console.log("[EVOLUTION PAYLOAD CRU]:", JSON.stringify(payload, null, 2));
-        // -------------------------------------------------------------
 
-        // CONTATOS: evento especial que não segue o fluxo de demanda.
-        // Detecta pelo envelope da Evolution e despacha direto pro handler dedicado,
-        // sem passar por normalize(). Responde 200 sempre pra Evolution considerar entregue.
+        console.log("[EVOLUTION PAYLOAD CRU]:", JSON.stringify(payload, null, 2));
+
         const looksLikeContactsUpdate =
           looksLikeEvolution(payload) &&
           typeof (payload as any).event === "string" &&
@@ -284,7 +279,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
         if (!norm.ok) return json(norm.body, norm.status);
         const b = norm.value;
 
-        // 1. Busca ou cria o contato associado (grupo ou pessoa) pelo external_id
+        // 1. Busca ou cria o contato associado
         let contactId: string | null = null;
         if (b.contact?.external_id || b.contact?.phone) {
           const orParts = [
@@ -312,7 +307,8 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           if (b.contact) {
             const isGroup = !!b.whatsapp_jid?.endsWith("@g.us");
             const savedName = found?.name ?? null;
-            const savedIsGeneric = !savedName || savedName === "Grupo";
+            const savedIsGeneric = !savedName || savedName === "Grupo" || savedName === "Contato WhatsApp";
+            
             if (isGroup && !savedIsGeneric) {
               b.contact.name = savedName;
             } else if (
@@ -334,11 +330,21 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
 
           if (found) {
             contactId = found.id;
-            if (b.contact.name && b.contact.name !== found.name) {
+            const incomingNameIsGeneric = !b.contact.name || b.contact.name === "Contato WhatsApp";
+            const savedNameIsGeneric = !found.name || found.name === "Contato WhatsApp";
+
+            // Só atualiza se o nome recebido for válido e diferente do cadastrado,
+            // ou se o cadastrado for genérico e o recebido não for.
+            if (
+              b.contact.name &&
+              b.contact.name !== found.name &&
+              (!incomingNameIsGeneric || savedNameIsGeneric)
+            ) {
               const { error: updateErr } = await supabaseAdmin
                 .from("contacts")
                 .update({ name: b.contact.name })
                 .eq("id", contactId);
+
               if (updateErr) {
                 console.error("[ingest] falha ao atualizar nome do contato", {
                   contact_id: contactId,
@@ -359,6 +365,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               })
               .select("id")
               .single();
+
             if (insertErr) {
               console.error("[ingest] falha ao criar contato", {
                 org_id: tok.org_id,
@@ -387,7 +394,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           if (open) demandaId = open.id;
         }
 
-        // 3. Se a demanda anterior já estava 'Concluído' ou 'Cancelado' (não achou demanda aberta), CRIA UMA NOVA DEMANDA
+        // 3. Cria uma nova demanda se necessário
         if (!demandaId) {
           const title = b.title ?? b.message.slice(0, 80);
           const { data: dem, error: de } = await supabaseAdmin
@@ -431,9 +438,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           protocol = (p?.protocol as string | null) ?? null;
         }
 
-        // 4. Registra a nova mensagem recebida no histórico de eventos
-        // IDEMPOTÊNCIA: webhook pode chegar duplicado (retry/atualização de status da
-        // Evolution). Se já existe evento com este message_id, não duplica a bolha.
+        // 4. Registra evento de mensagem e trata idempotência
         if (b.message_id) {
           const { data: already } = await supabaseAdmin
             .from("demanda_events")
