@@ -120,11 +120,13 @@ function DemandaDetail() {
         },
       });
     },
-    onSuccess: (res: any) => {
+    onSuccess: () => {
       setComment("");
       setReplyTo(null);
       qc.invalidateQueries({ queryKey: ["demanda", id] });
-      if (viaWhatsapp && data?.demanda?.whatsapp_jid) toast.success(res?.message ?? "Mensagem enviada");
+      // Sem toast de sucesso no WhatsApp: o toggle já mostra o canal escolhido
+      // e a mensagem entra no histórico na hora — toast só fazia ruído.
+      // Erros continuam com toast (onError abaixo).
     },
     onError: (e) => toast.error(friendlyError(e)),
   });

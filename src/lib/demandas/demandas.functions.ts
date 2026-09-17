@@ -289,13 +289,16 @@ export const addComment = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // metadata só entra quando há citação: a coluna tem default próprio e é
+    // NOT NULL — inserir null explícito era o erro do comentário interno sem
+    // reply. Sem citação, omitimos a chave e o default do banco vale.
     const { error } = await supabaseAdmin.from("demanda_events").insert({
       org_id: data.orgId,
       demanda_id: data.demandaId,
       kind: "commented",
       actor_id: context.userId,
       content: data.content,
-      metadata: data.quoted ? { quoted: data.quoted } : null,
+      ...(data.quoted ? { metadata: { quoted: data.quoted } } : {}),
     });
     if (error) throw new Error(error.message);
     return { ok: true };
