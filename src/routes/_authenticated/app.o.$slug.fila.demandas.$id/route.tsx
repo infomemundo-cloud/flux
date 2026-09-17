@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useParams, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useParams, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useRef, useState } from "react";
@@ -12,14 +12,12 @@ import { friendlyError } from "@/lib/friendly-error";
 import { useFilaSidebar } from "@/lib/demandas/fila-sidebar-context";
 import { STATE_COLOR } from "@/lib/demandas/state-colors";
 import { resolveContactName } from "@/lib/demandas/resolve-contact-name";
-import { ContactAvatar } from "@/components/contact-avatar";
+import { DemandaHeader } from "./-components/DemandaHeader";
 import { DemandaHistory, type ReplyTarget } from "./-components/DemandaHistory";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  PanelLeftClose,
   PanelRightClose,
-  PanelRightOpen,
   X,
   Lock,
   MessageCircle,
@@ -426,52 +424,17 @@ function DemandaDetail() {
   return (
     <div className="relative flex h-full">
       <div className="flex flex-col min-w-0 flex-1">
-        <div className="shrink-0 border-b border-border bg-card p-3 flex items-center gap-2.5">
-          <button
-            onClick={() => filaSidebar?.setCollapsed(true)}
-            title="Recolher fila"
-            aria-label="Recolher fila"
-            className="hidden sm:grid shrink-0 place-items-center h-8 w-8 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition"
-          >
-            <PanelLeftClose className="h-4 w-4" />
-          </button>
-          <ContactAvatar url={d.contacts?.avatar_url ?? null} name={contactName} tone="client" />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-baseline gap-1.5 min-w-0">
-              <span className="truncate text-sm font-semibold text-foreground">{contactName}</span>
-              {isGroupChat && (
-                <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide pill-brand">
-                  Grupo
-                </span>
-              )}
-              <span className="shrink-0 text-xs text-muted-foreground">· {d.protocol}</span>
-            </div>
-            {d.contacts?.phone && (
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <MessageCircle className="h-3 w-3" strokeWidth={2.2} /> {d.contacts.phone}
-              </div>
-            )}
-          </div>
-          {railCollapsed && (
-            <button
-              onClick={() => setRailCollapsed(false)}
-              title="Expandir painel lateral"
-              aria-label="Expandir painel lateral"
-              className="hidden md:grid shrink-0 place-items-center h-8 w-8 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition"
-            >
-              <PanelRightOpen className="h-4 w-4" />
-            </button>
-          )}
-          <Link
-            to="/app/o/$slug/fila"
-            params={{ slug }}
-            title="Fechar"
-            aria-label="Fechar painel"
-            className="shrink-0 grid place-items-center h-8 w-8 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition"
-          >
-            <X className="h-4 w-4" />
-          </Link>
-        </div>
+        <DemandaHeader
+          slug={slug}
+          contactName={contactName}
+          contactAvatarUrl={d.contacts?.avatar_url ?? null}
+          phone={d.contacts?.phone ?? null}
+          protocol={d.protocol}
+          isGroupChat={isGroupChat}
+          onCollapseFila={() => filaSidebar?.setCollapsed(true)}
+          railCollapsed={railCollapsed}
+          onExpandRail={() => setRailCollapsed(false)}
+        />
 
         <DemandaHistory
           demandaId={id}
