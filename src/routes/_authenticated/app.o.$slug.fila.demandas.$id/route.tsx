@@ -14,27 +14,20 @@ import { STATE_COLOR } from "@/lib/demandas/state-colors";
 import { resolveContactName } from "@/lib/demandas/resolve-contact-name";
 import { DemandaHeader } from "./-components/DemandaHeader";
 import { DemandaHistory, type ReplyTarget } from "./-components/DemandaHistory";
+import { DemandaComposer } from "./-components/DemandaComposer";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   PanelRightClose,
-  X,
-  Lock,
-  MessageCircle,
-  Send,
   Trash2,
   UserCheck,
   Flag,
   CalendarClock,
   UserCog,
   Activity,
-  Paperclip,
-  Smile,
-  Sticker,
   ChevronLeft,
   ChevronRight,
   Clock,
-  Reply,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/fila/demandas/$id")({
@@ -414,7 +407,6 @@ function DemandaDetail() {
 
   const contactName = resolveContactName(d);
   const isGroupChat = !!d.whatsapp_jid?.endsWith("@g.us");
-  const effectiveViaWhatsapp = viaWhatsapp && !!d.whatsapp_jid;
 
   const handleReply = (target: ReplyTarget) => {
     setReplyTo(target);
@@ -449,128 +441,18 @@ function DemandaDetail() {
           onReply={handleReply}
         />
 
-        <div className="shrink-0 border-t border-border bg-card p-3">
-          {d.whatsapp_jid && (
-            <div className="mb-2 flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setViaWhatsapp(true)}
-                title="Responder no WhatsApp"
-                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
-                  effectiveViaWhatsapp
-                    ? "bg-[#25D366]/15 text-[#128C4A] ring-1 ring-[#25D366]/40"
-                    : "text-muted-foreground hover:bg-secondary"
-                }`}
-              >
-                <MessageCircle className="h-3.5 w-3.5" strokeWidth={2.3} /> WhatsApp
-              </button>
-              <button
-                type="button"
-                onClick={() => setViaWhatsapp(false)}
-                title="Comentário interno — só sua equipe vê"
-                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
-                  !effectiveViaWhatsapp ? "bg-secondary text-foreground ring-1 ring-border" : "text-muted-foreground hover:bg-secondary"
-                }`}
-              >
-                <Lock className="h-3.5 w-3.5" strokeWidth={2.3} /> Interno
-              </button>
-            </div>
-          )}
-          <div
-            className={`rounded-xl border bg-background transition focus-within:ring-2 ${
-              effectiveViaWhatsapp
-                ? "border-[#25D366]/40 focus-within:border-[#25D366]/60 focus-within:ring-[#25D366]/15"
-                : "border-border focus-within:border-primary/50 focus-within:ring-primary/10"
-            }`}
-          >
-            {replyTo && (
-              <div className="mx-3.5 mt-3 flex items-start gap-2 rounded-md border-l-2 border-l-[var(--pill-amber-fg)] bg-secondary/70 px-2.5 py-1.5">
-                <Reply className="mt-0.5 h-3 w-3 shrink-0 text-[var(--pill-amber-fg)]" strokeWidth={2.2} />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[11px] font-semibold text-[var(--pill-amber-fg)]">{replyTo.author}</div>
-                  <div className="truncate text-[11px] text-muted-foreground">{replyTo.content || "(sem texto)"}</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setReplyTo(null)}
-                  title="Cancelar resposta"
-                  aria-label="Cancelar resposta"
-                  className="shrink-0 text-muted-foreground transition hover:text-foreground"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            )}
-            <textarea
-              ref={composerRef}
-              rows={1}
-              value={comment}
-              onChange={(e) => {
-                setComment(e.target.value);
-                const el = e.target;
-                el.style.height = "auto";
-                el.style.height = Math.min(el.scrollHeight, 160) + "px";
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Escape" && replyTo) {
-                  e.preventDefault();
-                  setReplyTo(null);
-                  return;
-                }
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  if (comment.trim() && !send.isPending) send.mutate();
-                }
-              }}
-              placeholder={
-                effectiveViaWhatsapp
-                  ? "Escreva a resposta que será enviada ao cliente..."
-                  : "Comentário interno (não vai pro cliente)..."
-              }
-              className="w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-sm placeholder:text-muted-foreground outline-none scrollbar-thin"
-            />
-            <div className="flex items-center justify-between px-2 pb-2">
-              <div className="flex items-center gap-0.5">
-                <button
-                  type="button"
-                  onClick={() => toast("Anexar arquivo chega em breve")}
-                  title="Anexar arquivo (em breve)"
-                  className="grid place-items-center h-8 w-8 rounded-lg text-muted-foreground/60 hover:bg-secondary hover:text-foreground transition"
-                >
-                  <Paperclip className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toast("Emojis chegam em breve")}
-                  title="Emoji (em breve)"
-                  className="grid place-items-center h-8 w-8 rounded-lg text-muted-foreground/60 hover:bg-secondary hover:text-foreground transition"
-                >
-                  <Smile className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toast("Figurinhas chegam em breve")}
-                  title="Figurinha (em breve)"
-                  className="grid place-items-center h-8 w-8 rounded-lg text-muted-foreground/60 hover:bg-secondary hover:text-foreground transition"
-                >
-                  <Sticker className="h-4 w-4" />
-                </button>
-              </div>
-              <button
-                onClick={() => {
-                  if (comment.trim() && !send.isPending) send.mutate();
-                }}
-                disabled={send.isPending || !comment.trim()}
-                title={effectiveViaWhatsapp ? "Enviar no WhatsApp" : "Salvar comentário interno"}
-                className={`grid place-items-center h-8 w-8 rounded-lg text-white transition disabled:opacity-40 ${
-                  effectiveViaWhatsapp ? "bg-[#25D366] hover:brightness-105" : "bg-primary hover:opacity-90"
-                }`}
-              >
-                <Send className="h-4 w-4" strokeWidth={2.3} />
-              </button>
-            </div>
-          </div>
-        </div>
+        <DemandaComposer
+          hasWhatsapp={!!d.whatsapp_jid}
+          viaWhatsapp={viaWhatsapp}
+          onViaWhatsappChange={setViaWhatsapp}
+          comment={comment}
+          onCommentChange={setComment}
+          replyTo={replyTo}
+          onCancelReply={() => setReplyTo(null)}
+          onSend={() => send.mutate()}
+          isPending={send.isPending}
+          textareaRef={composerRef}
+        />
       </div>
 
       {!railCollapsed && (
