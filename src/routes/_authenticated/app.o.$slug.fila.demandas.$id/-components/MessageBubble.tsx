@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
-import { CheckCircle2, MessageCircle, Reply } from "lucide-react";
+import { CheckCircle2, Lock, MessageCircle, Reply } from "lucide-react";
 
-/** Snapshot da mensagem citada (reply estilo WhatsApp). */
+/**
+ * Snapshot da mensagem citada (reply estilo WhatsApp).
+ */
 export type QuotedRef = { author?: string; content?: string; kind?: string };
 
 /**
@@ -18,6 +20,10 @@ export type MessageMedia = {
 /**
  * Uma bolha de mensagem (cliente recebida / saída WhatsApp / comentário interno).
  * Puramente apresentacional: o route decide avatar, textos e o callback de reply.
+ *
+ * Comentários internos (isInternal) ganham linguagem própria pra nunca serem
+ * confundidos com mensagem que foi (ou seria) enviada ao cliente:
+ * borda tracejada, fundo secundário e ícone de cadeado na linha de metadados.
  */
 export function MessageBubble({
   avatar,
@@ -26,6 +32,7 @@ export function MessageBubble({
   rolePillClass,
   isClient,
   isOutgoing,
+  isInternal,
   messageLabel,
   when,
   content,
@@ -39,6 +46,7 @@ export function MessageBubble({
   rolePillClass: string;
   isClient: boolean;
   isOutgoing: boolean;
+  isInternal?: boolean;
   messageLabel: string;
   when: string;
   content?: string | null;
@@ -66,7 +74,7 @@ export function MessageBubble({
             ? "border border-border border-l-[3px] border-l-[var(--pill-green-fg)] bg-card shadow-[var(--shadow-card)]"
             : isOutgoing
             ? "border border-primary/20 border-l-[3px] border-l-primary bg-primary/[0.04]"
-            : "border border-primary/15 bg-primary/[0.02]"
+            : "border border-dashed border-border/80 border-l-[3px] border-l-[var(--pill-neutral-fg)] bg-secondary/40"
         }`}
       >
         <div className="flex flex-wrap items-center gap-x-1.5 text-xs">
@@ -77,7 +85,14 @@ export function MessageBubble({
             </span>
           )}
           <span className="text-muted-foreground inline-flex items-center gap-1">
-            · {isOutgoing ? <CheckCircle2 className="h-3 w-3 text-primary" /> : <MessageCircle className="h-3 w-3" />}{" "}
+            ·{" "}
+            {isOutgoing ? (
+              <CheckCircle2 className="h-3 w-3 text-primary" />
+            ) : isInternal ? (
+              <Lock className="h-3 w-3" />
+            ) : (
+              <MessageCircle className="h-3 w-3" />
+            )}{" "}
             {messageLabel} · {when}
           </span>
         </div>

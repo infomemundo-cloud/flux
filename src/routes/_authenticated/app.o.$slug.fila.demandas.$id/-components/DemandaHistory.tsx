@@ -124,7 +124,13 @@ export function DemandaHistory({
             : nameOf(e.actor_id, "Atendente");
           const authorRole = isClient ? "Cliente" : roleOf(e.actor_id);
           const isAI = isAIOf(e.actor_id);
-          const messageLabel = isClient ? "mensagem recebida" : isOutgoing ? "resposta enviada" : "comentário";
+          // Comentário interno ganha rótulo explícito: nunca confundir com
+          // mensagem que foi (ou seria) enviada ao cliente.
+          const messageLabel = isClient
+            ? "mensagem recebida"
+            : isOutgoing
+            ? "resposta enviada"
+            : "comentário interno";
           const quoted = e.metadata?.quoted as
             | undefined
             | { author?: string; content?: string; kind?: string };
@@ -144,6 +150,7 @@ export function DemandaHistory({
               rolePillClass={isClient ? "pill-green" : isAI ? "pill-violet" : "pill-brand"}
               isClient={isClient}
               isOutgoing={isOutgoing}
+              isInternal={isComment}
               messageLabel={messageLabel}
               when={when}
               content={e.content}
