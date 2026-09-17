@@ -3,6 +3,18 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { StateEnum, PriorityEnum, OP_ROLES, assertMember } from "@/lib/demandas/demandas-guard";
 
+/**
+ * Shape da citação ("em resposta a…") gravada no metadata dos eventos.
+ * É um snapshot da mensagem citada (autor + texto + tipo) — não um FK
+ * rígido: se o evento original for excluído, a citação continua legível.
+ */
+const QuotedSchema = z.object({
+  event_id: z.string().uuid().optional(),
+  author: z.string().max(120),
+  content: z.string().max(4000),
+  kind: z.string().max(40),
+});
+
 export const listDemandas = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
@@ -269,6 +281,9 @@ export const addComment = createServerFn({ method: "POST" })
           .trim()
           .min(1, { message: "Escreva um comentário antes de enviar." })
           .max(4000, { message: "O comentário pode ter no máximo 4000 caracteres." }),
+        // Citação opcional ("em resposta a…") — snapshot da mensagem citada
+        // gravado no metadata do evento de comentário.
+        quoted: QuotedSchema.optional(),
       })
       .parse(d),
   )
@@ -280,6 +295,7 @@ export const addComment = createServerFn({ method: "POST" })
       kind: "commented",
       actor_id: context.userId,
       content: data.content,
+      metadata: data.quoted ? { quoted: data.quoted } : null,
     });
     if (error) throw new Error(error.message);
     return { ok: true };

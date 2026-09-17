@@ -2,12 +2,26 @@ import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
-import { getOrgBySlug, listOperators } from "@/lib/orgs.functions";
+import { getOrgBySlug } from "@/lib/orgs.functions";
 import { listDemandas } from "@/lib/demandas/demandas.functions";
+import { listMemberProfiles } from "@/lib/member-profiles.functions";
 import { orgDashboard } from "@/lib/demandas/demandas-analytics.functions";
-import { STATE_LABEL, PriorityBadge } from "@/components/demandas-ui";
-import { AiSuggestionsCard, MemberAvatar, Sparkline, TeamSelector, type TeamOption } from "@/components/dashboard-ui";
-import { AlertTriangle, CheckCircle2, Inbox, Info, Layers, Target, TrendingUp } from "lucide-react";
+import { STATE_LABEL, PriorityBadge, formatRelative } from "@/components/demandas-ui";
+import { resolveContactName } from "@/lib/demandas/resolve-contact-name";
+import { AiSuggestionsCard, Sparkline, TeamSelector, type TeamOption } from "@/components/dashboard-ui";
+import { ContactAvatar } from "@/components/contact-avatar";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Inbox,
+  Info,
+  Layers,
+  MessageCircle,
+  Target,
+  TrendingUp,
+  UserPlus,
+  Users,
+} from "lucide-react";
 import { DashboardSkeleton } from "@/components/skeletons";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/dashboard")({
@@ -19,49 +33,55 @@ const MANAGER_ROLES = new Set(["owner", "admin", "gerente"]);
 const COLUMN_STATES = ["novo", "em_analise", "aguardando_cliente", "aguardando_revisao_humana"] as const;
 
 // Scope selector value semantics:
-// "me" -> current user | "triage" -> unassigned | "all" -> everyone | UUID -> specific operator
+//  "me" -> current user | "triage" -> unassigned | "all" -> everyone | UUID -> specific operator
 type Scope = "me" | "triage" | "all" | string;
+
+function isOverdueDemanda(d: any) {
+  return (
+    d.state !== "concluido" &&
+    d.due_at &&
+    new Date(d.due_at) < new Date() &&
+    d.state !== "aguardando_revisao_humana"
+  );
+}
 
 function Dashboard() {
   const { slug } = useParams({ from: "/_authenticated/app/o/$slug/dashboard" });
   const orgFn = useServerFn(getOrgBySlug);
   const { data: org } = useQuery({ queryKey: ["org", slug], queryFn: () => orgFn({ data: { slug } }) });
   const isManager = !!org && MANAGER_ROLES.has(org.role);
-
   const [scope, setScope] = useState<Scope>(isManager ? "all" : "me");
   // Keep default in sync once org loads
   const effectiveScope: Scope = scope;
-
   const dashFn = useServerFn(orgDashboard);
-  const opsFn = useServerFn(listOperators);
-
+  const profilesFn = useServerFn(listMemberProfiles);
   const scopeFilter = useMemo(() => {
     if (effectiveScope === "me") return { assigneeId: org?.userId } as const;
     if (effectiveScope === "triage") return { assigneeId: null } as const;
     if (effectiveScope === "all") return {} as const;
     return { assigneeId: effectiveScope } as const;
   }, [effectiveScope, org?.userId]);
-
   const { data: dash } = useQuery({
     queryKey: ["dashboard", org?.id, effectiveScope],
     enabled: !!org?.id,
     queryFn: () => dashFn({ data: { orgId: org!.id, ...scopeFilter } as any }),
   });
-
-  const { data: operators } = useQuery({
-    queryKey: ["operators", org?.id],
+  const { data: profiles } = useQuery({
+    queryKey: ["member-profiles", org?.id],
     enabled: !!org?.id,
-    queryFn: () => opsFn({ data: { orgId: org!.id } }),
+    queryFn: () => profilesFn({ data: { orgId: org!.id } }),
   });
-
   const memberLabel = useMemo(() => {
     const m = new Map<string, string>();
-    for (const o of operators ?? []) m.set(o.user_id, o.email ?? o.user_id.slice(0, 8));
+    for (const p of profiles ?? []) m.set(p.user_id, p.name ?? p.email ?? p.user_id.slice(0, 8));
     return m;
-  }, [operators]);
-
+  }, [profiles]);
+  const memberAvatar = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of profiles ?? []) if (p.avatar_url) m.set(p.user_id, p.avatar_url);
+    return m;
+  }, [profiles]);
   if (!org || !dash) return <DashboardSkeleton />;
-
   return (
     <div className="p-4 sm:p-6 pb-24 sm:pb-6 space-y-6 max-w-[1400px]">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -75,35 +95,36 @@ function Dashboard() {
           isManager={isManager}
           value={effectiveScope}
           onChange={setScope}
-          operators={operators ?? []}
+          operators={profiles ?? []}
           currentUserId={org.userId}
         />
       </header>
-
       <CommandPanel dash={dash} />
-
       <AiSuggestionsCard />
-
       <TaskColumns
         orgId={org.id}
         slug={slug}
         scope={effectiveScope}
         currentUserId={org.userId}
         memberLabel={memberLabel}
+        memberAvatar={memberAvatar}
       />
-
       {isManager && <Timeline dash={dash} />}
     </div>
   );
 }
 
 function ScopeSelector({
-  isManager, value, onChange, operators, currentUserId,
+  isManager,
+  value,
+  onChange,
+  operators,
+  currentUserId,
 }: {
   isManager: boolean;
   value: Scope;
   onChange: (v: Scope) => void;
-  operators: { user_id: string; role: string; email: string | null }[];
+  operators: { user_id: string; role: string; email: string | null; name?: string | null; avatar_url?: string | null }[];
   currentUserId: string;
 }) {
   const options: TeamOption[] = [
@@ -115,7 +136,7 @@ function ScopeSelector({
           .filter((o) => o.user_id !== currentUserId)
           .map((o) => ({
             value: o.user_id,
-            label: o.email ?? o.user_id.slice(0, 8),
+            label: o.name ?? o.email ?? o.user_id.slice(0, 8),
             sub: o.role,
             kind: "member" as const,
           }))
@@ -141,7 +162,6 @@ function CommandPanel({ dash }: { dash: any }) {
     if (prev < MIN_BASE_PARA_COMPARAR) return null; // "Sem histórico" em vez de % exagerada
     return Math.round(((cur - prev) / prev) * 100);
   };
-
   return (
     <section className="grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
       <Kpi
@@ -193,7 +213,6 @@ function CommandPanel({ dash }: { dash: any }) {
         info="De cada 100 demandas dentro do filtro atual, quantas já foram concluídas."
         tone="success"
       />
-
       <div className="sm:col-span-2 lg:col-span-3 xl:col-span-5 rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-card)]">
         <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
           <TrendingUp className="h-3.5 w-3.5" strokeWidth={2.4} /> Distribuição por estado
@@ -221,8 +240,20 @@ function CommandPanel({ dash }: { dash: any }) {
 }
 
 function TaskColumns({
-  orgId, slug, scope, currentUserId, memberLabel,
-}: { orgId: string; slug: string; scope: Scope; currentUserId: string; memberLabel: Map<string, string> }) {
+  orgId,
+  slug,
+  scope,
+  currentUserId,
+  memberLabel,
+  memberAvatar,
+}: {
+  orgId: string;
+  slug: string;
+  scope: Scope;
+  currentUserId: string;
+  memberLabel: Map<string, string>;
+  memberAvatar: Map<string, string>;
+}) {
   const listFn = useServerFn(listDemandas);
   const scopeArg = useMemo(() => {
     if (scope === "me") return { assigneeId: currentUserId };
@@ -230,19 +261,16 @@ function TaskColumns({
     if (scope === "all") return {};
     return { assigneeId: scope };
   }, [scope, currentUserId]);
-
   const { data: result } = useQuery({
     queryKey: ["tasks", orgId, scope],
     queryFn: () => listFn({ data: { orgId, ...scopeArg } as any }),
   });
   const rows = result?.rows;
-
   const byState = useMemo(() => {
     const m: Record<string, any[]> = { novo: [], em_analise: [], aguardando_cliente: [], aguardando_revisao_humana: [] };
     for (const r of (rows ?? []) as any[]) if (m[r.state]) m[r.state].push(r);
     return m;
   }, [rows]);
-
   return (
     <section>
       <h2 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-2.5">
@@ -259,34 +287,73 @@ function TaskColumns({
             </div>
             <div className="p-2 space-y-2">
               {(byState[s] ?? []).slice(0, 8).map((d: any) => {
-                const label = d.assignee_id
+                const overdue = isOverdueDemanda(d);
+                const contactName = resolveContactName(d);
+                const isGroup = !!d.whatsapp_jid?.endsWith("@g.us");
+                const assigneeLabel = d.assignee_id
                   ? d.assignee_id === currentUserId
                     ? "Você"
                     : (memberLabel.get(d.assignee_id) ?? "Atribuída")
                   : null;
                 return (
-                <Link
-                  key={d.id}
-                  to="/app/o/$slug/fila/demandas/$id"
-                  params={{ slug, id: d.id }}
-                  className="block rounded-xl border border-border bg-background hover:border-primary/35 hover:bg-primary/[0.03] transition-colors p-2.5"
-                >
-                  <div className="text-[13px] font-semibold truncate">{d.title}</div>
-                  <div className="mt-1.5 flex items-center justify-between gap-2">
-                    <PriorityBadge priority={d.priority} />
-                    <span className="flex items-center gap-1.5 min-w-0">
-                      <MemberAvatar label={label} seed={d.assignee_id ?? "none"} size={20} />
-                      <span className="text-[11px] text-muted-foreground truncate max-w-[86px]">
-                        {label ?? "Sem responsável"}
+                  <Link
+                    key={d.id}
+                    to="/app/o/$slug/fila/demandas/$id"
+                    params={{ slug, id: d.id }}
+                    className="group block min-w-0 overflow-hidden rounded-lg border border-border/60 bg-card p-3 transition-colors hover:border-primary/50 hover:bg-accent/5 hover:shadow-sm"
+                  >
+                    {/* Linha 1 — meta: prioridade (esq) + prazo/atividade (dir, discreto) */}
+                    <div className="flex items-center gap-1.5">
+                      <PriorityBadge priority={d.priority} />
+                      <span
+                        className={`ml-auto shrink-0 text-[10px] tabular-nums ${
+                          overdue ? "font-semibold text-destructive" : "text-muted-foreground"
+                        }`}
+                      >
+                        {d.due_at
+                          ? `${overdue ? "venceu" : "vence"} ${new Date(d.due_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}`
+                          : formatRelative(d.updated_at)}
                       </span>
-                    </span>
-                  </div>
-                  {d.due_at && (
-                    <div className={`mt-1 text-[11px] ${new Date(d.due_at) < new Date() ? "text-destructive" : "text-muted-foreground"}`}>
-                      venc. {new Date(d.due_at).toLocaleDateString("pt-BR")}
                     </div>
-                  )}
-                </Link>
+
+                    {/* Linha 2 — conteúdo principal: título/última mensagem em destaque */}
+                    <div className="mt-1.5 truncate text-[13px] font-semibold leading-4 text-foreground transition-colors group-hover:text-primary">
+                      {d.title}
+                    </div>
+
+                    {/* Linha 3 — rodapé: CLIENTE + canal (esq) | RESPONSÁVEL (dir) */}
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <ContactAvatar url={d.contacts?.avatar_url ?? null} name={contactName} size="sm" tone="client" />
+                      <span
+                        className="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground/90"
+                        title={d.contacts?.phone ?? contactName}
+                      >
+                        {contactName}
+                      </span>
+                      <span
+                        title={isGroup ? "Conversa em grupo" : "WhatsApp"}
+                        aria-label={isGroup ? "Conversa em grupo" : "WhatsApp"}
+                        className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground"
+                      >
+                        {isGroup ? <Users className="h-3 w-3" /> : <MessageCircle className="h-3 w-3" />}
+                      </span>
+                      {assigneeLabel ? (
+                        <span className="flex shrink-0 items-center gap-1" title={`Atendido por: ${assigneeLabel}`}>
+                          <ContactAvatar
+                            url={d.assignee_id ? (memberAvatar.get(d.assignee_id) ?? null) : null}
+                            name={assigneeLabel}
+                            size="sm"
+                            tone="team"
+                          />
+                          <span className="max-w-[64px] truncate text-[10px] text-muted-foreground">{assigneeLabel}</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-dashed border-border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground/80">
+                          <UserPlus className="h-2.5 w-2.5" /> Sem responsável
+                        </span>
+                      )}
+                    </div>
+                  </Link>
                 );
               })}
               {(byState[s] ?? []).length === 0 && <div className="text-[11px] text-muted-foreground px-1 py-2">Vazio</div>}
@@ -329,8 +396,12 @@ function Timeline({ dash }: { dash: any }) {
         ))}
       </div>
       <div className="mt-3 flex gap-4 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-primary/70" /> Novas</span>
-        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-[oklch(0.6_0.17_160)]" /> Resolvidas</span>
+        <span className="flex items-center gap-1">
+          <span className="h-2 w-2 rounded bg-primary/70" /> Novas
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="h-2 w-2 rounded bg-[oklch(0.6_0.17_160)]" /> Resolvidas
+        </span>
       </div>
     </div>
   );
@@ -364,7 +435,16 @@ function InfoTip({ text }: { text: string }) {
 }
 
 function Kpi({
-  icon: Icon, label, value, hint, series, delta, tone, invert, unit, info,
+  icon: Icon,
+  label,
+  value,
+  hint,
+  series,
+  delta,
+  tone,
+  invert,
+  unit,
+  info,
 }: {
   icon: any;
   label: string;
@@ -381,18 +461,18 @@ function Kpi({
     tone === "destructive"
       ? "text-destructive"
       : tone === "success"
-        ? "text-[oklch(0.58_0.15_162)]"
-        : tone === "primary"
-          ? "text-primary"
-          : "text-foreground/70";
+      ? "text-[oklch(0.58_0.15_162)]"
+      : tone === "primary"
+      ? "text-primary"
+      : "text-foreground/70";
   const accentBg =
     tone === "destructive"
       ? "bg-destructive/10"
       : tone === "success"
-        ? "bg-[oklch(0.58_0.15_162/0.12)]"
-        : tone === "primary"
-          ? "bg-primary/10"
-          : "bg-secondary";
+      ? "bg-[oklch(0.58_0.15_162/0.12)]"
+      : tone === "primary"
+      ? "bg-primary/10"
+      : "bg-secondary";
   const good = delta == null ? true : invert ? delta <= 0 : delta >= 0;
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-[var(--shadow-card)] hover:border-primary/25 transition-colors">
@@ -419,8 +499,8 @@ function Kpi({
                 delta == null
                   ? "bg-secondary text-muted-foreground"
                   : good
-                    ? "bg-[oklch(0.62_0.15_162/0.14)] text-[oklch(0.4_0.13_162)]"
-                    : "bg-destructive/12 text-destructive"
+                  ? "bg-[oklch(0.62_0.15_162/0.14)] text-[oklch(0.4_0.13_162)]"
+                  : "bg-destructive/12 text-destructive"
               }`}
             >
               {delta == null ? "Sem histórico" : `${delta > 0 ? "+" : ""}${delta}%`}
