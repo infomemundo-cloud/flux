@@ -19,7 +19,6 @@ async function requireAdmin(supabase: any, orgId: string, userId: string, action
 }
 
 const cleanUrl = (u: string) => u.trim().replace(/\/+$/, "");
-
 const instanceNameFor = (orgId: string) => `org_${orgId}`;
 
 /** Credenciais centrais do serviço (secretas, nunca vão ao navegador). */
@@ -80,11 +79,17 @@ function effectiveCreds(cfg: Settings | null) {
 async function ensureWebhookToken(orgId: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data: existing } = await supabaseAdmin
-    .from("webhook_tokens").select("token").eq("org_id", orgId).eq("name", "WhatsApp (Evolution)").maybeSingle();
+    .from("webhook_tokens")
+    .select("token")
+    .eq("org_id", orgId)
+    .eq("name", "WhatsApp (Evolution)")
+    .maybeSingle();
   if (existing?.token) return existing.token as string;
   const token = `wht_${crypto.randomUUID().replace(/-/g, "")}`;
   const { error } = await supabaseAdmin.from("webhook_tokens").insert({
-    org_id: orgId, name: "WhatsApp (Evolution)", token,
+    org_id: orgId,
+    name: "WhatsApp (Evolution)",
+    token,
   } as never);
   if (error) throw new Error(error.message);
   return token;
@@ -147,10 +152,8 @@ export const getWhatsappConnection = createServerFn({ method: "GET" })
     const cfg = await loadSettings(data.orgId);
     const creds = effectiveCreds(cfg);
     const instance = cfg?.instance_name ?? instanceNameFor(data.orgId);
-
     let status = (cfg?.connection_status ?? "disconnected") as "disconnected" | "connecting" | "connected";
     let number = cfg?.connected_number ?? null;
-
     if (creds && cfg?.instance_name) {
       try {
         const st = await readState(creds.baseUrl, creds.key, instance);
@@ -166,10 +169,8 @@ export const getWhatsappConnection = createServerFn({ method: "GET" })
         console.error("[whatsapp] state read failed", e);
       }
     }
-
     const origin = appOrigin();
     const token = cfg?.instance_name ? await ensureWebhookToken(data.orgId) : null;
-
     return {
       status,
       instance_name: cfg?.instance_name ?? null,
@@ -189,24 +190,22 @@ export const connectWhatsapp = createServerFn({ method: "POST" })
     const cfg = await loadSettings(data.orgId);
     const creds = effectiveCreds(cfg);
     if (!creds) throw new Error("O serviço de WhatsApp ainda não está configurado. Fale com o suporte.");
-
     const instance = instanceNameFor(data.orgId);
     const token = await ensureWebhookToken(data.orgId);
     const origin = appOrigin();
     if (!origin) throw new Error("Não foi possível descobrir o endereço público do sistema.");
     const webhookUrl = `${origin}/api/public/ingest/${token}`;
-
     const st = await readState(creds.baseUrl, creds.key, instance);
     if (st.exists && mapState(st.state) === "connected") {
       await saveSettings(data.orgId, {
-        instance_name: instance, connection_status: "connected", connected_at: new Date().toISOString(),
+        instance_name: instance,
+        connection_status: "connected",
+        connected_at: new Date().toISOString(),
       });
       await setWebhook(creds.baseUrl, creds.key, instance, webhookUrl);
       return { status: "connected" as const, qr: null, code: null, message: "O WhatsApp já está conectado." };
     }
-
     let qr = { base64: null as string | null, code: null as string | null };
-
     if (!st.exists) {
       const created = await evo(creds.baseUrl, creds.key, "/instance/create", {
         method: "POST",
@@ -226,7 +225,6 @@ export const connectWhatsapp = createServerFn({ method: "POST" })
       }
       qr = pickQr(created.body);
     }
-
     if (!qr.base64) {
       const conn = await evo(creds.baseUrl, creds.key, `/instance/connect/${encodeURIComponent(instance)}`);
       if (!conn.ok) {
@@ -235,10 +233,8 @@ export const connectWhatsapp = createServerFn({ method: "POST" })
       }
       qr = pickQr(conn.body);
     }
-
     await setWebhook(creds.baseUrl, creds.key, instance, webhookUrl);
     await saveSettings(data.orgId, { instance_name: instance, connection_status: "connecting", connected_number: null });
-
     return {
       status: "connecting" as const,
       qr: qr.base64,
@@ -284,26 +280,48 @@ export const setWhatsappAutoReply = createServerFn({ method: "POST" })
 /** Envia mensagem de saída pelo WhatsApp e registra no histórico da demanda. */
 export const sendWhatsAppMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({
-    demandId: z.string().uuid(),
-    messageText: z.string().trim()
-      .min(1, { message: "Escreva a mensagem antes de enviar." })
-      .max(4000, { message: "A mensagem pode ter no máximo 4000 caracteres." }),
-    role: z.enum(["agent", "system"]).default("agent"),
-  }).parse(d))
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        demandId: z.string().uuid(),
+        messageText: z
+          .string()
+          .trim()
+          .min(1, { message: "Escreva a mensagem antes de enviar." })
+          .max(4000, { message: "A mensagem pode ter no máximo 4000 caracteres." }),
+        role: z.enum(["agent", "system"]).default("agent"),
+        // Citação ("responder mensagem específica", estilo WhatsApp):
+        //  - campos de exibição (author/content/kind/event_id) → metadata do evento;
+        //  - campos nativos (message_id/from_me/participant) → payload `quoted`
+        //    do sendText da Evolution, pra citação aparecer também no app do cliente.
+        quoted: z
+          .object({
+            event_id: z.string().uuid().optional(),
+            author: z.string().max(120),
+            content: z.string().max(4000),
+            kind: z.string().max(40),
+            message_id: z.string().max(180).nullable().optional(),
+            from_me: z.boolean().optional(),
+            participant: z.string().max(180).nullable().optional(),
+          })
+          .optional(),
+      })
+      .parse(d),
+  )
   .handler(async ({ data, context }) => {
     const { data: dem, error } = await context.supabase
-      .from("demandas").select("id, org_id, whatsapp_jid, channel_type, instance_name").eq("id", data.demandId).maybeSingle();
+      .from("demandas")
+      .select("id, org_id, whatsapp_jid, channel_type, instance_name")
+      .eq("id", data.demandId)
+      .maybeSingle();
     if (error) throw new Error(error.message);
     if (!dem) throw new Error("Demanda não encontrada");
     const memberRole = await roleOf(context.supabase, dem.org_id, context.userId);
     if (!OP_ROLES.includes(memberRole)) throw new Error("Você não pode responder nesta demanda.");
     if (!dem.whatsapp_jid) throw new Error("Esta demanda não tem um WhatsApp associado.");
-
     let delivered = false;
     let deliveryNote = "Registrado apenas no histórico (integração inativa).";
     let messageId: string | null = null;
-
     if (dem.channel_type === "evolution") {
       const cfg = await loadSettings(dem.org_id);
       const creds = effectiveCreds(cfg);
@@ -311,10 +329,39 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
       const instance = cfg?.instance_name || dem.instance_name || instanceNameFor(dem.org_id);
       if (!creds) throw new Error("Conecte o WhatsApp nas configurações antes de enviar mensagens.");
       try {
-        const res = await evo(creds.baseUrl, creds.key, `/message/sendText/${encodeURIComponent(instance)}`, {
+        const sendPath = `/message/sendText/${encodeURIComponent(instance)}`;
+        const plainBody = { number: dem.whatsapp_jid, text: data.messageText };
+        // Citação nativa (Baileys/Evolution): key da mensagem original + corpo.
+        // Sem message_id não há o que citar no WhatsApp — só a citação interna.
+        const quotedBody =
+          data.quoted?.message_id
+            ? {
+                ...plainBody,
+                quoted: {
+                  key: {
+                    remoteJid: dem.whatsapp_jid,
+                    fromMe: data.quoted.from_me ?? false,
+                    id: data.quoted.message_id,
+                    ...(data.quoted.participant ? { participant: data.quoted.participant } : {}),
+                  },
+                  message: { conversation: data.quoted.content },
+                },
+              }
+            : null;
+        let res = await evo(creds.baseUrl, creds.key, sendPath, {
           method: "POST",
-          body: JSON.stringify({ number: dem.whatsapp_jid, text: data.messageText }),
+          body: JSON.stringify(quotedBody ?? plainBody),
         });
+        if (!res.ok && quotedBody) {
+          // A Evolution recusou a citação (mensagem muito antiga, grupo sem JID
+          // do autor, formato inesperado...). NUNCA deixamos a resposta falhar
+          // por causa disso: reenvia sem citação e registra o aviso no log.
+          console.error("[whatsapp] quoted send rejected, retrying plain", res.status, res.raw.slice(0, 300));
+          res = await evo(creds.baseUrl, creds.key, sendPath, {
+            method: "POST",
+            body: JSON.stringify(plainBody),
+          });
+        }
         if (!res.ok) {
           console.error("[whatsapp] send failed", res.status, res.raw.slice(0, 400));
           throw new Error("O WhatsApp não aceitou a mensagem. Tente novamente.");
@@ -328,15 +375,31 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
         throw new Error("Não foi possível enviar a mensagem agora.");
       }
     }
-
     const { error: evErr } = await context.supabase.from("demanda_events").insert({
-      org_id: dem.org_id, demanda_id: dem.id, kind: "message_out",
+      org_id: dem.org_id,
+      demanda_id: dem.id,
+      kind: "message_out",
       actor_id: data.role === "agent" ? context.userId : null,
       content: data.messageText,
-      metadata: { role: data.role, delivered, channel_type: dem.channel_type, message_id: messageId },
+      metadata: {
+        role: data.role,
+        delivered,
+        channel_type: dem.channel_type,
+        message_id: messageId,
+        // Citação de exibição no histórico (snapshot da mensagem respondida).
+        ...(data.quoted
+          ? {
+              quoted: {
+                event_id: data.quoted.event_id ?? null,
+                author: data.quoted.author,
+                content: data.quoted.content,
+                kind: data.quoted.kind,
+              },
+            }
+          : {}),
+      },
     });
     if (evErr) throw new Error(evErr.message);
-
     if (messageId) {
       await context.supabase.from("demandas").update({ last_message_id: messageId } as never).eq("id", dem.id);
     }

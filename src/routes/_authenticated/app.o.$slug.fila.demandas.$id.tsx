@@ -39,6 +39,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Reply,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/fila/demandas/$id")({
@@ -168,7 +169,7 @@ function DueDatePicker({ value, onChange }: { value: string | null; onChange: (i
       const base = value ? new Date(value) : new Date();
       setView(startOfDay(base));
       setSelected(value ? new Date(value) : null);
-      setHour(value ? new Date(value).getHours() : new Date().getHours());
+      setHour(value ? new Date(value).getHours() : new Date(value).getHours());
       setMinute(value ? new Date(value).getMinutes() : 0);
     }
     setOpen(next);
@@ -354,6 +355,18 @@ function DemandaDetail() {
   const [viaWhatsapp, setViaWhatsapp] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(false);
+  // Reply com citação (estilo WhatsApp): mensagem sendo respondida enquanto o
+  // composer está aberto. null = resposta normal. Guarda snapshot de exibição
+  // (author/content/kind) + ids nativos pra citação no app do cliente.
+  const [replyTo, setReplyTo] = useState<null | {
+    event_id: string;
+    author: string;
+    content: string;
+    kind: string;
+    message_id: string | null;
+    from_me: boolean;
+    participant: string | null;
+  }>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
@@ -387,12 +400,45 @@ function DemandaDetail() {
   const send = useMutation({
     mutationFn: () => {
       const goViaWhatsapp = viaWhatsapp && !!data?.demanda?.whatsapp_jid;
-      return goViaWhatsapp
-        ? waFn({ data: { demandId: id, messageText: comment, role: "agent" as const } })
-        : commentFn({ data: { demandaId: id, orgId: data!.demanda.org_id, content: comment } });
+      if (goViaWhatsapp) {
+        return waFn({
+          data: {
+            demandId: id,
+            messageText: comment,
+            role: "agent" as const,
+            quoted: replyTo
+              ? {
+                  event_id: replyTo.event_id,
+                  author: replyTo.author,
+                  content: replyTo.content,
+                  kind: replyTo.kind,
+                  message_id: replyTo.message_id,
+                  from_me: replyTo.from_me,
+                  participant: replyTo.participant,
+                }
+              : undefined,
+          },
+        });
+      }
+      return commentFn({
+        data: {
+          demandaId: id,
+          orgId: data!.demanda.org_id,
+          content: comment,
+          quoted: replyTo
+            ? {
+                event_id: replyTo.event_id,
+                author: replyTo.author,
+                content: replyTo.content,
+                kind: replyTo.kind,
+              }
+            : undefined,
+        },
+      });
     },
     onSuccess: (res: any) => {
       setComment("");
+      setReplyTo(null);
       qc.invalidateQueries({ queryKey: ["demanda", id] });
       if (viaWhatsapp && data?.demanda?.whatsapp_jid) toast.success(res?.message ?? "Mensagem enviada");
     },
@@ -555,9 +601,32 @@ function DemandaDetail() {
               const authorRole = isClient ? "Cliente" : roleOf(e.actor_id);
               const isAI = actorOf(e.actor_id)?.role === "agente_ia";
               const messageLabel = isClient ? "mensagem recebida" : isOutgoing ? "resposta enviada" : "comentário";
+              const quoted = e.metadata?.quoted as
+                | undefined
+                | { author?: string; content?: string; kind?: string };
 
               return (
-                <li key={e.id} className={`flex gap-2.5 pt-2 ${isClient ? "" : "sm:pl-8"}`}>
+                <li key={e.id} className={`group relative flex gap-2.5 pt-2 ${isClient ? "" : "sm:pl-8"}`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReplyTo({
+                        event_id: e.id,
+                        author,
+                        content: e.content ?? "",
+                        kind: e.kind,
+                        message_id: e.metadata?.message_id ?? null,
+                        from_me: e.kind === "message_out",
+                        participant: e.metadata?.participant_jid ?? null,
+                      });
+                      composerRef.current?.focus();
+                    }}
+                    title="Responder esta mensagem"
+                    aria-label="Responder esta mensagem"
+                    className="absolute right-1.5 top-1/2 z-10 hidden h-6 w-6 -translate-y-1/2 place-items-center rounded-md border border-border bg-card text-muted-foreground shadow-sm transition hover:border-primary/40 hover:text-foreground group-hover:grid"
+                  >
+                    <Reply className="h-3 w-3" strokeWidth={2.2} />
+                  </button>
                   {isClient ? (
                     <ContactAvatar url={d.contacts?.avatar_url ?? null} name={author} size="sm" tone="client" />
                   ) : (
@@ -588,6 +657,18 @@ function DemandaDetail() {
                         {messageLabel} · {when}
                       </span>
                     </div>
+                    {quoted && (
+                      <div
+                        className={`mt-1.5 rounded-md border-l-2 bg-secondary/70 px-2.5 py-1.5 ${
+                          quoted.kind === "message_in" ? "border-l-[var(--pill-green-fg)]" : "border-l-primary"
+                        }`}
+                      >
+                        <span className="text-[11px] font-semibold text-foreground/80">{quoted.author}</span>
+                        <span className="ml-1.5 line-clamp-2 text-[11px] text-muted-foreground">
+                          {quoted.content || "(sem texto)"}
+                        </span>
+                      </div>
+                    )}
                     {e.content && (
                       <div className="mt-1.5 whitespace-pre-wrap break-words text-sm text-foreground/90">{e.content}</div>
                     )}
@@ -632,6 +713,24 @@ function DemandaDetail() {
                 : "border-border focus-within:border-primary/50 focus-within:ring-primary/10"
             }`}
           >
+            {replyTo && (
+              <div className="mx-3.5 mt-3 flex items-start gap-2 rounded-md border-l-2 border-l-[var(--pill-amber-fg)] bg-secondary/70 px-2.5 py-1.5">
+                <Reply className="mt-0.5 h-3 w-3 shrink-0 text-[var(--pill-amber-fg)]" strokeWidth={2.2} />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[11px] font-semibold text-[var(--pill-amber-fg)]">{replyTo.author}</div>
+                  <div className="truncate text-[11px] text-muted-foreground">{replyTo.content || "(sem texto)"}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReplyTo(null)}
+                  title="Cancelar resposta"
+                  aria-label="Cancelar resposta"
+                  className="shrink-0 text-muted-foreground transition hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
             <textarea
               ref={composerRef}
               rows={1}
@@ -643,6 +742,11 @@ function DemandaDetail() {
                 el.style.height = Math.min(el.scrollHeight, 160) + "px";
               }}
               onKeyDown={(e) => {
+                if (e.key === "Escape" && replyTo) {
+                  e.preventDefault();
+                  setReplyTo(null);
+                  return;
+                }
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   if (comment.trim() && !send.isPending) send.mutate();
