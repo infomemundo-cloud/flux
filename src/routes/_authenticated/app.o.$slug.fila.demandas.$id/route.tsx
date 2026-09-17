@@ -169,7 +169,7 @@ function DueDatePicker({ value, onChange }: { value: string | null; onChange: (i
       const base = value ? new Date(value) : new Date();
       setView(startOfDay(base));
       setSelected(value ? new Date(value) : null);
-      setHour(value ? new Date(value).getHours() : new Date(value).getHours());
+      setHour(value ? new Date(value).getHours() : new Date().getHours());
       setMinute(value ? new Date(value).getMinutes() : 0);
     }
     setOpen(next);
