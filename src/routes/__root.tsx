@@ -12,7 +12,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { supabase } from "@/integrations/supabase/client";
-import { Toaster } from "sonner";
+import { AppToaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/lib/theme";
 
 function NotFoundComponent() {
@@ -141,7 +141,7 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <Outlet />
-        <Toaster position="top-right" richColors />
+        <AppToaster />
       </ThemeProvider>
     </QueryClientProvider>
   );

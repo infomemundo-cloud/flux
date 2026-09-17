@@ -1,23 +1,29 @@
-import { Toaster as Sonner } from "sonner";
+import { useEffect, useState } from "react";
+import { Toaster as Sonner, type ToasterProps } from "sonner";
 
-type ToasterProps = React.ComponentProps<typeof Sonner>;
+export function AppToaster(props: ToasterProps) {
+  const [theme, setTheme] = useState<"light" | "dark">(() =>
+    typeof document !== "undefined" &&
+    document.documentElement.classList.contains("dark")
+      ? "dark"
+      : "light",
+  );
 
-const Toaster = ({ ...props }: ToasterProps) => {
+  useEffect(() => {
+    const el = document.documentElement;
+    const mo = new MutationObserver(() =>
+      setTheme(el.classList.contains("dark") ? "dark" : "light"),
+    );
+    mo.observe(el, { attributes: true, attributeFilter: ["class"] });
+    return () => mo.disconnect();
+  }, []);
+
   return (
     <Sonner
-      className="toaster group"
-      toastOptions={{
-        classNames: {
-          toast:
-            "group toast group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-lg",
-          description: "group-[.toast]:text-muted-foreground",
-          actionButton: "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
-          cancelButton: "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
-        },
-      }}
+      theme={theme}
+      position="bottom-right"
+      duration={3500}
       {...props}
     />
   );
-};
-
-export { Toaster };
+}
