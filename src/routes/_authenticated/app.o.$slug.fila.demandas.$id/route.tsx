@@ -13,6 +13,9 @@ import { useFilaSidebar } from "@/lib/demandas/fila-sidebar-context";
 import { STATE_COLOR } from "@/lib/demandas/state-colors";
 import { resolveContactName } from "@/lib/demandas/resolve-contact-name";
 import { ContactAvatar } from "@/components/contact-avatar";
+import { SystemLine } from "./-components/SystemLine";
+import { MessageBubble } from "./-components/MessageBubble";
+import { TeamAvatar } from "./-components/TeamAvatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -32,7 +35,6 @@ import {
   UserCog,
   Activity,
   Circle,
-  CheckCircle2,
   Paperclip,
   Smile,
   Sticker,
@@ -97,39 +99,6 @@ function formatDueLabel(iso: string) {
   });
 }
 
-function initials(name: string) {
-  return name
-    .split(/[\s._@-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]!.toUpperCase())
-    .join("");
-}
-
-/** Avatar de equipe/IA (bolhas de saída e comentários) — sem foto externa. */
-function Avatar({
-  name,
-  isAI,
-  tone,
-  size = "md",
-}: {
-  name: string;
-  isAI?: boolean;
-  tone?: "client" | "team";
-  size?: "sm" | "md";
-}) {
-  return (
-    <div
-      className={`${size === "sm" ? "h-7 w-7 text-[10px]" : "h-9 w-9 text-[11px]"} shrink-0 rounded-full grid place-items-center font-bold ${
-        isAI ? "pill-violet" : tone === "client" ? "pill-green" : "pill-brand"
-      }`}
-      aria-hidden
-    >
-      {isAI ? "IA" : initials(name) || "?"}
-    </div>
-  );
-}
-
 function RailRow({ icon: Icon, label, children }: { icon: typeof Flag; label: string; children: React.ReactNode }) {
   return (
     <div className="px-3 py-2.5">
@@ -140,20 +109,6 @@ function RailRow({ icon: Icon, label, children }: { icon: typeof Flag; label: st
       </div>
       {children}
     </div>
-  );
-}
-
-function SystemLine({ icon: Icon, children, when }: { icon: typeof GitBranch; children: React.ReactNode; when: string }) {
-  return (
-    <li className="relative pl-9">
-      <span className="absolute left-[11px] top-0 h-full w-px bg-border" aria-hidden />
-      <span className="absolute left-0 top-1 grid h-[22px] w-[22px] place-items-center rounded-full border border-border bg-background text-muted-foreground">
-        <Icon className="h-3 w-3" strokeWidth={2.3} />
-      </span>
-      <div className="py-1.5 text-xs leading-relaxed text-muted-foreground">
-        {children} <span className="opacity-70">· {when}</span>
-      </div>
-    </li>
   );
 }
 
@@ -606,74 +561,37 @@ function DemandaDetail() {
                 | { author?: string; content?: string; kind?: string };
 
               return (
-                <li key={e.id} className={`group relative flex gap-2.5 pt-2 ${isClient ? "" : "sm:pl-8"}`}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setReplyTo({
-                        event_id: e.id,
-                        author,
-                        content: e.content ?? "",
-                        kind: e.kind,
-                        message_id: e.metadata?.message_id ?? null,
-                        from_me: e.kind === "message_out",
-                        participant: e.metadata?.participant_jid ?? null,
-                      });
-                      composerRef.current?.focus();
-                    }}
-                    title="Responder esta mensagem"
-                    aria-label="Responder esta mensagem"
-                    className="absolute right-1.5 top-1/2 z-10 hidden h-6 w-6 -translate-y-1/2 place-items-center rounded-md border border-border bg-card text-muted-foreground shadow-sm transition hover:border-primary/40 hover:text-foreground group-hover:grid"
-                  >
-                    <Reply className="h-3 w-3" strokeWidth={2.2} />
-                  </button>
-                  {isClient ? (
-                    <ContactAvatar url={d.contacts?.avatar_url ?? null} name={author} size="sm" tone="client" />
-                  ) : (
-                    <Avatar name={author} isAI={isAI} tone="team" size="sm" />
-                  )}
-                  <div
-                    className={`min-w-0 flex-1 rounded-xl px-3.5 py-2.5 ${
-                      isClient
-                        ? "border border-border border-l-[3px] border-l-[var(--pill-green-fg)] bg-card shadow-[var(--shadow-card)]"
-                        : isOutgoing
-                        ? "border border-primary/20 border-l-[3px] border-l-primary bg-primary/[0.04]"
-                        : "border border-primary/15 bg-primary/[0.02]"
-                    }`}
-                  >
-                    <div className="flex flex-wrap items-center gap-x-1.5 text-xs">
-                      <span className="font-semibold text-foreground">{author}</span>
-                      {authorRole && (
-                        <span
-                          className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                            isClient ? "pill-green" : isAI ? "pill-violet" : "pill-brand"
-                          }`}
-                        >
-                          {authorRole}
-                        </span>
-                      )}
-                      <span className="text-muted-foreground inline-flex items-center gap-1">
-                        · {isOutgoing ? <CheckCircle2 className="h-3 w-3 text-primary" /> : <MessageCircle className="h-3 w-3" />}{" "}
-                        {messageLabel} · {when}
-                      </span>
-                    </div>
-                    {quoted && (
-                      <div
-                        className={`mt-1.5 rounded-md border-l-2 bg-secondary/70 px-2.5 py-1.5 ${
-                          quoted.kind === "message_in" ? "border-l-[var(--pill-green-fg)]" : "border-l-primary"
-                        }`}
-                      >
-                        <span className="text-[11px] font-semibold text-foreground/80">{quoted.author}</span>
-                        <span className="ml-1.5 line-clamp-2 text-[11px] text-muted-foreground">
-                          {quoted.content || "(sem texto)"}
-                        </span>
-                      </div>
-                    )}
-                    {e.content && (
-                      <div className="mt-1.5 whitespace-pre-wrap break-words text-sm text-foreground/90">{e.content}</div>
-                    )}
-                  </div>
-                </li>
+                <MessageBubble
+                  key={e.id}
+                  avatar={
+                    isClient ? (
+                      <ContactAvatar url={d.contacts?.avatar_url ?? null} name={author} size="sm" tone="client" />
+                    ) : (
+                      <TeamAvatar name={author} isAI={isAI} size="sm" />
+                    )
+                  }
+                  author={author}
+                  authorRole={authorRole}
+                  rolePillClass={isClient ? "pill-green" : isAI ? "pill-violet" : "pill-brand"}
+                  isClient={isClient}
+                  isOutgoing={isOutgoing}
+                  messageLabel={messageLabel}
+                  when={when}
+                  content={e.content}
+                  quoted={quoted}
+                  onReply={() => {
+                    setReplyTo({
+                      event_id: e.id,
+                      author,
+                      content: e.content ?? "",
+                      kind: e.kind,
+                      message_id: e.metadata?.message_id ?? null,
+                      from_me: e.kind === "message_out",
+                      participant: e.metadata?.participant_jid ?? null,
+                    });
+                    composerRef.current?.focus();
+                  }}
+                />
               );
             })}
           </ul>
