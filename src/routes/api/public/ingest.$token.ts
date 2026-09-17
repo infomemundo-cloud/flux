@@ -253,6 +253,11 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
         } catch {
           return json({ error: "invalid_json" }, 400);
         }
+        
+        // -------------------------------------------------------------
+        // ADICIONE ESTA LINHA AQUI:
+        console.log("[EVOLUTION PAYLOAD CRU]:", JSON.stringify(payload, null, 2));
+        // -------------------------------------------------------------
 
         // CONTATOS: evento especial que não segue o fluxo de demanda.
         // Detecta pelo envelope da Evolution e despacha direto pro handler dedicado,
