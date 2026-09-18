@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
+import { fetchMediaFromEvolution, uploadMediaToStorage } from "@/lib/demandas/media-storage";
 
 const Body = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -20,6 +21,24 @@ const Body = z.object({
   reopen_if_open: z.boolean().optional(),
 });
 
+/** Tipos de mensagem de mídia que a Evolution manda dentro de `message`. */
+const MEDIA_KINDS = [
+  "imageMessage",
+  "audioMessage",
+  "videoMessage",
+  "documentMessage",
+  "stickerMessage",
+] as const;
+type MediaKind = (typeof MEDIA_KINDS)[number];
+
+const MEDIA_LABEL: Record<MediaKind, string> = {
+  imageMessage: "Imagem recebida",
+  audioMessage: "Áudio recebido",
+  videoMessage: "Vídeo recebido",
+  documentMessage: "Documento recebido",
+  stickerMessage: "Figurinha recebida",
+};
+
 type Normalized = z.infer<typeof Body> & {
   channel_type: "simulation" | "evolution" | "whatsapp_official";
   whatsapp_jid?: string | null;
@@ -28,6 +47,12 @@ type Normalized = z.infer<typeof Body> & {
   participant_name?: string | null;
   evolution_server_url?: string | null;
   evolution_apikey?: string | null;
+  media?: {
+    kind: MediaKind;
+    mimetype: string | null;
+    caption: string | null;
+    fileName: string | null;
+  } | null;
 };
 
 // Schema para o evento contacts.update da Evolution.
@@ -52,6 +77,22 @@ const ContactsUpdatePayload = z.object({
   ]),
 });
 
+/**
+ * Shape leniente de uma mensagem de mídia. Só lemos metadados leves
+ * (mime/caption/nome/tamanho) — os bytes reais vêm depois via
+ * getBase64FromMediaMessage. Campos binários (mediaKey, sha256, thumbnail...)
+ * são ignorados aqui e redigidos no log.
+ */
+const MediaMessageSchema = z.object({
+  mimetype: z.string().max(120).nullish(),
+  caption: z.string().max(4000).nullish(),
+  fileName: z.string().max(300).nullish(),
+  fileLength: z.any().nullish(),
+  width: z.number().nullish(),
+  height: z.number().nullish(),
+  seconds: z.number().nullish(),
+});
+
 const EvolutionPayload = z.object({
   event: z.string().optional(),
   instance: z.string().max(120).optional(),
@@ -67,6 +108,11 @@ const EvolutionPayload = z.object({
       .object({
         conversation: z.string().max(4000).nullish(),
         extendedTextMessage: z.object({ text: z.string().max(4000).nullish() }).nullish(),
+        imageMessage: MediaMessageSchema.nullish(),
+        audioMessage: MediaMessageSchema.nullish(),
+        videoMessage: MediaMessageSchema.nullish(),
+        documentMessage: MediaMessageSchema.nullish(),
+        stickerMessage: MediaMessageSchema.nullish(),
       })
       .nullish(),
   }),
@@ -77,6 +123,32 @@ function looksLikeEvolution(payload: any): boolean {
   return (
     typeof payload.event === "string" ||
     (typeof payload.instance === "string" && Boolean(payload.data))
+  );
+}
+
+/**
+ * Redator de payload pro log CRU: campos binários da Evolution (thumbnail,
+ * chaves, hashes) viram placeholder. Sem isso, cada webhook de mídia despeja
+ * centenas de linhas de bytes no log do Railway.
+ */
+const BINARY_LOG_FIELDS = new Set([
+  "jpegThumbnail",
+  "mediaKey",
+  "fileSha256",
+  "fileEncSha256",
+  "midQualityFileSha256",
+  "scansSidecar",
+  "scanLengths",
+  "messageSecret",
+  "paddingBytes",
+  "thumbnailSha256",
+  "thumbnailEncSha256",
+]);
+function redactForLog(payload: unknown): string {
+  return JSON.stringify(
+    payload,
+    (key, value) => (BINARY_LOG_FIELDS.has(key) ? "<binário omitido no log>" : value),
+    2,
   );
 }
 
@@ -115,7 +187,6 @@ async function handleContactsUpdate(
   for (const item of items) {
     const hasPhoto = typeof item.profilePicUrl === "string" || item.profilePicUrl === null;
     const hasName = typeof item.pushName === "string" && item.pushName.trim().length > 0;
-
     // Se não houver nada relevante para atualizar, ignora
     if (!hasPhoto && !hasName) continue;
 
@@ -127,7 +198,6 @@ async function handleContactsUpdate(
       .eq("org_id", orgId)
       .eq("external_id", item.remoteJid)
       .maybeSingle();
-
     if (findErr) {
       console.error("[ingest] falha ao buscar contato para atualização", {
         org_id: orgId,
@@ -141,14 +211,12 @@ async function handleContactsUpdate(
     }
 
     const patch: Record<string, any> = {};
-
     if (hasPhoto) {
       patch.avatar_fetched_at = new Date().toISOString();
       if (typeof item.profilePicUrl === "string" && item.profilePicUrl.trim()) {
         patch.avatar_url = item.profilePicUrl.trim();
       }
     }
-
     if (hasName) {
       patch.name = item.pushName!.trim();
     }
@@ -159,7 +227,6 @@ async function handleContactsUpdate(
       .from("contacts")
       .update(patch as never)
       .eq("id", found.id);
-
     if (updErr) {
       console.error("[ingest] falha ao atualizar contato", {
         contact_id: found.id,
@@ -189,20 +256,26 @@ function normalize(payload: unknown):
       return { ok: false, status: 200, body: { ok: true, ignored: "from_me" } };
     }
     const text = d.message?.conversation ?? d.message?.extendedTextMessage?.text ?? "";
-    if (!text.trim()) {
+    // Detecta mídia: primeiro tipo presente em `message` vence.
+    const mediaFound = MEDIA_KINDS.map((kind) => ({ kind, msg: d.message?.[kind] })).find(
+      (x) => x.msg,
+    );
+    if (!text.trim() && !mediaFound) {
       return { ok: false, status: 200, body: { ok: true, ignored: "unsupported_message_type" } };
     }
+    const caption = mediaFound?.msg?.caption ?? null;
     const jid = d.key.remoteJid;
     const isGroup = jid.endsWith("@g.us");
     const phone = isGroup
       ? undefined
-      : jid.replace(/@s\.whatsapp\.net$/i, "").replace(/@c\.us$/i, "");
+      : jid.replace(/@s.whatsapp.net$/i, "").replace(/@c.us$/i, "");
     const contactName = isGroup ? "Grupo" : d.pushName?.trim() || "Contato WhatsApp";
     const participantName = isGroup ? d.pushName?.trim() || null : null;
     return {
       ok: true,
       value: {
-        message: text.slice(0, 4000),
+        // Texto exibido = texto puro ou legenda da mídia (vazio se não houver).
+        message: (text.trim() ? text : caption ?? "").slice(0, 4000),
         contact: {
           name: contactName,
           phone,
@@ -217,6 +290,14 @@ function normalize(payload: unknown):
         participant_name: participantName,
         evolution_server_url: typeof raw.server_url === "string" ? raw.server_url : null,
         evolution_apikey: typeof raw.apikey === "string" ? raw.apikey : null,
+        media: mediaFound
+          ? {
+              kind: mediaFound.kind,
+              mimetype: mediaFound.msg?.mimetype ?? null,
+              caption,
+              fileName: mediaFound.msg?.fileName ?? null,
+            }
+          : null,
       },
     };
   }
@@ -229,6 +310,12 @@ function normalize(payload: unknown):
     };
   }
   return { ok: true, value: { ...parsed.data, channel_type: "simulation" } };
+}
+
+function mediaTitleFor(b: Normalized): string {
+  if (!b.media) return "Mensagem recebida";
+  if (b.media.kind === "documentMessage" && b.media.fileName) return b.media.fileName.slice(0, 80);
+  return MEDIA_LABEL[b.media.kind];
 }
 
 export const Route = createFileRoute("/api/public/ingest/$token")({
@@ -254,14 +341,12 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
         } catch {
           return json({ error: "invalid_json" }, 400);
         }
-
-        console.log("[EVOLUTION PAYLOAD CRU]:", JSON.stringify(payload, null, 2));
+        console.log("[EVOLUTION PAYLOAD CRU]:", redactForLog(payload));
 
         const looksLikeContactsUpdate =
           looksLikeEvolution(payload) &&
           typeof (payload as any).event === "string" &&
           (payload as any).event.replace(/_/g, ".").toLowerCase() === "contacts.update";
-
         if (looksLikeContactsUpdate) {
           const parsed = ContactsUpdatePayload.safeParse(payload);
           if (parsed.success) {
@@ -294,7 +379,6 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             .eq("org_id", tok.org_id)
             .or(orParts)
             .maybeSingle();
-
           if (findErr) {
             console.error("[ingest] falha ao buscar contato", {
               org_id: tok.org_id,
@@ -303,12 +387,10 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               error: findErr,
             });
           }
-
           if (b.contact) {
             const isGroup = !!b.whatsapp_jid?.endsWith("@g.us");
             const savedName = found?.name ?? null;
             const savedIsGeneric = !savedName || savedName === "Grupo" || savedName === "Contato WhatsApp";
-            
             if (isGroup && !savedIsGeneric) {
               b.contact.name = savedName;
             } else if (
@@ -327,12 +409,10 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               if (subject) b.contact.name = subject;
             }
           }
-
           if (found) {
             contactId = found.id;
             const incomingNameIsGeneric = !b.contact.name || b.contact.name === "Contato WhatsApp";
             const savedNameIsGeneric = !found.name || found.name === "Contato WhatsApp";
-
             // Só atualiza se o nome recebido for válido e diferente do cadastrado,
             // ou se o cadastrado for genérico e o recebido não for.
             if (
@@ -342,9 +422,8 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             ) {
               const { error: updateErr } = await supabaseAdmin
                 .from("contacts")
-                .update({ name: b.contact.name })
+                .update({ name: b.contact.name } as never)
                 .eq("id", contactId);
-
               if (updateErr) {
                 console.error("[ingest] falha ao atualizar nome do contato", {
                   contact_id: contactId,
@@ -365,7 +444,6 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               })
               .select("id")
               .single();
-
             if (insertErr) {
               console.error("[ingest] falha ao criar contato", {
                 org_id: tok.org_id,
@@ -396,13 +474,13 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
 
         // 3. Cria uma nova demanda se necessário
         if (!demandaId) {
-          const title = b.title ?? b.message.slice(0, 80);
+          const title = b.title ?? (b.message.trim() ? b.message.slice(0, 80) : mediaTitleFor(b));
           const { data: dem, error: de } = await supabaseAdmin
             .from("demandas")
             .insert({
               org_id: tok.org_id,
               title,
-              description: b.message,
+              description: b.message || null,
               priority: b.priority ?? "media",
               contact_id: contactId,
               channel_id: tok.channel_id,
@@ -455,11 +533,54 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           }
         }
 
+        // 4b. Mídia: baixa o arquivo decifrado da Evolution e sobe pro Storage
+        // privado. Falha aqui NUNCA derruba o webhook: loga com contexto e
+        // registra o evento mesmo assim, marcando metadata.media_failed.
+        let mediaUrl: string | null = null;
+        let mediaType: string | null = null;
+        let mediaFileName: string | null = null;
+        let mediaFailed: string | null = null;
+        if (b.media && b.message_id && b.instance_name && b.whatsapp_jid && demandaId) {
+          const fetched = await fetchMediaFromEvolution({
+            orgId: tok.org_id,
+            instance: b.instance_name,
+            key: { remoteJid: b.whatsapp_jid, fromMe: false, id: b.message_id },
+          });
+          if (fetched.ok) {
+            const up = await uploadMediaToStorage({
+              orgId: tok.org_id,
+              demandaId,
+              messageId: b.message_id,
+              media: fetched.media,
+            });
+            if (up.ok) {
+              mediaUrl = up.path;
+              mediaType = fetched.media.mimeType;
+              mediaFileName = fetched.media.fileName;
+            } else {
+              mediaFailed = up.reason;
+            }
+          } else {
+            mediaFailed = fetched.reason;
+          }
+          if (mediaFailed) {
+            console.error("[ingest] mídia NÃO persistida — evento registrado mesmo assim", {
+              demanda_id: demandaId,
+              message_id: b.message_id,
+              media_kind: b.media.kind,
+              reason: mediaFailed,
+            });
+          }
+        }
+
         await supabaseAdmin.from("demanda_events").insert({
           org_id: tok.org_id,
           demanda_id: demandaId,
           kind: "message_in",
           content: b.message,
+          media_url: mediaUrl,
+          media_type: mediaType,
+          file_name: mediaFileName,
           metadata: {
             external_ref: b.external_ref ?? null,
             channel_kind: b.channel_kind ?? null,
@@ -468,20 +589,21 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             instance_name: b.instance_name ?? null,
             message_id: b.message_id ?? null,
             participant_name: b.participant_name ?? null,
+            media_kind: b.media?.kind ?? null,
+            media_failed: mediaFailed,
           },
         });
-
         await supabaseAdmin
           .from("webhook_tokens")
           .update({ last_used_at: new Date().toISOString() })
           .eq("id", tok.id);
-
         return new Response(
           JSON.stringify({
             ok: true,
             demanda_id: demandaId,
             protocol,
             org: (tok as any).organizations?.name ?? null,
+            media: mediaUrl ? { stored: true } : mediaFailed ? { stored: false, reason: mediaFailed } : undefined,
           }),
           { status: 200, headers: { "content-type": "application/json" } },
         );

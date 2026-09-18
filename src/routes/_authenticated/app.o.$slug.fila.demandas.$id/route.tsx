@@ -193,6 +193,7 @@ function DemandaDetail() {
           roleOf={roleOf}
           isAIOf={(uid) => actorOf(uid)?.role === "agente_ia"}
           onReply={handleReply}
+          onRetryMedia={() => qc.invalidateQueries({ queryKey: ["demanda", id] })}
         />
 
         <DemandaComposer

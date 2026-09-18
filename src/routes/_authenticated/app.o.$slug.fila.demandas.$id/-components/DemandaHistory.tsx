@@ -3,13 +3,11 @@ import { STATE_LABEL, formatRelative } from "@/components/demandas-ui";
 import { ContactAvatar } from "@/components/contact-avatar";
 import { GitBranch, Flag, AlertCircle, UserCheck, Circle } from "lucide-react";
 import { SystemLine } from "./SystemLine";
-import { MessageBubble } from "./MessageBubble";
+import { MessageBubble, type BubbleMedia } from "./MessageBubble";
 import { TeamAvatar } from "./TeamAvatar";
 
 /**
  * Snapshot da mensagem sendo respondida (reply estilo WhatsApp).
- * O histórico calcula (ele tem author/content/metadata em mãos) e o route
- * só guarda no estado + foca o composer.
  */
 export type ReplyTarget = {
   event_id: string;
@@ -24,7 +22,8 @@ export type ReplyTarget = {
 /**
  * Área 2 do detalhe: lista de eventos com rolagem própria e auto-scroll
  * pro final a cada mensagem nova (ou troca de demanda).
- * Puramente apresentacional: identidade dos atores vem pronta via callbacks.
+ * Puramente apresentacional: identidade dos atores e URLs assinadas de mídia
+ * vêm prontas do route/getDemanda.
  */
 export function DemandaHistory({
   demandaId,
@@ -37,6 +36,7 @@ export function DemandaHistory({
   roleOf,
   isAIOf,
   onReply,
+  onRetryMedia,
 }: {
   demandaId: string;
   events: any[];
@@ -48,6 +48,7 @@ export function DemandaHistory({
   roleOf: (uid?: string | null) => string | null;
   isAIOf: (uid?: string | null) => boolean;
   onReply: (target: ReplyTarget) => void;
+  onRetryMedia?: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastEventId = events[events.length - 1]?.id;
@@ -135,6 +136,20 @@ export function DemandaHistory({
             | undefined
             | { author?: string; content?: string; kind?: string };
 
+          // Mídia: só monta o objeto se o evento tem linha de mídia OU falha
+          // registrada; URL assinada é a única aceita (bucket privado).
+          const failedReason: string | null = e.metadata?.media_failed ?? null;
+          const media: BubbleMedia | null =
+            e.media_url || failedReason
+              ? {
+                  mediaKind: e.metadata?.media_kind ?? null,
+                  mimeType: e.media_type ?? null,
+                  url: e.media_url ? (e.media_url_signed ?? null) : null,
+                  fileName: e.file_name ?? null,
+                  failedReason,
+                }
+              : null;
+
           return (
             <MessageBubble
               key={e.id}
@@ -155,6 +170,7 @@ export function DemandaHistory({
               when={when}
               content={e.content}
               quoted={quoted}
+              media={media}
               onReply={() =>
                 onReply({
                   event_id: e.id,
@@ -166,6 +182,7 @@ export function DemandaHistory({
                   participant: e.metadata?.participant_jid ?? null,
                 })
               }
+              onRetryMedia={onRetryMedia}
             />
           );
         })}
