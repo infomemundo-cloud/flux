@@ -157,7 +157,7 @@ async function handleContactsUpdate(
       await import("@/integrations/supabase/client.server")
     ).supabaseAdmin
       .from("contacts")
-      .update(patch)
+      .update(patch as never)
       .eq("id", found.id);
 
     if (updErr) {

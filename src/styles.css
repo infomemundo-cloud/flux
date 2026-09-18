@@ -325,61 +325,96 @@ direto, então já respeita claro/escuro/corporate sem duplicar cor. */
 }
 
 /* ─────────────────────────────────────────────────────────────
-   Toasts (sonner) — Padrão Moderno Flutuante
+   Toasts (Sonner) — Flux
    ───────────────────────────────────────────────────────────── */
-[data-sonner-toaster][data-sonner-toaster] {
-  --width: fit-content !important;
-  --gap: 8px !important;
-  --offset: 100px !important;
-  bottom: 100px !important;
+
+:root {
+  --toast-width: fit-content;
 }
 
-[data-sonner-toast][data-sonner-toast] {
-  width: auto !important;
-  min-width: 140px !important;
-  max-width: 280px !important;
-  padding: 8px 14px !important;
-  border-radius: 9999px !important; /* Formato Pill minimalista */
+/* Posição */
+[data-sonner-toaster] {
+  top: 16px !important;
+  right: 16px !important;
+  left: auto !important;
+}
+
+/* Toast */
+[data-sonner-toast] {
+  width: fit-content !important;
+  min-width: 0 !important;
+  max-width: min(360px, calc(100vw - 32px));
+
+  padding: 10px 14px !important;
+
   background: var(--card) !important;
+  color: var(--card-foreground) !important;
+
   border: 1px solid var(--border) !important;
-  color: var(--foreground) !important;
-  box-shadow: 0 10px 25px -5px oklch(0 0 0 / 0.35), 0 0 0 1px oklch(1 1 1 / 0.05) !important;
-  backdrop-filter: blur(8px);
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
+  border-radius: 12px !important;
+
+  box-shadow:
+    0 4px 12px oklch(0.21 0.03 262 / 0.08),
+    0 10px 28px oklch(0.21 0.03 262 / 0.10) !important;
+
+  font-size: 13px;
+  line-height: 1.35;
 }
 
-/* Esconde o botão 'X' flutuante */
-[data-sonner-toast][data-sonner-toast] [data-close-button] {
-  display: none !important;
+/* Conteúdo */
+[data-sonner-toast] [data-content] {
+  gap: 5px;
 }
 
-[data-sonner-toast][data-sonner-toast] [data-content] {
-  display: flex !important;
-  align-items: center !important;
-  gap: 8px !important;
+/* Título */
+[data-sonner-toast] [data-title] {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
-[data-sonner-toast][data-sonner-toast] [data-title] {
-  font-size: 12px !important;
-  font-weight: 600 !important;
-  white-space: nowrap !important;
-  letter-spacing: -0.01em;
+/* Descrição */
+[data-sonner-toast] [data-description] {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted-foreground);
 }
 
-[data-sonner-toast][data-sonner-toast] [data-icon] {
-  width: 15px !important;
-  height: 15px !important;
-  margin: 0 !important;
-  color: var(--primary) !important;
+/* Ícone de sucesso */
+[data-sonner-toast][data-type="success"] [data-icon] {
+  color: oklch(0.58 0.16 155);
 }
 
-/* Ajusta as cores dos ícones nativos de sucesso e erro */
-[data-sonner-toast][data-sonner-toast][data-type="success"] [data-icon] {
-  color: oklch(0.68 0.18 160) !important;
+/* Ícone de erro */
+[data-sonner-toast][data-type="error"] [data-icon] {
+  color: var(--destructive);
 }
 
-[data-sonner-toast][data-sonner-toast][data-type="error"] [data-icon] {
-  color: var(--destructive) !important;
+/* Ícone de informação */
+[data-sonner-toast][data-type="info"] [data-icon] {
+  color: var(--primary);
+}
+
+/* Botões */
+[data-sonner-toast] button {
+  font-size: 12px;
+}
+
+/* Ação */
+[data-sonner-toast] [data-button] {
+  border-radius: 8px;
+}
+
+/* Fechar */
+[data-sonner-toast] [data-close-button] {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+
+/* Respeita redução de movimento */
+@media (prefers-reduced-motion: reduce) {
+  [data-sonner-toast] {
+    transition: none !important;
+  }
 }

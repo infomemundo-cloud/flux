@@ -49,7 +49,7 @@ type Settings = {
   use_master_credentials: boolean;
 };
 
-async function loadSettings(orgId: string): Promise<Settings | null> {
+export async function loadSettings(orgId: string): Promise<Settings | null> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data } = await supabaseAdmin
     .from("whatsapp_settings")
@@ -68,7 +68,7 @@ async function saveSettings(orgId: string, patch: Record<string, unknown>) {
 }
 
 /** Endpoint/chave efetivos: credenciais próprias da organização, senão as centrais. */
-function effectiveCreds(cfg: Settings | null) {
+export function effectiveCreds(cfg: Settings | null) {
   if (cfg && !cfg.use_master_credentials && cfg.base_url && cfg.api_key) {
     return { baseUrl: cleanUrl(cfg.base_url), key: cfg.api_key };
   }

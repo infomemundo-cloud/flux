@@ -79,52 +79,52 @@ export type Database = {
       }
       contacts: {
         Row: {
-            avatar_fetched_at: string | null
-            avatar_url: string | null
-            created_at: string
-            email: string | null
-            external_id: string | null
-            id: string
-            metadata: Json
-            name: string | null
-            org_id: string
-            phone: string | null
-            updated_at: string
-          }
-          Insert: {
-            avatar_fetched_at?: string | null
-            avatar_url?: string | null
-            created_at?: string
-            email?: string | null
-            external_id?: string | null
-            id?: string
-            metadata?: Json
-            name?: string | null
-            org_id: string
-            phone?: string | null
-            updated_at?: string
-          }
-          Update: {
-            avatar_fetched_at?: string | null
-            avatar_url?: string | null
-            created_at?: string
-            email?: string | null
-            external_id?: string | null
-            id?: string
-            metadata?: Json
-            name?: string | null
-            org_id?: string
-            phone?: string | null
-            updated_at?: string
-          }
-          Relationships: [
-            {
-              foreignKeyName: "contacts_org_id_fkey"
-              columns: ["org_id"]
-              isOneToOne: false
-              referencedRelation: "organizations"
-              referencedColumns: ["id"]
-            },
+          avatar_fetched_at: string | null
+          avatar_url: string | null
+          created_at: string
+          email: string | null
+          external_id: string | null
+          id: string
+          metadata: Json
+          name: string | null
+          org_id: string
+          phone: string | null
+          updated_at: string
+        }
+        Insert: {
+          avatar_fetched_at?: string | null
+          avatar_url?: string | null
+          created_at?: string
+          email?: string | null
+          external_id?: string | null
+          id?: string
+          metadata?: Json
+          name?: string | null
+          org_id: string
+          phone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          avatar_fetched_at?: string | null
+          avatar_url?: string | null
+          created_at?: string
+          email?: string | null
+          external_id?: string | null
+          id?: string
+          metadata?: Json
+          name?: string | null
+          org_id?: string
+          phone?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contacts_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
         ]
       }
       demanda_events: {
@@ -133,9 +133,12 @@ export type Database = {
           content: string | null
           created_at: string
           demanda_id: string
+          file_name: string | null
           from_value: string | null
           id: string
           kind: Database["public"]["Enums"]["event_kind"]
+          media_type: string | null
+          media_url: string | null
           metadata: Json
           org_id: string
           to_value: string | null
@@ -145,9 +148,12 @@ export type Database = {
           content?: string | null
           created_at?: string
           demanda_id: string
+          file_name?: string | null
           from_value?: string | null
           id?: string
           kind: Database["public"]["Enums"]["event_kind"]
+          media_type?: string | null
+          media_url?: string | null
           metadata?: Json
           org_id: string
           to_value?: string | null
@@ -157,9 +163,12 @@ export type Database = {
           content?: string | null
           created_at?: string
           demanda_id?: string
+          file_name?: string | null
           from_value?: string | null
           id?: string
           kind?: Database["public"]["Enums"]["event_kind"]
+          media_type?: string | null
+          media_url?: string | null
           metadata?: Json
           org_id?: string
           to_value?: string | null
