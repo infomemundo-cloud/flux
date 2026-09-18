@@ -109,13 +109,19 @@ export const getDemanda = createServerFn({ method: "GET" })
       .eq("demanda_id", data.id)
       .order("created_at");
     // Bucket privado: gera URL assinada (1h) só pros eventos que têm mídia,
-    // em paralelo. Falha ao assinar NÃO derruba a demanda: o evento chega com
+    // em paralelo — incluindo o thumbnail de vídeo (metadata.media_thumb).
+    // Falha ao assinar NÃO derruba a demanda: o evento chega com
     // media_url_signed = null e a bolha mostra o fallback "mídia indisponível".
     const { signedMediaUrl } = await import("@/lib/demandas/media-storage");
     const signedEvents = await Promise.all(
-      (events ?? []).map(async (e: any) =>
-        e.media_url ? { ...e, media_url_signed: await signedMediaUrl(e.media_url, 3600) } : e,
-      ),
+      (events ?? []).map(async (e: any) => {
+        if (!e.media_url) return e;
+        const [url, thumb] = await Promise.all([
+          signedMediaUrl(e.media_url, 3600),
+          e.metadata?.media_thumb ? signedMediaUrl(e.metadata.media_thumb, 3600) : Promise.resolve(null),
+        ]);
+        return { ...e, media_url_signed: url, media_thumb_signed: thumb };
+      }),
     );
     // Identidade dos personagens: quem criou, mudou status, comentou e é responsável.
     const ids = new Set<string>();

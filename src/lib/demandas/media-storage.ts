@@ -6,6 +6,8 @@
  *   (ela lê do próprio banco de mensagens, então não depende da URL do CDN estar viva)
  * → uploadMediaToStorage grava em demanda-media/{org}/{demanda}/{message_id}.{ext}
  *   com upsert (reenvio do mesmo webhook sobrescreve, não duplica)
+ * → uploadThumbToStorage grava o thumbnail de vídeo (jpegThumbnail do payload)
+ *   como {message_id}_thumb.jpg — permite card de preview sem baixar o vídeo
  * → signedMediaUrl gera URL temporária de leitura na hora de renderizar.
  *
  * Nenhuma função aqui derruba o webhook: tudo retorna { ok: false, reason }
@@ -43,6 +45,8 @@ export type EvolvedMedia = {
   fileName: string;
   width: number | null;
   height: number | null;
+  /** Bytes reais do arquivo decifrado (usado no chip de tamanho do card). */
+  bytes: number;
 };
 
 export type MediaResult = { ok: true; media: EvolvedMedia } | { ok: false; reason: string };
@@ -94,8 +98,22 @@ export async function fetchMediaFromEvolution(opts: {
       fileName: typeof body?.fileName === "string" ? body.fileName : opts.key.id,
       width: Number(body?.size?.width ?? 0) || null,
       height: Number(body?.size?.height ?? 0) || null,
+      bytes: buffer.byteLength,
     },
   };
+}
+
+/**
+ * Converte o byte-map que a Evolution usa pra serializar Buffers em JSON
+ * ({ "0": 255, "1": 216, ... }) de volta pra um Buffer. Retorna null se o
+ * shape não for o esperado — thumbnail é luxo, nunca motivo pra falhar.
+ */
+export function bufferFromByteMap(value: unknown): Buffer | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const vals = Object.values(value as Record<string, unknown>);
+  if (!vals.length || vals.some((v) => typeof v !== "number")) return null;
+  const buf = Buffer.from(vals as number[]);
+  return buf.byteLength ? buf : null;
 }
 
 /** Extensão do arquivo: MIME conhecido → ext; senão hint do fileName; senão "bin". */
@@ -126,6 +144,30 @@ export async function uploadMediaToStorage(opts: {
     });
   if (error) {
     console.error("[media] storage upload failed", path, error.message);
+    return { ok: false, reason: `storage_${error.message}` };
+  }
+  return { ok: true, path };
+}
+
+/**
+ * Thumbnail de vídeo (jpegThumbnail do payload WhatsApp) como arquivo próprio.
+ * Permite o card de preview renderizar sem baixar o vídeo inteiro.
+ */
+export async function uploadThumbToStorage(opts: {
+  orgId: string;
+  demandaId: string;
+  messageId: string;
+  buffer: Buffer;
+}): Promise<UploadResult> {
+  const path = `${opts.orgId}/${opts.demandaId}/${opts.messageId}_thumb.jpg`;
+  const { error } = await supabaseAdmin.storage
+    .from("demanda-media")
+    .upload(path, opts.buffer, {
+      contentType: "image/jpeg",
+      upsert: true,
+    });
+  if (error) {
+    console.error("[media] thumb upload failed", path, error.message);
     return { ok: false, reason: `storage_${error.message}` };
   }
   return { ok: true, path };

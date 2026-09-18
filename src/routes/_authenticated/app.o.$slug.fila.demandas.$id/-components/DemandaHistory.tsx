@@ -137,7 +137,7 @@ export function DemandaHistory({
             | { author?: string; content?: string; kind?: string };
 
           // Mídia: só monta o objeto se o evento tem linha de mídia OU falha
-          // registrada; URL assinada é a única aceita (bucket privado).
+          // registrada; URLs assinadas (mídia + thumb) são as únicas aceitas.
           const failedReason: string | null = e.metadata?.media_failed ?? null;
           const media: BubbleMedia | null =
             e.media_url || failedReason
@@ -147,6 +147,9 @@ export function DemandaHistory({
                   url: e.media_url ? (e.media_url_signed ?? null) : null,
                   fileName: e.file_name ?? null,
                   failedReason,
+                  seconds: typeof e.metadata?.media_seconds === "number" ? e.metadata.media_seconds : null,
+                  bytes: typeof e.metadata?.media_bytes === "number" ? e.metadata.media_bytes : null,
+                  thumbUrl: e.metadata?.media_thumb ? (e.media_thumb_signed ?? null) : null,
                 }
               : null;
 

@@ -1,6 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { fetchMediaFromEvolution, uploadMediaToStorage } from "@/lib/demandas/media-storage";
+import {
+  fetchMediaFromEvolution,
+  uploadMediaToStorage,
+  uploadThumbToStorage,
+  bufferFromByteMap,
+} from "@/lib/demandas/media-storage";
 
 const Body = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -52,6 +57,8 @@ type Normalized = z.infer<typeof Body> & {
     mimetype: string | null;
     caption: string | null;
     fileName: string | null;
+    seconds: number | null;
+    jpegThumbnail: unknown;
   } | null;
 };
 
@@ -79,8 +86,8 @@ const ContactsUpdatePayload = z.object({
 
 /**
  * Shape leniente de uma mensagem de mídia. Só lemos metadados leves
- * (mime/caption/nome/tamanho) — os bytes reais vêm depois via
- * getBase64FromMediaMessage. Campos binários (mediaKey, sha256, thumbnail...)
+ * (mime/caption/nome/tamanho/duração/thumbnail) — os bytes reais vêm depois
+ * via getBase64FromMediaMessage. Campos binários pesados (mediaKey, sha256...)
  * são ignorados aqui e redigidos no log.
  */
 const MediaMessageSchema = z.object({
@@ -91,6 +98,7 @@ const MediaMessageSchema = z.object({
   width: z.number().nullish(),
   height: z.number().nullish(),
   seconds: z.number().nullish(),
+  jpegThumbnail: z.any().nullish(),
 });
 
 const EvolutionPayload = z.object({
@@ -296,6 +304,8 @@ function normalize(payload: unknown):
               mimetype: mediaFound.msg?.mimetype ?? null,
               caption,
               fileName: mediaFound.msg?.fileName ?? null,
+              seconds: typeof mediaFound.msg?.seconds === "number" ? mediaFound.msg.seconds : null,
+              jpegThumbnail: mediaFound.msg?.jpegThumbnail ?? null,
             }
           : null,
       },
@@ -540,6 +550,9 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
         let mediaType: string | null = null;
         let mediaFileName: string | null = null;
         let mediaFailed: string | null = null;
+        let mediaSeconds: number | null = null;
+        let mediaBytes: number | null = null;
+        let mediaThumb: string | null = null;
         if (b.media && b.message_id && b.instance_name && b.whatsapp_jid && demandaId) {
           const fetched = await fetchMediaFromEvolution({
             orgId: tok.org_id,
@@ -557,6 +570,30 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               mediaUrl = up.path;
               mediaType = fetched.media.mimeType;
               mediaFileName = fetched.media.fileName;
+              mediaSeconds = b.media.seconds;
+              mediaBytes = fetched.media.bytes;
+              // Thumbnail de vídeo (jpeg que o WhatsApp manda no payload):
+              // permite card de preview sem baixar o vídeo. Luxo, não
+              // obrigação — falha aqui só loga e segue sem thumb.
+              if (b.media.kind === "videoMessage" && b.media.jpegThumbnail) {
+                const thumbBuf = bufferFromByteMap(b.media.jpegThumbnail);
+                if (thumbBuf && thumbBuf[0] === 0xff && thumbBuf[1] === 0xd8) {
+                  const thumbUp = await uploadThumbToStorage({
+                    orgId: tok.org_id,
+                    demandaId,
+                    messageId: b.message_id,
+                    buffer: thumbBuf,
+                  });
+                  if (thumbUp.ok) {
+                    mediaThumb = thumbUp.path;
+                  } else {
+                    console.error("[ingest] thumb não persistido — card usará placeholder", {
+                      message_id: b.message_id,
+                      reason: thumbUp.reason,
+                    });
+                  }
+                }
+              }
             } else {
               mediaFailed = up.reason;
             }
@@ -591,6 +628,9 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             participant_name: b.participant_name ?? null,
             media_kind: b.media?.kind ?? null,
             media_failed: mediaFailed,
+            media_seconds: mediaSeconds,
+            media_bytes: mediaBytes,
+            media_thumb: mediaThumb,
           },
         });
         await supabaseAdmin

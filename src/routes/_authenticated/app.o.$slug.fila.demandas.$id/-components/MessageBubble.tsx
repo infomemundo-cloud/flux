@@ -6,7 +6,9 @@ import {
   Image as ImageIcon,
   Lock,
   MessageCircle,
+  Play,
   Reply,
+  Video,
   X,
 } from "lucide-react";
 
@@ -15,8 +17,9 @@ export type QuotedRef = { author?: string; content?: string; kind?: string };
 
 /**
  * Mídia anexada ao evento. `url` é a URL ASSINADA (bucket privado) gerada no
- * getDemanda; `failedReason` vem de metadata.media_failed quando o pipeline
- * de ingestão não conseguiu persistir o arquivo (a mensagem NÃO some por isso).
+ * getDemanda; `thumbUrl` é a URL assinada do thumbnail de vídeo (jpeg que o
+ * WhatsApp manda no payload, persistido no ingest); `seconds`/`bytes` vêm do
+ * metadata gravado no ingest; `failedReason` vem de metadata.media_failed.
  */
 export type BubbleMedia = {
   mediaKind: string | null;
@@ -24,7 +27,22 @@ export type BubbleMedia = {
   url: string | null;
   fileName: string | null;
   failedReason: string | null;
+  seconds: number | null;
+  bytes: number | null;
+  thumbUrl: string | null;
 };
+
+function formatDuration(totalSeconds: number): string {
+  const m = Math.floor(totalSeconds / 60);
+  const s = Math.round(totalSeconds % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+}
 
 function MediaFallback({
   label,
@@ -58,9 +76,11 @@ function MediaFallback({
 /**
  * Uma bolha de mensagem (cliente recebida / saída WhatsApp / comentário interno).
  * Puramente apresentacional: o route decide avatar, textos e callbacks.
- * Mídia: imagem vira thumbnail clicável (lightbox próprio), áudio/vídeo usam
- * players nativos, documento vira card de download; qualquer falha de URL cai
- * no fallback claro (mesmo princípio do onError do ContactAvatar).
+ * Mídia no padrão WhatsApp Web: imagem = thumbnail clicável (lightbox);
+ * vídeo = card de preview (thumb + play sobreposto + chips de duração/tamanho)
+ * que abre no lightbox com player dedicado; áudio = player nativo; documento =
+ * card de download. Qualquer falha de URL cai no fallback claro.
+ * Zero inline style: só classes utilitárias Tailwind.
  */
 export function MessageBubble({
   avatar,
@@ -95,8 +115,13 @@ export function MessageBubble({
 }) {
   const [lightbox, setLightbox] = useState(false);
   const [imgBroken, setImgBroken] = useState(false);
+  const [thumbBroken, setThumbBroken] = useState(false);
 
-  useEffect(() => setImgBroken(false), [media?.url]);
+  useEffect(() => {
+    setImgBroken(false);
+    setThumbBroken(false);
+  }, [media?.url, media?.thumbUrl]);
+
   useEffect(() => {
     if (!lightbox) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setLightbox(false);
@@ -111,6 +136,16 @@ export function MessageBubble({
       media.mediaKind === "stickerMessage");
   const isAudio = !!media && (media.mimeType?.startsWith("audio/") || media.mediaKind === "audioMessage");
   const isVideo = !!media && (media.mimeType?.startsWith("video/") || media.mediaKind === "videoMessage");
+
+  const infoChips =
+    media && (media.seconds != null || media.bytes != null)
+      ? [
+          media.seconds != null ? formatDuration(media.seconds) : null,
+          media.bytes != null ? formatBytes(media.bytes) : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : null;
 
   return (
     <li className={`group relative flex gap-2.5 pt-2 ${isClient ? "" : "sm:pl-8"}`}>
@@ -190,12 +225,55 @@ export function MessageBubble({
               )}
               {isAudio && <audio controls preload="metadata" src={media.url} className="w-full max-w-[320px]" />}
               {isVideo && (
-                <video
-                  controls
-                  preload="metadata"
-                  src={media.url}
-                  className="max-h-64 w-full max-w-[320px] rounded-lg border border-border/60 bg-black"
-                />
+                <div className="w-full max-w-[320px] overflow-hidden rounded-lg border border-border/60 bg-secondary/40">
+                  {/* Card de preview estilo WhatsApp: thumb + play sobreposto.
+                      Nenhum <video> é montado na bolha — zero spinner/peso. */}
+                  <button
+                    type="button"
+                    onClick={() => setLightbox(true)}
+                    title="Reproduzir vídeo"
+                    className="group/play relative block aspect-video w-full"
+                  >
+                    {media.thumbUrl && !thumbBroken ? (
+                      <img
+                        src={media.thumbUrl}
+                        alt=""
+                        loading="lazy"
+                        className="absolute inset-0 h-full w-full object-cover"
+                        onError={() => setThumbBroken(true)}
+                      />
+                    ) : (
+                      <span className="absolute inset-0 grid place-items-center bg-gradient-to-br from-secondary to-secondary/50">
+                        <Video className="h-8 w-8 text-muted-foreground/50" />
+                      </span>
+                    )}
+                    <span className="absolute inset-0 grid place-items-center">
+                      <span className="grid h-12 w-12 place-items-center rounded-full bg-black/55 text-white backdrop-blur-sm transition group-hover/play:scale-105 group-hover/play:bg-black/70">
+                        <Play className="h-5 w-5 translate-x-0.5" fill="currentColor" />
+                      </span>
+                    </span>
+                    {infoChips && (
+                      <span className="absolute bottom-1.5 right-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-white backdrop-blur-sm">
+                        {infoChips}
+                      </span>
+                    )}
+                  </button>
+                  <div className="flex items-center justify-between gap-2 border-t border-border/60 px-2 py-1.5">
+                    <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+                      {media.fileName ?? "Vídeo"}
+                    </span>
+                    <a
+                      href={media.url}
+                      download={media.fileName ?? undefined}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Baixar vídeo"
+                      className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                    </a>
+                  </div>
+                </div>
               )}
               {!isImage && !isAudio && !isVideo && (
                 <a
@@ -233,12 +311,23 @@ export function MessageBubble({
           >
             <X className="h-5 w-5" />
           </button>
-          <img
-            src={media.url}
-            alt={media.fileName ?? "Imagem da conversa"}
-            className="max-h-full max-w-full rounded-lg shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          />
+          {isVideo ? (
+            <video
+              controls
+              autoPlay
+              playsInline
+              src={media.url}
+              className="max-h-full max-w-full rounded-lg shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <img
+              src={media.url}
+              alt={media.fileName ?? "Imagem da conversa"}
+              className="max-h-full max-w-full rounded-lg shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+          )}
         </div>
       )}
     </li>
