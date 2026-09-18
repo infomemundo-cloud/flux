@@ -78,9 +78,9 @@ function MediaFallback({
  * Puramente apresentacional: o route decide avatar, textos e callbacks.
  * Mídia no padrão WhatsApp Web: imagem = thumbnail clicável (lightbox);
  * vídeo = card de preview (thumb + play sobreposto + chips de duração/tamanho)
- * que abre no lightbox com player dedicado; áudio = player nativo; documento =
- * card de download. Qualquer falha de URL cai no fallback claro.
- * Zero inline style: só classes utilitárias Tailwind.
+ * que abre o viewer na mesma aba (overlay escuro, player dedicado); áudio =
+ * player nativo; documento = card de download. Qualquer falha de URL cai no
+ * fallback claro. Zero inline style: só classes utilitárias Tailwind.
  */
 export function MessageBubble({
   avatar,
@@ -146,6 +146,14 @@ export function MessageBubble({
           .filter(Boolean)
           .join(" · ")
       : null;
+
+  /**
+   * Identidade ESTÁVEL do objeto no Storage: o caminho da URL assinada (tudo
+   * antes do "?"). A URL completa muda a cada refetch de 8s (token novo de 1h)
+   * — usá-la como key recriava o player em loop e travava o modal. O caminho
+   * só muda se o arquivo mudar: remount acontece apenas quando deve.
+   */
+  const mediaStableKey = media?.url ? media.url.split("?")[0] : null;
 
   return (
     <li className={`group relative flex gap-2.5 pt-2 ${isClient ? "" : "sm:pl-8"}`}>
@@ -312,21 +320,21 @@ export function MessageBubble({
             <X className="h-5 w-5" />
           </button>
           {isVideo ? (
-            /* Player dedicado do modal:
-               - key={media.url} → remount a cada vídeo/abertura (mata o loop de buffer)
-               - <source type> → decisão de codec imediata, sem sniffing
-               - poster={thumbUrl} → frame visível antes do primeiro buffer
-               - preload="metadata" + autoPlay: o autoplay tem precedência e
-                 puxa o stream; o metadata evita pré-carga quando o autoplay
-                 não estiver disponível no dispositivo. */
+            /* Viewer na mesma aba (padrão WhatsApp Web):
+               - key = caminho estável do objeto (NUNCA a URL assinada volátil,
+                 que muda a cada refetch de 8s e recriava o player em loop)
+               - <source type> = decisão de codec sem sniffing
+               - poster = frame imediato antes do primeiro buffer
+               - preload="metadata" + autoPlay: autoplay puxa o stream; o
+                 metadata evita pré-carga onde autoplay não está disponível */
             <video
-              key={media.url}
+              key={mediaStableKey ?? media.url}
               controls
               autoPlay
               playsInline
               preload="metadata"
               poster={media.thumbUrl ?? undefined}
-              className="h-auto w-full max-h-[80vh] rounded-lg shadow-2xl"
+              className="w-full max-h-[85vh] rounded-lg shadow-lg object-contain bg-black"
               onClick={(e) => e.stopPropagation()}
             >
               <source src={media.url} type={media.mimeType ?? "video/mp4"} />
@@ -334,7 +342,7 @@ export function MessageBubble({
             </video>
           ) : (
             <img
-              key={media.url}
+              key={mediaStableKey ?? media.url}
               src={media.url}
               alt={media.fileName ?? "Imagem da conversa"}
               className="max-h-full max-w-full rounded-lg shadow-2xl"
