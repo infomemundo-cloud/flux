@@ -23,7 +23,8 @@ export type ReplyTarget = {
  * Área 2 do detalhe: lista de eventos com rolagem própria e auto-scroll
  * pro final a cada mensagem nova (ou troca de demanda).
  * Puramente apresentacional: identidade dos atores e URLs assinadas de mídia
- * vêm prontas do route/getDemanda.
+ * (incluindo o thumbnail do vídeo, usado como poster no modal) vêm prontas
+ * do route/getDemanda.
  */
 export function DemandaHistory({
   demandaId,

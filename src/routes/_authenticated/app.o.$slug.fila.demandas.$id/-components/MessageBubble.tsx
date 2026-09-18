@@ -312,16 +312,29 @@ export function MessageBubble({
             <X className="h-5 w-5" />
           </button>
           {isVideo ? (
+            /* Player dedicado do modal:
+               - key={media.url} → remount a cada vídeo/abertura (mata o loop de buffer)
+               - <source type> → decisão de codec imediata, sem sniffing
+               - poster={thumbUrl} → frame visível antes do primeiro buffer
+               - preload="metadata" + autoPlay: o autoplay tem precedência e
+                 puxa o stream; o metadata evita pré-carga quando o autoplay
+                 não estiver disponível no dispositivo. */
             <video
+              key={media.url}
               controls
               autoPlay
               playsInline
-              src={media.url}
-              className="max-h-full max-w-full rounded-lg shadow-2xl"
+              preload="metadata"
+              poster={media.thumbUrl ?? undefined}
+              className="h-auto w-full max-h-[80vh] rounded-lg shadow-2xl"
               onClick={(e) => e.stopPropagation()}
-            />
+            >
+              <source src={media.url} type={media.mimeType ?? "video/mp4"} />
+              Seu navegador não suporta a exibição deste vídeo.
+            </video>
           ) : (
             <img
+              key={media.url}
               src={media.url}
               alt={media.fileName ?? "Imagem da conversa"}
               className="max-h-full max-w-full rounded-lg shadow-2xl"
