@@ -44,9 +44,9 @@ function isOverdueDemanda(d: any) {
 
 /**
  * Última movimentação real = mais recente entre a última mensagem
- * (last_message_at) e qualquer update (updated_at). ISO strings comparam
- * lexicograficamente em ordem cronológica. É EXATAMENTE a chave que o
- * servidor usa pra ordenar — posição e data visível nunca discordam.
+ * (last_message_at) e qualquer update (updated_at). MESMA chave que o
+ * servidor usa pra ordenar (activityOf) — posição e data visível nunca
+ * discordam.
  */
 function activityIso(d: any): string {
   const lm = typeof d.last_message_at === "string" ? d.last_message_at : "";
@@ -75,10 +75,13 @@ function FilaPage() {
   const [state, setState] = useState<string | undefined>();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [offset, setOffset] = useState(0);
-  const [pages, setPages] = useState<Record<number, any[]>>({});
+  // Paginação por LIMIT crescente (não por páginas cacheadas): cada clique em
+  // "Mais demandas" refaz UMA query com limit = carregados + 20, devolvendo a
+  // lista inteira de um único snapshot do servidor. Antes, página 0 ficava
+  // congelada no state e a página 1 vinha de um snapshot mais novo — mensagens
+  // recém-chegadas apareciam DEPOIS de itens antigos (bug relatado).
+  const [limit, setLimit] = useState(PAGE_SIZE);
   const [assignees, setAssignees] = useState<Record<string, any>>({});
-  const [total, setTotal] = useState(0);
   const [showNew, setShowNew] = useState(false);
 
   useEffect(() => {
@@ -86,38 +89,35 @@ function FilaPage() {
     return () => clearTimeout(t);
   }, [search]);
 
+  // Mudou filtro/busca/org → volta pro primeiro "lote".
   useEffect(() => {
-    setOffset(0);
-    setPages({});
+    setLimit(PAGE_SIZE);
   }, [state, debouncedSearch, org?.id]);
 
   const { data: result, isFetching } = useQuery({
-    queryKey: ["demandas", org?.id, state, debouncedSearch, offset],
+    queryKey: ["demandas", org?.id, state, debouncedSearch, limit],
     queryFn: () =>
       listFn({
-        data: { orgId: org!.id, state: state as any, search: debouncedSearch || undefined, offset, limit: PAGE_SIZE },
+        data: {
+          orgId: org!.id,
+          state: state as any,
+          search: debouncedSearch || undefined,
+          offset: 0,
+          limit,
+        },
       }),
     enabled: !!org?.id,
   });
 
   useEffect(() => {
     if (!result) return;
-    setPages((prev) => ({ ...prev, [offset]: result.rows }));
     setAssignees((prev) => ({ ...prev, ...result.assignees }));
-    setTotal(result.total);
-  }, [result, offset]);
+  }, [result]);
 
-  const loadedRows = Object.keys(pages)
-    .map(Number)
-    .sort((a, b) => a - b)
-    .flatMap((k) => pages[k]);
-
-  // Atrasadas sobem pro topo, sem precisar de filtro — o resto mantém a
-  // ordem de atividade que o servidor já mandou (Array.sort é estável,
-  // então itens "empatados" nunca trocam de posição entre si).
-  const data = [...loadedRows].sort(
-    (a, b) => Number(isOverdueDemanda(b)) - Number(isOverdueDemanda(a)),
-  );
+  // Ordem 100% autoritativa do servidor (atrasadas primeiro, depois atividade
+  // recente) — um snapshot só, sem mistura de tempos.
+  const data = result?.rows ?? [];
+  const total = result?.total ?? 0;
   const hasMore = data.length < total;
   const loadingFirstPage = isFetching && data.length === 0;
 
@@ -279,7 +279,7 @@ function FilaPage() {
                 {hasMore && !loadingFirstPage && (
                   <div className="py-2 flex justify-center">
                     <button
-                      onClick={() => setOffset((o) => o + PAGE_SIZE)}
+                      onClick={() => setLimit((l) => l + PAGE_SIZE)}
                       disabled={isFetching}
                       className="h-8 px-4 rounded-md border border-border bg-card text-xs font-medium text-foreground hover:bg-accent transition disabled:opacity-60"
                     >
