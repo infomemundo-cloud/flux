@@ -1,15 +1,16 @@
 import type { RefObject } from "react";
-import { Lock, MessageCircle, Paperclip, Smile, Sticker, Send, Reply, X } from "lucide-react";
+import { Lock, MessageCircle, Paperclip, Sticker, Send, Reply, X } from "lucide-react";
 import { toast } from "sonner";
+import { EmojiPicker } from "./EmojiPicker";
 import type { ReplyTarget } from "./DemandaHistory";
 
 /**
  * Área 3 do detalhe: composer de resposta/comentário.
- * Toggle WhatsApp/Interno, banner de citação (reply), textarea que cresce
- * e os placeholders de anexo/emoji/figurinha (futuro módulo de mídias).
- * Puramente apresentacional: estado (comment/viaWhatsapp/replyTo) e o
- * envio (send.mutate) moram no route; aqui só renderizamos e devolvemos
- * eventos via props.
+ * Toggle WhatsApp/Interno, banner de citação (reply), textarea que cresce,
+ * picker de emojis próprio (inserção no cursor) e placeholders de anexo/
+ * figurinha (mídia de envio chega no Passo E2, após o gate do sendMedia).
+ * Puramente apresentacional: estado (comment/viaWhatsapp/replyTo) e o envio
+ * (onSend) moram no route.
  */
 export function DemandaComposer({
   hasWhatsapp,
@@ -35,6 +36,25 @@ export function DemandaComposer({
   textareaRef: RefObject<HTMLTextAreaElement | null>;
 }) {
   const effectiveViaWhatsapp = hasWhatsapp && viaWhatsapp;
+
+  const iconBtn =
+    "grid place-items-center h-8 w-8 rounded-lg text-muted-foreground/60 hover:bg-secondary hover:text-foreground transition";
+
+  /** Insere o emoji na posição do cursor e restaura caret + altura da textarea. */
+  const insertEmoji = (emoji: string) => {
+    const el = textareaRef.current;
+    const start = el?.selectionStart ?? comment.length;
+    const end = el?.selectionEnd ?? comment.length;
+    onCommentChange(comment.slice(0, start) + emoji + comment.slice(end));
+    requestAnimationFrame(() => {
+      if (!el) return;
+      const pos = start + emoji.length;
+      el.focus();
+      el.setSelectionRange(pos, pos);
+      el.style.height = "auto";
+      el.style.height = Math.min(el.scrollHeight, 160) + "px";
+    });
+  };
 
   return (
     <div className="shrink-0 border-t border-border bg-card p-3">
@@ -123,23 +143,16 @@ export function DemandaComposer({
               type="button"
               onClick={() => toast("Anexar arquivo chega em breve")}
               title="Anexar arquivo (em breve)"
-              className="grid place-items-center h-8 w-8 rounded-lg text-muted-foreground/60 hover:bg-secondary hover:text-foreground transition"
+              className={iconBtn}
             >
               <Paperclip className="h-4 w-4" />
             </button>
-            <button
-              type="button"
-              onClick={() => toast("Emojis chegam em breve")}
-              title="Emoji (em breve)"
-              className="grid place-items-center h-8 w-8 rounded-lg text-muted-foreground/60 hover:bg-secondary hover:text-foreground transition"
-            >
-              <Smile className="h-4 w-4" />
-            </button>
+            <EmojiPicker onPick={insertEmoji} triggerClass={iconBtn} />
             <button
               type="button"
               onClick={() => toast("Figurinhas chegam em breve")}
               title="Figurinha (em breve)"
-              className="grid place-items-center h-8 w-8 rounded-lg text-muted-foreground/60 hover:bg-secondary hover:text-foreground transition"
+              className={iconBtn}
             >
               <Sticker className="h-4 w-4" />
             </button>
