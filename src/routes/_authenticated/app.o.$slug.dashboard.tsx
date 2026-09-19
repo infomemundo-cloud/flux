@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
 import { getOrgBySlug } from "@/lib/orgs.functions";
-import { listDemandas } from "@/lib/demandas/demandas.functions";
 import { listMemberProfiles } from "@/lib/member-profiles.functions";
 import { orgDashboard } from "@/lib/demandas/demandas-analytics.functions";
 import { STATE_LABEL, PriorityBadge, formatRelative } from "@/components/demandas-ui";
@@ -31,9 +30,8 @@ export const Route = createFileRoute("/_authenticated/app/o/$slug/dashboard")({
 
 const MANAGER_ROLES = new Set(["owner", "admin", "gerente"]);
 const COLUMN_STATES = ["novo", "em_analise", "aguardando_cliente", "aguardando_revisao_humana"] as const;
-
 // Scope selector value semantics:
-//  "me" -> current user | "triage" -> unassigned | "all" -> everyone | UUID -> specific operator
+//   "me" -> current user | "triage" -> unassigned | "all" -> everyone | UUID -> specific operator
 type Scope = "me" | "triage" | "all" | string;
 
 function isOverdueDemanda(d: any) {
@@ -55,33 +53,40 @@ function Dashboard() {
   const effectiveScope: Scope = scope;
   const dashFn = useServerFn(orgDashboard);
   const profilesFn = useServerFn(listMemberProfiles);
+
   const scopeFilter = useMemo(() => {
     if (effectiveScope === "me") return { assigneeId: org?.userId } as const;
     if (effectiveScope === "triage") return { assigneeId: null } as const;
     if (effectiveScope === "all") return {} as const;
     return { assigneeId: effectiveScope } as const;
   }, [effectiveScope, org?.userId]);
+
   const { data: dash } = useQuery({
     queryKey: ["dashboard", org?.id, effectiveScope],
     enabled: !!org?.id,
     queryFn: () => dashFn({ data: { orgId: org!.id, ...scopeFilter } as any }),
   });
+
   const { data: profiles } = useQuery({
     queryKey: ["member-profiles", org?.id],
     enabled: !!org?.id,
     queryFn: () => profilesFn({ data: { orgId: org!.id } }),
   });
+
   const memberLabel = useMemo(() => {
     const m = new Map<string, string>();
     for (const p of profiles ?? []) m.set(p.user_id, p.name ?? p.email ?? p.user_id.slice(0, 8));
     return m;
   }, [profiles]);
+
   const memberAvatar = useMemo(() => {
     const m = new Map<string, string>();
     for (const p of profiles ?? []) if (p.avatar_url) m.set(p.user_id, p.avatar_url);
     return m;
   }, [profiles]);
+
   if (!org || !dash) return <DashboardSkeleton />;
+
   return (
     <div className="p-4 sm:p-6 pb-24 sm:pb-6 space-y-6 max-w-[1400px]">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -99,16 +104,23 @@ function Dashboard() {
           currentUserId={org.userId}
         />
       </header>
+
       <CommandPanel dash={dash} />
+
       <AiSuggestionsCard />
+
+      {/* Colunas vindas do MESMO array de rows dos counts (dash.columns) —
+          contagens e cards nunca divergem, e o escopo "Todo o time" bate
+          exatamente com a Fila. */}
       <TaskColumns
-        orgId={org.id}
+        columns={dash.columns ?? {}}
         slug={slug}
         scope={effectiveScope}
         currentUserId={org.userId}
         memberLabel={memberLabel}
         memberAvatar={memberAvatar}
       />
+
       {isManager && <Timeline dash={dash} />}
     </div>
   );
@@ -169,7 +181,7 @@ function CommandPanel({ dash }: { dash: any }) {
         label="Demandas abertas"
         value={dash.openTotal}
         hint="Em andamento agora"
-        info="Quantas demandas ainda estão em aberto neste momento, sem contar as já concluídas. O selo compara a última semana com a semana anterior."
+        info="Quantas demandas ainda estão em aberto neste momento (todos os estados exceto concluída/fechada, incluindo aguardando revisão humana). O selo compara a última semana com a semana anterior."
         series={novas}
         delta={trend(novas)}
         tone="primary"
@@ -179,7 +191,7 @@ function CommandPanel({ dash }: { dash: any }) {
         label="Vencidas"
         value={dash.overdue}
         hint="Fora do prazo"
-        info="Demandas em aberto cujo prazo já passou. O selo compara a última semana com a semana anterior."
+        info="Demandas em aberto cujo prazo já passou (aguardando revisão humana não conta, mesmo critério do pip vermelho da fila). O selo compara a última semana com a semana anterior."
         series={novas.map((_: number, i: number) => Math.max(0, novas[i] - resolvidas[i]))}
         delta={trend(novas.map((_: number, i: number) => Math.max(0, novas[i] - resolvidas[i])))}
         tone="destructive"
@@ -239,38 +251,29 @@ function CommandPanel({ dash }: { dash: any }) {
   );
 }
 
+/**
+ * Colunas de cards por estado (kanban leve).
+ * OS DADOS VÊM DE dash.columns — o mesmo array de rows que alimenta os counts
+ * no servidor (query única, escopo completo). Antes cada coluna contava só o
+ * slice de 20 linhas de uma chamada separada de listDemandas, o que sumia com
+ * demandas abertas e divergia da Fila.
+ */
 function TaskColumns({
-  orgId,
+  columns,
   slug,
   scope,
   currentUserId,
   memberLabel,
   memberAvatar,
 }: {
-  orgId: string;
+  columns: Record<string, any[]>;
   slug: string;
   scope: Scope;
   currentUserId: string;
   memberLabel: Map<string, string>;
   memberAvatar: Map<string, string>;
 }) {
-  const listFn = useServerFn(listDemandas);
-  const scopeArg = useMemo(() => {
-    if (scope === "me") return { assigneeId: currentUserId };
-    if (scope === "triage") return { assigneeId: null as any };
-    if (scope === "all") return {};
-    return { assigneeId: scope };
-  }, [scope, currentUserId]);
-  const { data: result } = useQuery({
-    queryKey: ["tasks", orgId, scope],
-    queryFn: () => listFn({ data: { orgId, ...scopeArg } as any }),
-  });
-  const rows = result?.rows;
-  const byState = useMemo(() => {
-    const m: Record<string, any[]> = { novo: [], em_analise: [], aguardando_cliente: [], aguardando_revisao_humana: [] };
-    for (const r of (rows ?? []) as any[]) if (m[r.state]) m[r.state].push(r);
-    return m;
-  }, [rows]);
+  const byState = columns;
   return (
     <section>
       <h2 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-2.5">
@@ -315,12 +318,13 @@ function TaskColumns({
                           : formatRelative(d.updated_at)}
                       </span>
                     </div>
-
-                    {/* Linha 2 — conteúdo principal: título/última mensagem em destaque */}
-                    <div className="mt-1.5 truncate text-[13px] font-semibold leading-4 text-foreground transition-colors group-hover:text-primary">
-                      {d.title}
+                    {/* Linha 2 — conteúdo principal: última mensagem (ou título) em destaque, igual à fila */}
+                    <div
+                      className="mt-1.5 truncate text-[13px] font-semibold leading-4 text-foreground transition-colors group-hover:text-primary"
+                      title={d.last_message_preview || d.title}
+                    >
+                      {d.last_message_preview || d.title}
                     </div>
-
                     {/* Linha 3 — rodapé: CLIENTE + canal (esq) | RESPONSÁVEL (dir) */}
                     <div className="mt-2 flex items-center gap-1.5">
                       <ContactAvatar url={d.contacts?.avatar_url ?? null} name={contactName} size="sm" tone="client" />
@@ -370,9 +374,15 @@ function TaskColumns({
   );
 }
 
+/**
+ * Gráfico de barras empilhadas dos últimos 14 dias.
+ * Escala ABSOLUTA: o divisor é o maior TOTAL do dia (novas + resolvidas), não
+ * o maior valor individual — garantia matemática de que um bloco de 10
+ * resolvidas é sempre mais alto que um de 9, independente das novas do dia.
+ */
 function Timeline({ dash }: { dash: any }) {
   const BAR_AREA = 128; // px — altura fixa da área de barras (o resto do h-40 é a legenda de data embaixo)
-  const max = Math.max(1, ...dash.timeline.map((t: any) => Math.max(t.novas, t.resolvidas)));
+  const max = Math.max(1, ...dash.timeline.map((t: any) => (t.novas as number) + (t.resolvidas as number)));
   return (
     <div className="rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-card)]">
       <div className="text-sm font-semibold">Últimos 14 dias</div>
@@ -461,18 +471,18 @@ function Kpi({
     tone === "destructive"
       ? "text-destructive"
       : tone === "success"
-      ? "text-[oklch(0.58_0.15_162)]"
-      : tone === "primary"
-      ? "text-primary"
-      : "text-foreground/70";
+        ? "text-[oklch(0.58_0.15_162)]"
+        : tone === "primary"
+          ? "text-primary"
+          : "text-foreground/70";
   const accentBg =
     tone === "destructive"
       ? "bg-destructive/10"
       : tone === "success"
-      ? "bg-[oklch(0.58_0.15_162/0.12)]"
-      : tone === "primary"
-      ? "bg-primary/10"
-      : "bg-secondary";
+        ? "bg-[oklch(0.58_0.15_162/0.12)]"
+        : tone === "primary"
+          ? "bg-primary/10"
+          : "bg-secondary";
   const good = delta == null ? true : invert ? delta <= 0 : delta >= 0;
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-[var(--shadow-card)] hover:border-primary/25 transition-colors">
@@ -499,8 +509,8 @@ function Kpi({
                 delta == null
                   ? "bg-secondary text-muted-foreground"
                   : good
-                  ? "bg-[oklch(0.62_0.15_162/0.14)] text-[oklch(0.4_0.13_162)]"
-                  : "bg-destructive/12 text-destructive"
+                    ? "bg-[oklch(0.62_0.15_162/0.14)] text-[oklch(0.4_0.13_162)]"
+                    : "bg-destructive/12 text-destructive"
               }`}
             >
               {delta == null ? "Sem histórico" : `${delta > 0 ? "+" : ""}${delta}%`}
