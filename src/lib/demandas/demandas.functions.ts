@@ -15,6 +15,21 @@ const QuotedSchema = z.object({
   kind: z.string().max(40),
 });
 
+/**
+ * Última movimentação real da demanda = mais recente entre a última mensagem
+ * (last_message_at) e qualquer update (updated_at: transição de estado,
+ * atribuição, edição). É a chave única de ordenação DA FILA e também o que o
+ * card exibe — posição e data visível nunca discordam.
+ * (Backfill do preview preencheu last_message_at sem tocar em updated_at, e
+ * updates sem mensagem movem updated_at — ordenar por um e exibir o outro
+ * era a causa do "embaralhamento".)
+ */
+function activityOf(r: any): number {
+  const lm = r.last_message_at ? new Date(r.last_message_at).getTime() : 0;
+  const up = r.updated_at ? new Date(r.updated_at).getTime() : 0;
+  return Math.max(lm, up);
+}
+
 export const listDemandas = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
@@ -25,6 +40,7 @@ export const listDemandas = createServerFn({ method: "GET" })
         assignedToMe: z.boolean().optional(),
         assigneeId: z.string().uuid().nullable().optional(),
         search: z.string().optional(),
+        // Paginação: offset/limit com defaults seguros. limit tem teto de 100
         offset: z.number().int().min(0).default(0),
         limit: z.number().int().min(1).max(100).default(20),
       })
@@ -32,6 +48,7 @@ export const listDemandas = createServerFn({ method: "GET" })
   )
   .handler(async ({ data, context }) => {
     await assertMember(context.supabase, data.orgId, context.userId);
+    // 1. Monta a query com os filtros, mas SEM o .range() ainda
     let q = context.supabase
       .from("demandas")
       .select(
@@ -47,19 +64,19 @@ export const listDemandas = createServerFn({ method: "GET" })
     const { data: rows, count, error } = await q;
     if (error) throw new Error(error.message);
     const now = Date.now();
-    // Ordenação customizada no lado do servidor:
-    // Regra 1: atrasadas primeiro (due_at < now e state != 'concluido')
-    // Regra 2: dentro dos grupos, por updated_at (mais recente primeiro)
+    // 2. Ordenação customizada no lado do servidor
+    //    Regra 1: atrasadas primeiro (due_at < now e state != 'concluido')
+    //    Regra 2: dentro dos grupos, por ÚLTIMA ATIVIDADE (mensagem ou update)
     const sortedRows = (rows ?? []).sort((a: any, b: any) => {
       const isOverdueA = a.due_at && new Date(a.due_at).getTime() < now && a.state !== "concluido";
       const isOverdueB = b.due_at && new Date(b.due_at).getTime() < now && b.state !== "concluido";
       if (isOverdueA && !isOverdueB) return -1;
       if (!isOverdueA && isOverdueB) return 1;
-      const dateA = new Date(a.updated_at).getTime();
-      const dateB = new Date(b.updated_at).getTime();
-      return dateB - dateA;
+      return activityOf(b) - activityOf(a);
     });
+    // 3. Aplica a paginação manualmente no array já ordenado
     const paginatedRows = sortedRows.slice(data.offset, data.offset + data.limit);
+    // Resolve nomes dos responsáveis em batch (apenas dos itens paginados)
     const assignees: Record<string, { id: string; name: string }> = {};
     const assigneeIds = [
       ...new Set((paginatedRows ?? []).map((r: any) => r.assignee_id).filter(Boolean) as string[]),
@@ -261,7 +278,10 @@ export const updateDemanda = createServerFn({ method: "POST" })
       throw new Error("Sem permissão para editar");
     const patch: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(rest)) if (v !== undefined) patch[k] = v;
-    // Preenche resolved_at ao concluir, limpa se for reaberta depois.
+    // Ninguém preenchia resolved_at em lugar nenhum do sistema — o contador
+    // "Concluídas" contava certo (bate em state), mas o gráfico "Últimos 14
+    // dias" e o KPI de tendência dependem desse campo, que ficava sempre
+    // null. Preenche ao concluir, limpa se for reaberta depois.
     if ("state" in patch) {
       patch.resolved_at = patch.state === "concluido" ? new Date().toISOString() : null;
     }
@@ -289,6 +309,8 @@ export const addComment = createServerFn({ method: "POST" })
           .trim()
           .min(1, { message: "Escreva um comentário antes de enviar." })
           .max(4000, { message: "O comentário pode ter no máximo 4000 caracteres." }),
+        // Citação opcional ("em resposta a…") — snapshot da mensagem citada
+        // gravado no metadata do evento de comentário.
         quoted: QuotedSchema.optional(),
       })
       .parse(d),
@@ -296,7 +318,8 @@ export const addComment = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     // metadata só entra quando há citação: a coluna tem default próprio e é
-    // NOT NULL — inserir null explícito era o erro do comentário interno sem reply.
+    // NOT NULL — inserir null explícito era o erro do comentário interno sem
+    // reply. Sem citação, omitimos a chave e o default do banco vale.
     const { error } = await supabaseAdmin.from("demanda_events").insert({
       org_id: data.orgId,
       demanda_id: data.demandaId,

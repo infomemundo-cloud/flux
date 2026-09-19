@@ -42,6 +42,18 @@ function isOverdueDemanda(d: any) {
   );
 }
 
+/**
+ * Última movimentação real = mais recente entre a última mensagem
+ * (last_message_at) e qualquer update (updated_at). ISO strings comparam
+ * lexicograficamente em ordem cronológica. É EXATAMENTE a chave que o
+ * servidor usa pra ordenar — posição e data visível nunca discordam.
+ */
+function activityIso(d: any): string {
+  const lm = typeof d.last_message_at === "string" ? d.last_message_at : "";
+  const up = typeof d.updated_at === "string" ? d.updated_at : "";
+  return lm > up ? lm : up;
+}
+
 function FilaPage() {
   const { slug } = useParams({ from: "/_authenticated/app/o/$slug/fila" });
   const location = useLocation();
@@ -101,7 +113,8 @@ function FilaPage() {
     .flatMap((k) => pages[k]);
 
   // Atrasadas sobem pro topo, sem precisar de filtro — o resto mantém a
-  // ordem de chegada porque Array.sort é estável (JS garante isso desde 2019).
+  // ordem de atividade que o servidor já mandou (Array.sort é estável,
+  // então itens "empatados" nunca trocam de posição entre si).
   const data = [...loadedRows].sort(
     (a, b) => Number(isOverdueDemanda(b)) - Number(isOverdueDemanda(a)),
   );
@@ -226,7 +239,8 @@ function FilaPage() {
                   </div>
                 )}
 
-                {/* Card no formato combinado: avatar+pip, nome, hora, prévia da última mensagem. */}
+                {/* Card no formato combinado: avatar+pip, nome, hora da última
+                    movimentação (mesma chave que ordena), prévia da mensagem. */}
                 {data.map((d: any) => {
                   const overdue = isOverdueDemanda(d);
                   const urgent = d.priority === "urgente";
@@ -251,7 +265,7 @@ function FilaPage() {
                         <div className="flex items-center justify-between gap-2">
                           <span className="truncate text-xs font-semibold text-foreground">{contactName}</span>
                           <span className="shrink-0 text-[10px] text-muted-foreground">
-                            {formatRelative(d.last_message_at ?? d.updated_at)}
+                            {formatRelative(activityIso(d))}
                           </span>
                         </div>
                         <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
