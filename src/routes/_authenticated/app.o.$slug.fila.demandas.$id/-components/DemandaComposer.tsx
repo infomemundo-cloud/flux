@@ -1,16 +1,42 @@
-import type { RefObject } from "react";
-import { Lock, MessageCircle, Paperclip, Sticker, Send, Reply, X } from "lucide-react";
+import { useRef, useState, type ChangeEvent, type RefObject } from "react";
+import { Lock, MessageCircle, Paperclip, Send, Reply, X, FileText, Loader2, Film, Music } from "lucide-react";
 import { toast } from "sonner";
 import { EmojiPicker } from "./EmojiPicker";
 import type { ReplyTarget } from "./DemandaHistory";
 
 /**
- * Área 3 do detalhe: composer de resposta/comentário.
- * Toggle WhatsApp/Interno, banner de citação (reply), textarea que cresce,
- * picker de emojis próprio (inserção no cursor) e placeholders de anexo/
- * figurinha (mídia de envio chega no Passo E2, após o gate do sendMedia).
- * Puramente apresentacional: estado (comment/viaWhatsapp/replyTo) e o envio
- * (onSend) moram no route.
+ * 3 MB — teto conservador pro envio (Vercel serverless tem body ~4,5 MB,
+ * base64 infla ~4/3). Exibido no toast de erro quando estoura.
+ */
+const MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
+
+/** Tipos aceitos pelo seletor de arquivo — mesmos que tratamos no recebimento. */
+const ACCEPT =
+  "image/*,audio/*,video/*,application/pdf,application/msword," +
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document," +
+  "application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet," +
+  "text/plain,text/vcard";
+
+export type PendingAttachment = {
+  file: File;
+  previewUrl: string | null; // URL.createObjectURL pra imagem; null pros demais
+  kind: "image" | "audio" | "video" | "document";
+};
+
+function kindOf(file: File): PendingAttachment["kind"] {
+  const t = file.type.toLowerCase();
+  if (t.startsWith("image/")) return "image";
+  if (t.startsWith("audio/")) return "audio";
+  if (t.startsWith("video/")) return "video";
+  return "document";
+}
+
+/**
+ * Área 3 do detalhe: composer de resposta/comentário + anexo.
+ * Toggle WhatsApp/Interno, banner de citação, textarea que cresce, picker de
+ * emojis (inserção no cursor) e upload de 1 arquivo com preview local +
+ * botão de remover. Upload real só acontece no clique em enviar.
+ * Puramente apresentacional: envio (onSend) mora no route.
  */
 export function DemandaComposer({
   hasWhatsapp,
@@ -21,7 +47,11 @@ export function DemandaComposer({
   replyTo,
   onCancelReply,
   onSend,
+  onAttach,
+  attachment,
+  onRemoveAttachment,
   isPending,
+  isUploading,
   textareaRef,
 }: {
   hasWhatsapp: boolean;
@@ -32,15 +62,21 @@ export function DemandaComposer({
   replyTo: ReplyTarget | null;
   onCancelReply: () => void;
   onSend: () => void;
+  onAttach: (file: File) => void;
+  attachment: PendingAttachment | null;
+  onRemoveAttachment: () => void;
   isPending: boolean;
+  isUploading: boolean;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
 }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const effectiveViaWhatsapp = hasWhatsapp && viaWhatsapp;
+  const busy = isPending || isUploading;
+  const canSend = (comment.trim() || !!attachment) && !busy;
 
   const iconBtn =
     "grid place-items-center h-8 w-8 rounded-lg text-muted-foreground/60 hover:bg-secondary hover:text-foreground transition";
 
-  /** Insere o emoji na posição do cursor e restaura caret + altura da textarea. */
   const insertEmoji = (emoji: string) => {
     const el = textareaRef.current;
     const start = el?.selectionStart ?? comment.length;
@@ -54,6 +90,60 @@ export function DemandaComposer({
       el.style.height = "auto";
       el.style.height = Math.min(el.scrollHeight, 160) + "px";
     });
+  };
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Sempre reseta o input pra permitir re-selecionar o mesmo arquivo
+    // depois de remover — o onChange não dispara se o valor não mudar.
+    e.target.value = "";
+    if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      toast.error(
+        `Arquivo maior que o limite de ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB`,
+      );
+      return;
+    }
+    onAttach(file);
+  };
+
+  const AttachmentPreview = () => {
+    if (!attachment) return null;
+    const { file, previewUrl, kind } = attachment;
+    return (
+      <div className="mx-3.5 mt-3 flex items-center gap-2 rounded-lg border border-border/60 bg-secondary/40 p-2">
+        <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-md bg-card">
+          {kind === "image" && previewUrl ? (
+            <img src={previewUrl} alt={file.name} className="h-full w-full object-cover" />
+          ) : kind === "video" ? (
+            <Film className="h-5 w-5 text-muted-foreground" />
+          ) : kind === "audio" ? (
+            <Music className="h-5 w-5 text-muted-foreground" />
+          ) : (
+            <FileText className="h-5 w-5 text-primary" />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-xs font-medium text-foreground">{file.name}</div>
+          <div className="text-[10px] text-muted-foreground">
+            {kind === "image" ? "Imagem" : kind === "video" ? "Vídeo" : kind === "audio" ? "Áudio" : "Documento"}
+            {" · "}
+            {(file.size / 1024).toFixed(0)} KB
+            {isUploading && <span className="ml-1 inline-flex items-center gap-0.5 text-primary">enviando <Loader2 className="h-2.5 w-2.5 animate-spin" /></span>}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onRemoveAttachment}
+          disabled={busy}
+          title="Remover anexo"
+          aria-label="Remover anexo"
+          className="shrink-0 grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground disabled:opacity-40"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    );
   };
 
   return (
@@ -109,6 +199,7 @@ export function DemandaComposer({
             </button>
           </div>
         )}
+        <AttachmentPreview />
         <textarea
           ref={textareaRef}
           rows={1}
@@ -127,26 +218,37 @@ export function DemandaComposer({
             }
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              if (comment.trim() && !isPending) onSend();
+              if (canSend) onSend();
             }
           }}
           placeholder={
             effectiveViaWhatsapp
-              ? "Escreva a resposta que será enviada ao cliente..."
+              ? attachment
+                ? "Legenda do anexo (opcional)..."
+                : "Escreva a resposta que será enviada ao cliente..."
               : "Comentário interno (não vai pro cliente)..."
           }
-          className="w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-sm placeholder:text-muted-foreground outline-none scrollbar-thin"
+          disabled={isUploading}
+          className="w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-sm placeholder:text-muted-foreground outline-none scrollbar-thin disabled:opacity-60"
         />
         <div className="flex items-center justify-between px-2 pb-2">
           <div className="flex items-center gap-0.5">
             <button
               type="button"
-              onClick={() => toast("Anexar arquivo chega em breve")}
-              title="Anexar arquivo (em breve)"
-              className={iconBtn}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy || !!attachment}
+              title={attachment ? "Remova o anexo atual antes de anexar outro" : "Anexar arquivo"}
+              className={iconBtn + (attachment || busy ? " opacity-40 cursor-not-allowed" : "")}
             >
               <Paperclip className="h-4 w-4" />
             </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={ACCEPT}
+              onChange={handleFileChange}
+              className="hidden"
+            />
             <EmojiPicker onPick={insertEmoji} triggerClass={iconBtn} />
             <button
               type="button"
@@ -154,20 +256,31 @@ export function DemandaComposer({
               title="Figurinha (em breve)"
               className={iconBtn}
             >
-              <Sticker className="h-4 w-4" />
+              {/* Placeholder futuro: enum do sendMedia hoje não suporta sticker. */}
+              <Paperclip className="h-4 w-4 rotate-45" />
             </button>
           </div>
           <button
             onClick={() => {
-              if (comment.trim() && !isPending) onSend();
+              if (canSend) onSend();
             }}
-            disabled={isPending || !comment.trim()}
-            title={effectiveViaWhatsapp ? "Enviar no WhatsApp" : "Salvar comentário interno"}
+            disabled={!canSend}
+            title={
+              busy
+                ? "Enviando..."
+                : effectiveViaWhatsapp
+                ? "Enviar no WhatsApp"
+                : "Salvar comentário interno"
+            }
             className={`grid place-items-center h-8 w-8 rounded-lg text-white transition disabled:opacity-40 ${
               effectiveViaWhatsapp ? "bg-[#25D366] hover:brightness-105" : "bg-primary hover:opacity-90"
             }`}
           >
-            <Send className="h-4 w-4" strokeWidth={2.3} />
+            {isUploading ? (
+              <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2.3} />
+            ) : (
+              <Send className="h-4 w-4" strokeWidth={2.3} />
+            )}
           </button>
         </div>
       </div>

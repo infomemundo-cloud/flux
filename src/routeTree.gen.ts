@@ -16,6 +16,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as SimularRouteImport } from './routes/simular'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as ConviteTokenRouteImport } from './routes/convite.$token'
+import { Route as ApiPublicSendMediaRouteImport } from './routes/api/public/send-media'
 import { Route as AuthenticatedAppOSlugRouteImport } from './routes/_authenticated/app.o.$slug'
 import { Route as ApiPublicIngestTokenRouteImport } from './routes/api/public/ingest.$token'
 import { Route as ApiPublicStatusTokenRouteImport } from './routes/api/public/status.$token'
@@ -58,6 +59,11 @@ const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
 const ConviteTokenRoute = ConviteTokenRouteImport.update({
   id: '/convite/$token',
   path: '/convite/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicSendMediaRoute = ApiPublicSendMediaRouteImport.update({
+  id: '/api/public/send-media',
+  path: '/api/public/send-media',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedAppOSlugRoute = AuthenticatedAppOSlugRouteImport.update({
@@ -119,6 +125,7 @@ export interface FileRoutesByFullPath {
   '/simular': typeof SimularRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/convite/$token': typeof ConviteTokenRoute
+  '/api/public/send-media': typeof ApiPublicSendMediaRoute
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
   '/api/public/status/$token': typeof ApiPublicStatusTokenRoute
@@ -136,6 +143,7 @@ export interface FileRoutesByTo {
   '/simular': typeof SimularRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/convite/$token': typeof ConviteTokenRoute
+  '/api/public/send-media': typeof ApiPublicSendMediaRoute
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
   '/api/public/status/$token': typeof ApiPublicStatusTokenRoute
@@ -155,6 +163,7 @@ export interface FileRoutesById {
   '/simular': typeof SimularRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
   '/convite/$token': typeof ConviteTokenRoute
+  '/api/public/send-media': typeof ApiPublicSendMediaRoute
   '/_authenticated/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
   '/api/public/status/$token': typeof ApiPublicStatusTokenRoute
@@ -174,6 +183,7 @@ export interface FileRouteTypes {
     | '/simular'
     | '/app'
     | '/convite/$token'
+    | '/api/public/send-media'
     | '/app/o/$slug'
     | '/api/public/ingest/$token'
     | '/api/public/status/$token'
@@ -191,6 +201,7 @@ export interface FileRouteTypes {
     | '/simular'
     | '/app'
     | '/convite/$token'
+    | '/api/public/send-media'
     | '/app/o/$slug'
     | '/api/public/ingest/$token'
     | '/api/public/status/$token'
@@ -209,6 +220,7 @@ export interface FileRouteTypes {
     | '/simular'
     | '/_authenticated/app'
     | '/convite/$token'
+    | '/api/public/send-media'
     | '/_authenticated/app/o/$slug'
     | '/api/public/ingest/$token'
     | '/api/public/status/$token'
@@ -227,6 +239,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   SimularRoute: typeof SimularRoute
   ConviteTokenRoute: typeof ConviteTokenRoute
+  ApiPublicSendMediaRoute: typeof ApiPublicSendMediaRoute
   ApiPublicIngestTokenRoute: typeof ApiPublicIngestTokenRoute
   ApiPublicStatusTokenRoute: typeof ApiPublicStatusTokenRoute
 }
@@ -280,6 +293,13 @@ declare module '@tanstack/react-router' {
       path: '/convite/$token'
       fullPath: '/convite/$token'
       preLoaderRoute: typeof ConviteTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/send-media': {
+      id: '/api/public/send-media'
+      path: '/api/public/send-media'
+      fullPath: '/api/public/send-media'
+      preLoaderRoute: typeof ApiPublicSendMediaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/app/o/$slug': {
@@ -414,6 +434,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   SimularRoute: SimularRoute,
   ConviteTokenRoute: ConviteTokenRoute,
+  ApiPublicSendMediaRoute: ApiPublicSendMediaRoute,
   ApiPublicIngestTokenRoute: ApiPublicIngestTokenRoute,
   ApiPublicStatusTokenRoute: ApiPublicStatusTokenRoute,
 }

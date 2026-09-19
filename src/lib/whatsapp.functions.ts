@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { assertMember, OP_ROLES } from "@/lib/demandas/demandas-guard";
 import { z } from "zod";
 
 const ADMIN_ROLES = ["owner", "admin"];
@@ -405,3 +406,151 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
     }
     return { ok: true, delivered, message: deliveryNote };
   });
+
+/**
+ * Envio de mídia pelo composer: recebe FormData do navegador (texto + arquivo
+ * + metadata), valida tamanho (3 MB conservador — teto do body da Vercel),
+ * envia pra Evolution via sendMedia, sobe pro Storage com o key.id real da
+ * Evolution, grava o evento message_out com media_url + legenda.
+ *
+ * Ordem importa: Evolution primeiro (gera o message_id), Storage depois
+ * (usa o id como parte do caminho). Se o Storage falhar mas a Evolution
+ * tiver aceito, grava o evento com metadata.media_failed — a mensagem
+ * chegou no cliente, o histórico mostra o fallback.
+ */
+export const sendMediaMessage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ request, context }) => {
+    const form = await request.formData();
+    const demandId = String(form.get("demandId") ?? "");
+    const orgId = String(form.get("orgId") ?? "");
+    const caption = String(form.get("caption") ?? "");
+    const role = String(form.get("role") ?? "agent");
+    const fileName = String(form.get("fileName") ?? "");
+    const mimeType = String(form.get("mimeType") ?? "");
+    const file = form.get("file");
+
+    if (!demandId || !orgId) throw new Error("Parâmetros obrigatórios ausentes.");
+    if (!(file instanceof File)) throw new Error("Arquivo obrigatório.");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: dem, error: demErr } = await supabaseAdmin
+      .from("demandas")
+      .select("id, org_id, whatsapp_jid, instance_name")
+      .eq("id", demandId)
+      .maybeSingle();
+    if (demErr) throw new Error(demErr.message);
+    if (!dem) throw new Error("Demanda não encontrada.");
+    if (dem.org_id !== orgId) throw new Error("Demanda não pertence a esta organização.");
+
+    await assertMember(context.supabase, orgId, context.userId);
+    if (!OP_ROLES.includes(role as (typeof OP_ROLES)[number])) throw new Error("Papel inválido.");
+
+    if (!dem.whatsapp_jid || !dem.instance_name) {
+      throw new Error("Esta demanda não tem WhatsApp conectado para envio de mídia.");
+    }
+
+    const { MAX_UPLOAD_BYTES, sendMediaViaEvolution, uploadMediaToStorage } = await import(
+      "@/lib/demandas/media-storage"
+    );
+    const buf = Buffer.from(new Uint8Array(await file.arrayBuffer()));
+    if (buf.byteLength === 0) throw new Error("Arquivo vazio.");
+    if (buf.byteLength > MAX_UPLOAD_BYTES) {
+      throw new Error(
+        `Arquivo excede o limite de envio (${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB).`,
+      );
+    }
+
+    const media = {
+      buffer: buf,
+      mimeType: mimeType || file.type || "application/octet-stream",
+      fileName: fileName || file.name || "arquivo",
+      width: null,
+      height: null,
+      bytes: buf.byteLength,
+    };
+
+    // 1) Envia pra Evolution PRIMEIRO (gera o key.id que vira message_id).
+    const send = await sendMediaViaEvolution({
+      orgId,
+      instance: dem.instance_name,
+      remoteJid: dem.whatsapp_jid,
+      buffer: media.buffer,
+      mimeType: media.mimeType,
+      fileName: media.fileName,
+      caption: caption.trim() || undefined,
+    });
+
+    if (!send.ok) {
+      console.error("[sendMedia] evolution rejected", {
+        demanda_id: demandId,
+        mime: media.mimeType,
+        reason: send.reason,
+      });
+      throw new Error(`Evolution rejeitou o envio: ${send.reason}`);
+    }
+
+    // 2) Upload pro Storage com o message_id real da Evolution.
+    // Falha aqui NÃO derruba o envio: grava evento com media_failed.
+    let mediaUrl: string | null = null;
+    let mediaFailed: string | null = null;
+    const up = await uploadMediaToStorage({
+      orgId,
+      demandaId: demandId,
+      messageId: send.result.messageId,
+      media,
+    });
+    if (up.ok) {
+      mediaUrl = up.path;
+    } else {
+      mediaFailed = up.reason;
+      console.error("[sendMedia] storage upload failed — evento gravado mesmo assim", {
+        demanda_id: demandId,
+        message_id: send.result.messageId,
+        reason: up.reason,
+      });
+    }
+
+    // 3) Grava evento message_out com mídia (ou fallback) + legenda como content.
+    const { error: evtErr } = await supabaseAdmin.from("demanda_events").insert({
+      org_id: orgId,
+      demanda_id: demandId,
+      kind: "message_out",
+      actor_id: context.userId,
+      content: caption.trim() || null,
+      media_url: mediaUrl,
+      media_type: media.mimeType,
+      file_name: media.fileName,
+      metadata: {
+        message_id: send.result.messageId,
+        whatsapp_jid: dem.whatsapp_jid,
+        instance_name: dem.instance_name,
+        media_kind: `${sendMediaTypeLabel(media.mimeType)}Message`,
+        media_failed: mediaFailed,
+        role,
+      },
+    });
+    if (evtErr) throw new Error(`Falha ao gravar evento: ${evtErr.message}`);
+
+    // 4) Atualiza last_message_id da demanda (igual ao ingest).
+    await supabaseAdmin
+      .from("demandas")
+      .update({ last_message_id: send.result.messageId } as never)
+      .eq("id", demandId);
+
+    return {
+      ok: true,
+      messageId: send.result.messageId,
+      mediaStored: mediaUrl !== null,
+      mediaFailedReason: mediaFailed,
+    };
+  });
+
+/** Rótulo pra metadata.media_kind (image/audio/video/document). */
+function sendMediaTypeLabel(mimeType: string): string {
+  const m = mimeType.toLowerCase();
+  if (m.startsWith("image/")) return "image";
+  if (m.startsWith("audio/")) return "audio";
+  if (m.startsWith("video/")) return "video";
+  return "document";
+}

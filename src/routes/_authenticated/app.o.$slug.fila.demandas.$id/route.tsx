@@ -12,7 +12,7 @@ import { useFilaSidebar } from "@/lib/demandas/fila-sidebar-context";
 import { resolveContactName } from "@/lib/demandas/resolve-contact-name";
 import { DemandaHeader } from "./-components/DemandaHeader";
 import { DemandaHistory, type ReplyTarget } from "./-components/DemandaHistory";
-import { DemandaComposer } from "./-components/DemandaComposer";
+import { DemandaComposer, type PendingAttachment } from "./-components/DemandaComposer";
 import { PropertiesRail } from "./-components/PropertiesRail";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/fila/demandas/$id")({
@@ -29,11 +29,6 @@ const ROLE_LABEL: Record<string, string> = {
   agente_ia: "Agente de IA",
 };
 
-/**
- * Route orquestradora: busca de dados, mutations e composição das quatro
- * áreas visuais (Header / History / Composer / Rail), que moram em
- * -components/. Nenhum JSX de detalhe visual vive aqui.
- */
 function DemandaDetail() {
   const { slug, id } = useParams({ from: "/_authenticated/app/o/$slug/fila/demandas/$id" });
   const navigate = useNavigate();
@@ -48,16 +43,14 @@ function DemandaDetail() {
   const [comment, setComment] = useState("");
   const [viaWhatsapp, setViaWhatsapp] = useState(true);
   const [railCollapsed, setRailCollapsed] = useState(false);
-  // Reply com citação (estilo WhatsApp): mensagem sendo respondida enquanto o
-  // composer está aberto. null = resposta normal. O snapshot completo é
-  // calculado pelo DemandaHistory (que tem author/content/metadata em mãos).
   const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
+  const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
   const { data: org } = useQuery({ queryKey: ["org", slug], queryFn: () => orgFn({ data: { slug } }) });
   const canDelete = org?.role === "owner" || org?.role === "admin";
   const isManager = !!org && MANAGER_ROLES.has(org.role);
-
   const opsFn = useServerFn(listOperators);
   const { data: operators } = useQuery({
     queryKey: ["operators", org?.id],
@@ -82,9 +75,28 @@ function DemandaDetail() {
   });
 
   const send = useMutation({
-    mutationFn: () => {
-      const goViaWhatsapp = viaWhatsapp && !!data?.demanda?.whatsapp_jid;
-      if (goViaWhatsapp) {
+    mutationFn: async () => {
+      const d = data?.demanda as any;
+      const goViaWhatsapp = viaWhatsapp && !!d?.whatsapp_jid;
+
+      // Caminho 1: comentário interno (sempre sem anexo — anexo só no WhatsApp).
+      if (!goViaWhatsapp) {
+        if (!comment.trim()) throw new Error("Escreva algo antes de enviar.");
+        return commentFn({
+          data: {
+            demandaId: id,
+            orgId: d.org_id,
+            content: comment,
+            quoted: replyTo
+              ? { event_id: replyTo.event_id, author: replyTo.author, content: replyTo.content, kind: replyTo.kind }
+              : undefined,
+          },
+        });
+      }
+
+      // Caminho 2: texto puro no WhatsApp (sem anexo).
+      if (!attachment) {
+        if (!comment.trim()) throw new Error("Escreva algo antes de enviar.");
         return waFn({
           data: {
             demandId: id,
@@ -104,31 +116,47 @@ function DemandaDetail() {
           },
         });
       }
-      return commentFn({
-        data: {
-          demandaId: id,
-          orgId: data!.demanda.org_id,
-          content: comment,
-          quoted: replyTo
-            ? {
-                event_id: replyTo.event_id,
-                author: replyTo.author,
-                content: replyTo.content,
-                kind: replyTo.kind,
-              }
-            : undefined,
-        },
-      });
+
+      // Caminho 3: WhatsApp COM anexo — monta FormData e chama sendMediaMessage.
+      // Legenda (caption) é o comment; citação nativa não é suportada no sendMedia.
+      const form = new FormData();
+      form.append("demandId", id);
+      form.append("orgId", d.org_id);
+      form.append("file", attachment.file);
+      form.append("fileName", attachment.file.name);
+      form.append("mimeType", attachment.file.type || "application/octet-stream");
+      form.append("caption", comment.trim());
+      form.append("role", "agent");
+
+      setIsUploading(true);
+      try {
+        const res = await fetch("/api/send-media", {
+          method: "POST",
+          body: form,
+        });
+        const body: any = await res.json().catch(() => null);
+        if (!res.ok || !body?.ok) {
+          throw new Error(body?.error ?? "Falha no envio do anexo.");
+        }
+        if (body.mediaFailedReason) {
+          toast.warning(`Mensagem enviada, mas o anexo não pôde ser armazenado (${body.mediaFailedReason})`);
+        }
+        return body;
+      } finally {
+        setIsUploading(false);
+      }
     },
     onSuccess: () => {
       setComment("");
       setReplyTo(null);
+      if (attachment?.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+      setAttachment(null);
       qc.invalidateQueries({ queryKey: ["demanda", id] });
-      // Sem toast de sucesso no WhatsApp: o toggle já mostra o canal escolhido
-      // e a mensagem entra no histórico na hora — toast só fazia ruído.
-      // Erros continuam com toast (onError abaixo).
     },
-    onError: (e) => toast.error(friendlyError(e)),
+    onError: (e) => {
+      toast.error(friendlyError(e));
+      // Anexo é MANTIDO no composer em caso de erro — a pessoa não perde o que selecionou.
+    },
   });
 
   const remove = useMutation({
@@ -142,7 +170,6 @@ function DemandaDetail() {
   });
 
   if (isLoading || !data) return <DetailSkeleton />;
-
   const d: any = data.demanda;
   const actors: Record<string, { id: string; name: string; email: string | null; role: string | null }> =
     (data as any).actors ?? {};
@@ -158,13 +185,29 @@ function DemandaDetail() {
     const r = actorOf(uid)?.role;
     return r ? (ROLE_LABEL[r] ?? r) : null;
   };
-
   const contactName = resolveContactName(d);
   const isGroupChat = !!d.whatsapp_jid?.endsWith("@g.us");
-
   const handleReply = (target: ReplyTarget) => {
     setReplyTo(target);
     composerRef.current?.focus();
+  };
+
+  const handleAttach = (file: File) => {
+    const kind =
+      file.type.startsWith("image/")
+        ? "image"
+        : file.type.startsWith("audio/")
+        ? "audio"
+        : file.type.startsWith("video/")
+        ? "video"
+        : "document";
+    const previewUrl = kind === "image" ? URL.createObjectURL(file) : null;
+    setAttachment({ file, previewUrl, kind });
+  };
+
+  const handleRemoveAttachment = () => {
+    if (attachment?.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+    setAttachment(null);
   };
 
   return (
@@ -181,7 +224,6 @@ function DemandaDetail() {
           railCollapsed={railCollapsed}
           onExpandRail={() => setRailCollapsed(false)}
         />
-
         <DemandaHistory
           demandaId={id}
           events={data.events}
@@ -195,7 +237,6 @@ function DemandaDetail() {
           onReply={handleReply}
           onRetryMedia={() => qc.invalidateQueries({ queryKey: ["demanda", id] })}
         />
-
         <DemandaComposer
           hasWhatsapp={!!d.whatsapp_jid}
           viaWhatsapp={viaWhatsapp}
@@ -205,11 +246,14 @@ function DemandaDetail() {
           replyTo={replyTo}
           onCancelReply={() => setReplyTo(null)}
           onSend={() => send.mutate()}
+          onAttach={handleAttach}
+          attachment={attachment}
+          onRemoveAttachment={handleRemoveAttachment}
           isPending={send.isPending}
+          isUploading={isUploading}
           textareaRef={composerRef}
         />
       </div>
-
       {!railCollapsed && (
         <PropertiesRail
           demanda={d}
