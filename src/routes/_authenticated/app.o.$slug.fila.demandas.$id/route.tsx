@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useRef, useState } from "react";
 import { getDemanda, updateDemanda, addComment, deleteDemanda } from "@/lib/demandas/demandas.functions";
-import { sendWhatsAppMessage } from "@/lib/whatsapp.functions";
+import { sendWhatsAppMessage, sendMediaMessage } from "@/lib/whatsapp.functions";
 import { getOrgBySlug, listOperators } from "@/lib/orgs.functions";
 import { toast } from "sonner";
 import { DetailSkeleton } from "@/components/skeletons";
@@ -29,6 +29,24 @@ const ROLE_LABEL: Record<string, string> = {
   agente_ia: "Agente de IA",
 };
 
+/** File → base64 puro (sem data URI) no navegador, em chunks seguros. */
+function toBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result ?? "");
+      resolve(result.split(",")[1] ?? "");
+    };
+    reader.onerror = () => reject(new Error("Não foi possível ler o arquivo."));
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Route orquestradora: busca de dados, mutations e composição das quatro
+ * áreas visuais (Header / History / Composer / Rail), que moram em
+ * -components/. Nenhum JSX de detalhe visual vive aqui.
+ */
 function DemandaDetail() {
   const { slug, id } = useParams({ from: "/_authenticated/app/o/$slug/fila/demandas/$id" });
   const navigate = useNavigate();
@@ -40,9 +58,13 @@ function DemandaDetail() {
   const orgFn = useServerFn(getOrgBySlug);
   const qc = useQueryClient();
   const waFn = useServerFn(sendWhatsAppMessage);
+  const mediaFn = useServerFn(sendMediaMessage);
   const [comment, setComment] = useState("");
   const [viaWhatsapp, setViaWhatsapp] = useState(true);
   const [railCollapsed, setRailCollapsed] = useState(false);
+  // Reply com citação (estilo WhatsApp): mensagem sendo respondida enquanto o
+  // composer está aberto. null = resposta normal. O snapshot completo é
+  // calculado pelo DemandaHistory (que tem author/content/metadata em mãos).
   const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
   const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -51,6 +73,7 @@ function DemandaDetail() {
   const { data: org } = useQuery({ queryKey: ["org", slug], queryFn: () => orgFn({ data: { slug } }) });
   const canDelete = org?.role === "owner" || org?.role === "admin";
   const isManager = !!org && MANAGER_ROLES.has(org.role);
+
   const opsFn = useServerFn(listOperators);
   const { data: operators } = useQuery({
     queryKey: ["operators", org?.id],
@@ -117,31 +140,32 @@ function DemandaDetail() {
         });
       }
 
-      // Caminho 3: WhatsApp COM anexo — monta FormData e chama sendMediaMessage.
-      // Legenda (caption) é o comment; citação nativa não é suportada no sendMedia.
-      const form = new FormData();
-      form.append("demandId", id);
-      form.append("orgId", d.org_id);
-      form.append("file", attachment.file);
-      form.append("fileName", attachment.file.name);
-      form.append("mimeType", attachment.file.type || "application/octet-stream");
-      form.append("caption", comment.trim());
-      form.append("role", "agent");
-
+      // Caminho 3: WhatsApp COM anexo.
+      // Chamada DIRETA da server function via useServerFn (navegador → endpoint
+      // serverFn com cookies): é o mesmo caminho de auth de todas as outras
+      // mutations do projeto. Chamada in-process a partir de rota NÃO carrega
+      // a sessão pro middleware requireSupabaseAuth (era o 401 "No authorization
+      // header provided"). O arquivo vai como base64 no input validado.
       setIsUploading(true);
       try {
-        const res = await fetch("/api/public/send-media", {
-          method: "POST",
-          body: form,
+        const fileBase64 = await toBase64(attachment.file);
+        const res = await mediaFn({
+          data: {
+            demandId: id,
+            orgId: d.org_id,
+            caption: comment.trim(),
+            role: "agent" as const,
+            fileName: attachment.file.name,
+            mimeType: attachment.file.type || "application/octet-stream",
+            fileBase64,
+          },
         });
-        const body: any = await res.json().catch(() => null);
-        if (!res.ok || !body?.ok) {
-          throw new Error(body?.error ?? "Falha no envio do anexo.");
+        if (res?.mediaFailedReason) {
+          toast.warning(
+            `Mensagem enviada, mas o anexo não pôde ser armazenado (${res.mediaFailedReason})`,
+          );
         }
-        if (body.mediaFailedReason) {
-          toast.warning(`Mensagem enviada, mas o anexo não pôde ser armazenado (${body.mediaFailedReason})`);
-        }
-        return body;
+        return res;
       } finally {
         setIsUploading(false);
       }
@@ -170,6 +194,7 @@ function DemandaDetail() {
   });
 
   if (isLoading || !data) return <DetailSkeleton />;
+
   const d: any = data.demanda;
   const actors: Record<string, { id: string; name: string; email: string | null; role: string | null }> =
     (data as any).actors ?? {};
@@ -185,22 +210,23 @@ function DemandaDetail() {
     const r = actorOf(uid)?.role;
     return r ? (ROLE_LABEL[r] ?? r) : null;
   };
+
   const contactName = resolveContactName(d);
   const isGroupChat = !!d.whatsapp_jid?.endsWith("@g.us");
+
   const handleReply = (target: ReplyTarget) => {
     setReplyTo(target);
     composerRef.current?.focus();
   };
 
   const handleAttach = (file: File) => {
-    const kind =
-      file.type.startsWith("image/")
-        ? "image"
-        : file.type.startsWith("audio/")
-        ? "audio"
-        : file.type.startsWith("video/")
-        ? "video"
-        : "document";
+    const kind = file.type.startsWith("image/")
+      ? "image"
+      : file.type.startsWith("audio/")
+      ? "audio"
+      : file.type.startsWith("video/")
+      ? "video"
+      : "document";
     const previewUrl = kind === "image" ? URL.createObjectURL(file) : null;
     setAttachment({ file, previewUrl, kind });
   };
@@ -224,6 +250,7 @@ function DemandaDetail() {
           railCollapsed={railCollapsed}
           onExpandRail={() => setRailCollapsed(false)}
         />
+
         <DemandaHistory
           demandaId={id}
           events={data.events}
@@ -237,6 +264,7 @@ function DemandaDetail() {
           onReply={handleReply}
           onRetryMedia={() => qc.invalidateQueries({ queryKey: ["demanda", id] })}
         />
+
         <DemandaComposer
           hasWhatsapp={!!d.whatsapp_jid}
           viaWhatsapp={viaWhatsapp}
@@ -254,6 +282,7 @@ function DemandaDetail() {
           textareaRef={composerRef}
         />
       </div>
+
       {!railCollapsed && (
         <PropertiesRail
           demanda={d}
