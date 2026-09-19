@@ -1,19 +1,29 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { assertMember, OP_ROLES } from "@/lib/demandas/demandas-guard";
+import { assertMember } from "@/lib/demandas/demandas-guard";
 import { z } from "zod";
 
 const ADMIN_ROLES = ["owner", "admin"];
 const OP_ROLES = ["owner", "admin", "gerente", "operador", "agente_ia"];
 
 async function roleOf(supabase: any, orgId: string, userId: string) {
-  const { data } = await supabase.from("memberships").select("role").eq("org_id", orgId).eq("user_id", userId).maybeSingle();
+  const { data } = await supabase
+    .from("memberships")
+    .select("role")
+    .eq("org_id", orgId)
+    .eq("user_id", userId)
+    .maybeSingle();
   if (!data) throw new Error("Sem acesso à organização");
   return data.role as string;
 }
 
-async function requireAdmin(supabase: any, orgId: string, userId: string, action = "gerenciar a integração") {
+async function requireAdmin(
+  supabase: any,
+  orgId: string,
+  userId: string,
+  action = "gerenciar a integração",
+) {
   const role = await roleOf(supabase, orgId, userId);
   if (!ADMIN_ROLES.includes(role)) throw new Error(`Apenas proprietários e administradores podem ${action}.`);
   return role;
@@ -54,7 +64,9 @@ export async function loadSettings(orgId: string): Promise<Settings | null> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data } = await supabaseAdmin
     .from("whatsapp_settings")
-    .select("base_url, api_key, instance_name, auto_reply_enabled, connection_status, connected_number, use_master_credentials")
+    .select(
+      "base_url, api_key, instance_name, auto_reply_enabled, connection_status, connected_number, use_master_credentials",
+    )
     .eq("org_id", orgId)
     .maybeSingle();
   return (data as Settings | null) ?? null;
@@ -96,7 +108,14 @@ async function ensureWebhookToken(orgId: string) {
   return token;
 }
 
-const WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "CONNECTION_UPDATE", "CONTACTS_UPDATE", "GROUPS_UPSERT", "GROUP_UPDATE", "GROUP_PARTICIPANTS_UPDATE"];
+const WEBHOOK_EVENTS = [
+  "MESSAGES_UPSERT",
+  "CONNECTION_UPDATE",
+  "CONTACTS_UPDATE",
+  "GROUPS_UPSERT",
+  "GROUP_UPDATE",
+  "GROUP_PARTICIPANTS_UPDATE",
+];
 
 async function evo(baseUrl: string, key: string, path: string, init?: RequestInit) {
   const res = await fetch(`${baseUrl}${path}`, {
@@ -105,7 +124,11 @@ async function evo(baseUrl: string, key: string, path: string, init?: RequestIni
   });
   const raw = await res.text();
   let body: any = null;
-  try { body = raw ? JSON.parse(raw) : null; } catch { /* resposta sem JSON */ }
+  try {
+    body = raw ? JSON.parse(raw) : null;
+  } catch {
+    /* resposta sem JSON */
+  }
   return { ok: res.ok, status: res.status, body, raw };
 }
 
@@ -113,7 +136,10 @@ function pickQr(body: any): { base64: string | null; code: string | null } {
   const b = body?.qrcode ?? body?.qr ?? body ?? {};
   const base64: string | null = b?.base64 ?? body?.base64 ?? null;
   const code: string | null = b?.code ?? b?.pairingCode ?? body?.code ?? null;
-  return { base64: base64 ? (base64.startsWith("data:") ? base64 : `data:image/png;base64,${base64}`) : null, code };
+  return {
+    base64: base64 ? (base64.startsWith("data:") ? base64 : `data:image/png;base64,${base64}`) : null,
+    code,
+  };
 }
 
 function mapState(state: string | null | undefined): "disconnected" | "connecting" | "connected" {
@@ -133,7 +159,9 @@ async function readState(baseUrl: string, key: string, instance: string) {
 async function setWebhook(baseUrl: string, key: string, instance: string, url: string) {
   const nested = await evo(baseUrl, key, `/webhook/set/${encodeURIComponent(instance)}`, {
     method: "POST",
-    body: JSON.stringify({ webhook: { enabled: true, url, webhookByEvents: false, webhookBase64: false, events: WEBHOOK_EVENTS } }),
+    body: JSON.stringify({
+      webhook: { enabled: true, url, webhookByEvents: false, webhookBase64: false, events: WEBHOOK_EVENTS },
+    }),
   });
   if (nested.ok) return true;
   const flat = await evo(baseUrl, key, `/webhook/set/${encodeURIComponent(instance)}`, {
@@ -235,7 +263,11 @@ export const connectWhatsapp = createServerFn({ method: "POST" })
       qr = pickQr(conn.body);
     }
     await setWebhook(creds.baseUrl, creds.key, instance, webhookUrl);
-    await saveSettings(data.orgId, { instance_name: instance, connection_status: "connecting", connected_number: null });
+    await saveSettings(data.orgId, {
+      instance_name: instance,
+      connection_status: "connecting",
+      connected_number: null,
+    });
     return {
       status: "connecting" as const,
       qr: qr.base64,
@@ -247,7 +279,9 @@ export const connectWhatsapp = createServerFn({ method: "POST" })
 /** Encerra a sessão e remove a instância desta organização. */
 export const disconnectWhatsapp = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ orgId: z.string().uuid(), deleteInstance: z.boolean().default(true) }).parse(d))
+  .inputValidator((d: unknown) =>
+    z.object({ orgId: z.string().uuid(), deleteInstance: z.boolean().default(true) }).parse(d),
+  )
   .handler(async ({ data, context }) => {
     await requireAdmin(context.supabase, data.orgId, context.userId, "desconectar o WhatsApp");
     const cfg = await loadSettings(data.orgId);
@@ -291,10 +325,6 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
           .min(1, { message: "Escreva a mensagem antes de enviar." })
           .max(4000, { message: "A mensagem pode ter no máximo 4000 caracteres." }),
         role: z.enum(["agent", "system"]).default("agent"),
-        // Citação ("responder mensagem específica", estilo WhatsApp):
-        //  - campos de exibição (author/content/kind/event_id) → metadata do evento;
-        //  - campos nativos (message_id/from_me/participant) → payload `quoted`
-        //    do sendText da Evolution, pra citação aparecer também no app do cliente.
         quoted: z
           .object({
             event_id: z.string().uuid().optional(),
@@ -326,38 +356,35 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
     if (dem.channel_type === "evolution") {
       const cfg = await loadSettings(dem.org_id);
       const creds = effectiveCreds(cfg);
-      // A instância é sempre a da organização da demanda — isolamento entre clientes.
       const instance = cfg?.instance_name || dem.instance_name || instanceNameFor(dem.org_id);
       if (!creds) throw new Error("Conecte o WhatsApp nas configurações antes de enviar mensagens.");
       try {
         const sendPath = `/message/sendText/${encodeURIComponent(instance)}`;
         const plainBody = { number: dem.whatsapp_jid, text: data.messageText };
-        // Citação nativa (Baileys/Evolution): key da mensagem original + corpo.
-        // Sem message_id não há o que citar no WhatsApp — só a citação interna.
-        const quotedBody =
-          data.quoted?.message_id
-            ? {
-                ...plainBody,
-                quoted: {
-                  key: {
-                    remoteJid: dem.whatsapp_jid,
-                    fromMe: data.quoted.from_me ?? false,
-                    id: data.quoted.message_id,
-                    ...(data.quoted.participant ? { participant: data.quoted.participant } : {}),
-                  },
-                  message: { conversation: data.quoted.content },
+        const quotedBody = data.quoted?.message_id
+          ? {
+              ...plainBody,
+              quoted: {
+                key: {
+                  remoteJid: dem.whatsapp_jid,
+                  fromMe: data.quoted.from_me ?? false,
+                  id: data.quoted.message_id,
+                  ...(data.quoted.participant ? { participant: data.quoted.participant } : {}),
                 },
-              }
-            : null;
+                message: { conversation: data.quoted.content },
+              },
+            }
+          : null;
         let res = await evo(creds.baseUrl, creds.key, sendPath, {
           method: "POST",
           body: JSON.stringify(quotedBody ?? plainBody),
         });
         if (!res.ok && quotedBody) {
-          // A Evolution recusou a citação (mensagem muito antiga, grupo sem JID
-          // do autor, formato inesperado...). NUNCA deixamos a resposta falhar
-          // por causa disso: reenvia sem citação e registra o aviso no log.
-          console.error("[whatsapp] quoted send rejected, retrying plain", res.status, res.raw.slice(0, 300));
+          console.error(
+            "[whatsapp] quoted send rejected, retrying plain",
+            res.status,
+            res.raw.slice(0, 300),
+          );
           res = await evo(creds.baseUrl, creds.key, sendPath, {
             method: "POST",
             body: JSON.stringify(plainBody),
@@ -387,7 +414,6 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
         delivered,
         channel_type: dem.channel_type,
         message_id: messageId,
-        // Citação de exibição no histórico (snapshot da mensagem respondida).
         ...(data.quoted
           ? {
               quoted: {
@@ -402,16 +428,19 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
     });
     if (evErr) throw new Error(evErr.message);
     if (messageId) {
-      await context.supabase.from("demandas").update({ last_message_id: messageId } as never).eq("id", dem.id);
+      await context.supabase
+        .from("demandas")
+        .update({ last_message_id: messageId } as never)
+        .eq("id", dem.id);
     }
     return { ok: true, delivered, message: deliveryNote };
   });
 
 /**
- * Envio de mídia pelo composer: recebe FormData do navegador (texto + arquivo
- * + metadata), valida tamanho (3 MB conservador — teto do body da Vercel),
- * envia pra Evolution via sendMedia, sobe pro Storage com o key.id real da
- * Evolution, grava o evento message_out com media_url + legenda.
+ * Envio de mídia pelo composer: recebe parâmetros estruturados (dados do arquivo
+ * em base64 + metadata), valida tamanho (3 MB conservador), envia pra Evolution
+ * via sendMedia, sobe pro Storage com o key.id real da Evolution, grava o evento
+ * message_out com media_url + legenda.
  *
  * Ordem importa: Evolution primeiro (gera o message_id), Storage depois
  * (usa o id como parte do caminho). Se o Storage falhar mas a Evolution
@@ -420,32 +449,31 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
  */
 export const sendMediaMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ request, context }) => {
-    const form = await request.formData();
-    const demandId = String(form.get("demandId") ?? "");
-    const orgId = String(form.get("orgId") ?? "");
-    const caption = String(form.get("caption") ?? "");
-    const role = String(form.get("role") ?? "agent");
-    const fileName = String(form.get("fileName") ?? "");
-    const mimeType = String(form.get("mimeType") ?? "");
-    const file = form.get("file");
-
-    if (!demandId || !orgId) throw new Error("Parâmetros obrigatórios ausentes.");
-    if (!(file instanceof File)) throw new Error("Arquivo obrigatório.");
-
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        demandId: z.string().uuid(),
+        orgId: z.string().uuid(),
+        caption: z.string().max(4000).default(""),
+        role: z.enum(["agent", "system"]).default("agent"),
+        fileName: z.string().max(300),
+        mimeType: z.string().max(120),
+        fileBase64: z.string().min(1),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: dem, error: demErr } = await supabaseAdmin
       .from("demandas")
       .select("id, org_id, whatsapp_jid, instance_name")
-      .eq("id", demandId)
+      .eq("id", data.demandId)
       .maybeSingle();
     if (demErr) throw new Error(demErr.message);
     if (!dem) throw new Error("Demanda não encontrada.");
-    if (dem.org_id !== orgId) throw new Error("Demanda não pertence a esta organização.");
-
-    await assertMember(context.supabase, orgId, context.userId);
-    if (!OP_ROLES.includes(role as (typeof OP_ROLES)[number])) throw new Error("Papel inválido.");
-
+    if (dem.org_id !== data.orgId) throw new Error("Demanda não pertence a esta organização.");
+    await assertMember(context.supabase, data.orgId, context.userId);
+    if (!OP_ROLES.includes(data.role)) throw new Error("Papel inválido.");
     if (!dem.whatsapp_jid || !dem.instance_name) {
       throw new Error("Esta demanda não tem WhatsApp conectado para envio de mídia.");
     }
@@ -453,7 +481,7 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
     const { MAX_UPLOAD_BYTES, sendMediaViaEvolution, uploadMediaToStorage } = await import(
       "@/lib/demandas/media-storage"
     );
-    const buf = Buffer.from(new Uint8Array(await file.arrayBuffer()));
+    const buf = Buffer.from(data.fileBase64, "base64");
     if (buf.byteLength === 0) throw new Error("Arquivo vazio.");
     if (buf.byteLength > MAX_UPLOAD_BYTES) {
       throw new Error(
@@ -463,8 +491,8 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
 
     const media = {
       buffer: buf,
-      mimeType: mimeType || file.type || "application/octet-stream",
-      fileName: fileName || file.name || "arquivo",
+      mimeType: data.mimeType,
+      fileName: data.fileName,
       width: null,
       height: null,
       bytes: buf.byteLength,
@@ -472,18 +500,18 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
 
     // 1) Envia pra Evolution PRIMEIRO (gera o key.id que vira message_id).
     const send = await sendMediaViaEvolution({
-      orgId,
+      orgId: data.orgId,
       instance: dem.instance_name,
       remoteJid: dem.whatsapp_jid,
       buffer: media.buffer,
       mimeType: media.mimeType,
       fileName: media.fileName,
-      caption: caption.trim() || undefined,
+      caption: data.caption.trim() || undefined,
     });
 
     if (!send.ok) {
       console.error("[sendMedia] evolution rejected", {
-        demanda_id: demandId,
+        demanda_id: data.demandId,
         mime: media.mimeType,
         reason: send.reason,
       });
@@ -491,12 +519,11 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
     }
 
     // 2) Upload pro Storage com o message_id real da Evolution.
-    // Falha aqui NÃO derruba o envio: grava evento com media_failed.
     let mediaUrl: string | null = null;
     let mediaFailed: string | null = null;
     const up = await uploadMediaToStorage({
-      orgId,
-      demandaId: demandId,
+      orgId: data.orgId,
+      demandaId: data.demandId,
       messageId: send.result.messageId,
       media,
     });
@@ -505,7 +532,7 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
     } else {
       mediaFailed = up.reason;
       console.error("[sendMedia] storage upload failed — evento gravado mesmo assim", {
-        demanda_id: demandId,
+        demanda_id: data.demandId,
         message_id: send.result.messageId,
         reason: up.reason,
       });
@@ -513,11 +540,11 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
 
     // 3) Grava evento message_out com mídia (ou fallback) + legenda como content.
     const { error: evtErr } = await supabaseAdmin.from("demanda_events").insert({
-      org_id: orgId,
-      demanda_id: demandId,
+      org_id: data.orgId,
+      demanda_id: data.demandId,
       kind: "message_out",
       actor_id: context.userId,
-      content: caption.trim() || null,
+      content: data.caption.trim() || null,
       media_url: mediaUrl,
       media_type: media.mimeType,
       file_name: media.fileName,
@@ -527,16 +554,16 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
         instance_name: dem.instance_name,
         media_kind: `${sendMediaTypeLabel(media.mimeType)}Message`,
         media_failed: mediaFailed,
-        role,
+        role: data.role,
       },
     });
     if (evtErr) throw new Error(`Falha ao gravar evento: ${evtErr.message}`);
 
-    // 4) Atualiza last_message_id da demanda (igual ao ingest).
+    // 4) Atualiza last_message_id da demanda.
     await supabaseAdmin
       .from("demandas")
       .update({ last_message_id: send.result.messageId } as never)
-      .eq("id", demandId);
+      .eq("id", data.demandId);
 
     return {
       ok: true,
