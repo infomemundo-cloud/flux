@@ -325,6 +325,10 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
           .min(1, { message: "Escreva a mensagem antes de enviar." })
           .max(4000, { message: "A mensagem pode ter no máximo 4000 caracteres." }),
         role: z.enum(["agent", "system"]).default("agent"),
+        // Citação ("responder mensagem específica", estilo WhatsApp):
+        //  - campos de exibição (author/content/kind/event_id) → metadata do evento;
+        //  - campos nativos (message_id/from_me/participant) → payload `quoted`
+        //    do sendText da Evolution, pra citação aparecer também no app do cliente.
         quoted: z
           .object({
             event_id: z.string().uuid().optional(),
@@ -356,11 +360,14 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
     if (dem.channel_type === "evolution") {
       const cfg = await loadSettings(dem.org_id);
       const creds = effectiveCreds(cfg);
+      // A instância é sempre a da organização da demanda — isolamento entre clientes.
       const instance = cfg?.instance_name || dem.instance_name || instanceNameFor(dem.org_id);
       if (!creds) throw new Error("Conecte o WhatsApp nas configurações antes de enviar mensagens.");
       try {
         const sendPath = `/message/sendText/${encodeURIComponent(instance)}`;
         const plainBody = { number: dem.whatsapp_jid, text: data.messageText };
+        // Citação nativa (Baileys/Evolution): key da mensagem original + corpo.
+        // Sem message_id não há o que citar no WhatsApp — só a citação interna.
         const quotedBody = data.quoted?.message_id
           ? {
               ...plainBody,
@@ -380,11 +387,10 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
           body: JSON.stringify(quotedBody ?? plainBody),
         });
         if (!res.ok && quotedBody) {
-          console.error(
-            "[whatsapp] quoted send rejected, retrying plain",
-            res.status,
-            res.raw.slice(0, 300),
-          );
+          // A Evolution recusou a citação (mensagem muito antiga, grupo sem JID
+          // do autor, formato inesperado...). NUNCA deixamos a resposta falhar
+          // por causa disso: reenvia sem citação e registra o aviso no log.
+          console.error("[whatsapp] quoted send rejected, retrying plain", res.status, res.raw.slice(0, 300));
           res = await evo(creds.baseUrl, creds.key, sendPath, {
             method: "POST",
             body: JSON.stringify(plainBody),
@@ -414,6 +420,7 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
         delivered,
         channel_type: dem.channel_type,
         message_id: messageId,
+        // Citação de exibição no histórico (snapshot da mensagem respondida).
         ...(data.quoted
           ? {
               quoted: {
@@ -437,10 +444,10 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
   });
 
 /**
- * Envio de mídia pelo composer: recebe parâmetros estruturados (dados do arquivo
- * em base64 + metadata), valida tamanho (3 MB conservador), envia pra Evolution
- * via sendMedia, sobe pro Storage com o key.id real da Evolution, grava o evento
- * message_out com media_url + legenda.
+ * Envio de mídia pelo composer: recebe base64 + metadata via inputValidator,
+ * valida tamanho (3 MB conservador — teto do body da Vercel), envia pra
+ * Evolution via sendMedia, sobe pro Storage com o key.id real da Evolution,
+ * grava o evento message_out com media_url + legenda.
  *
  * Ordem importa: Evolution primeiro (gera o message_id), Storage depois
  * (usa o id como parte do caminho). Se o Storage falhar mas a Evolution
@@ -455,6 +462,8 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
         demandId: z.string().uuid(),
         orgId: z.string().uuid(),
         caption: z.string().max(4000).default(""),
+        // Papel da MENSAGEM (agent/system) — igual ao sendWhatsAppMessage.
+        // NÃO é o papel do membro: a permissão é checada abaixo via assertMember.
         role: z.enum(["agent", "system"]).default("agent"),
         fileName: z.string().max(300),
         mimeType: z.string().max(120),
@@ -472,8 +481,14 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
     if (demErr) throw new Error(demErr.message);
     if (!dem) throw new Error("Demanda não encontrada.");
     if (dem.org_id !== data.orgId) throw new Error("Demanda não pertence a esta organização.");
-    await assertMember(context.supabase, data.orgId, context.userId);
-    if (!OP_ROLES.includes(data.role)) throw new Error("Papel inválido.");
+
+    // Permissão = papel de MEMBRO (owner/admin/gerente/operador/agente_ia),
+    // não o papel da mensagem. Comparar data.role ("agent") contra OP_ROLES
+    // falhava sempre → "Papel inválido".
+    const memberRole = await assertMember(context.supabase, data.orgId, context.userId);
+    if (!OP_ROLES.includes(memberRole as (typeof OP_ROLES)[number])) {
+      throw new Error("Você não tem permissão para enviar mídia nesta demanda.");
+    }
     if (!dem.whatsapp_jid || !dem.instance_name) {
       throw new Error("Esta demanda não tem WhatsApp conectado para envio de mídia.");
     }
@@ -519,6 +534,7 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
     }
 
     // 2) Upload pro Storage com o message_id real da Evolution.
+    // Falha aqui NÃO derruba o envio: grava evento com media_failed.
     let mediaUrl: string | null = null;
     let mediaFailed: string | null = null;
     const up = await uploadMediaToStorage({
@@ -546,8 +562,8 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
       actor_id: context.userId,
       content: data.caption.trim() || null,
       media_url: mediaUrl,
-      media_type: media.mimeType,
-      file_name: media.fileName,
+      media_type: data.mimeType,
+      file_name: data.fileName,
       metadata: {
         message_id: send.result.messageId,
         whatsapp_jid: dem.whatsapp_jid,
@@ -559,7 +575,7 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
     });
     if (evtErr) throw new Error(`Falha ao gravar evento: ${evtErr.message}`);
 
-    // 4) Atualiza last_message_id da demanda.
+    // 4) Atualiza last_message_id da demanda (igual ao ingest).
     await supabaseAdmin
       .from("demandas")
       .update({ last_message_id: send.result.messageId } as never)
