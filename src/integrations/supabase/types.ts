@@ -252,7 +252,9 @@ export type Database = {
           due_at: string | null
           id: string
           instance_name: string | null
+          last_message_at: string | null
           last_message_id: string | null
+          last_message_preview: string | null
           org_id: string
           priority: Database["public"]["Enums"]["demanda_priority"]
           protocol: string | null
@@ -275,7 +277,9 @@ export type Database = {
           due_at?: string | null
           id?: string
           instance_name?: string | null
+          last_message_at?: string | null
           last_message_id?: string | null
+          last_message_preview?: string | null
           org_id: string
           priority?: Database["public"]["Enums"]["demanda_priority"]
           protocol?: string | null
@@ -298,7 +302,9 @@ export type Database = {
           due_at?: string | null
           id?: string
           instance_name?: string | null
+          last_message_at?: string | null
           last_message_id?: string | null
+          last_message_preview?: string | null
           org_id?: string
           priority?: Database["public"]["Enums"]["demanda_priority"]
           protocol?: string | null

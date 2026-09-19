@@ -325,10 +325,6 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
           .min(1, { message: "Escreva a mensagem antes de enviar." })
           .max(4000, { message: "A mensagem pode ter no máximo 4000 caracteres." }),
         role: z.enum(["agent", "system"]).default("agent"),
-        // Citação ("responder mensagem específica", estilo WhatsApp):
-        //  - campos de exibição (author/content/kind/event_id) → metadata do evento;
-        //  - campos nativos (message_id/from_me/participant) → payload `quoted`
-        //    do sendText da Evolution, pra citação aparecer também no app do cliente.
         quoted: z
           .object({
             event_id: z.string().uuid().optional(),
@@ -360,14 +356,11 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
     if (dem.channel_type === "evolution") {
       const cfg = await loadSettings(dem.org_id);
       const creds = effectiveCreds(cfg);
-      // A instância é sempre a da organização da demanda — isolamento entre clientes.
       const instance = cfg?.instance_name || dem.instance_name || instanceNameFor(dem.org_id);
       if (!creds) throw new Error("Conecte o WhatsApp nas configurações antes de enviar mensagens.");
       try {
         const sendPath = `/message/sendText/${encodeURIComponent(instance)}`;
         const plainBody = { number: dem.whatsapp_jid, text: data.messageText };
-        // Citação nativa (Baileys/Evolution): key da mensagem original + corpo.
-        // Sem message_id não há o que citar no WhatsApp — só a citação interna.
         const quotedBody = data.quoted?.message_id
           ? {
               ...plainBody,
@@ -387,9 +380,6 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
           body: JSON.stringify(quotedBody ?? plainBody),
         });
         if (!res.ok && quotedBody) {
-          // A Evolution recusou a citação (mensagem muito antiga, grupo sem JID
-          // do autor, formato inesperado...). NUNCA deixamos a resposta falhar
-          // por causa disso: reenvia sem citação e registra o aviso no log.
           console.error("[whatsapp] quoted send rejected, retrying plain", res.status, res.raw.slice(0, 300));
           res = await evo(creds.baseUrl, creds.key, sendPath, {
             method: "POST",
@@ -420,7 +410,6 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
         delivered,
         channel_type: dem.channel_type,
         message_id: messageId,
-        // Citação de exibição no histórico (snapshot da mensagem respondida).
         ...(data.quoted
           ? {
               quoted: {
@@ -434,12 +423,17 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
       },
     });
     if (evErr) throw new Error(evErr.message);
-    if (messageId) {
-      await context.supabase
-        .from("demandas")
-        .update({ last_message_id: messageId } as never)
-        .eq("id", dem.id);
-    }
+    // Preview da fila: última mensagem da conversa + carimbo de tempo.
+    const now = new Date().toISOString();
+    await context.supabase
+      .from("demandas")
+      .update({
+        ...(messageId ? { last_message_id: messageId } : {}),
+        last_message_preview: data.messageText.slice(0, 200),
+        last_message_at: now,
+        updated_at: now,
+      } as never)
+      .eq("id", dem.id);
     return { ok: true, delivered, message: deliveryNote };
   });
 
@@ -462,8 +456,6 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
         demandId: z.string().uuid(),
         orgId: z.string().uuid(),
         caption: z.string().max(4000).default(""),
-        // Papel da MENSAGEM (agent/system) — igual ao sendWhatsAppMessage.
-        // NÃO é o papel do membro: a permissão é checada abaixo via assertMember.
         role: z.enum(["agent", "system"]).default("agent"),
         fileName: z.string().max(300),
         mimeType: z.string().max(120),
@@ -481,10 +473,6 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
     if (demErr) throw new Error(demErr.message);
     if (!dem) throw new Error("Demanda não encontrada.");
     if (dem.org_id !== data.orgId) throw new Error("Demanda não pertence a esta organização.");
-
-    // Permissão = papel de MEMBRO (owner/admin/gerente/operador/agente_ia),
-    // não o papel da mensagem. Comparar data.role ("agent") contra OP_ROLES
-    // falhava sempre → "Papel inválido".
     const memberRole = await assertMember(context.supabase, data.orgId, context.userId);
     if (!OP_ROLES.includes(memberRole as (typeof OP_ROLES)[number])) {
       throw new Error("Você não tem permissão para enviar mídia nesta demanda.");
@@ -568,17 +556,26 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
         message_id: send.result.messageId,
         whatsapp_jid: dem.whatsapp_jid,
         instance_name: dem.instance_name,
-        media_kind: `${sendMediaTypeLabel(media.mimeType)}Message`,
+        media_kind: `${sendMediaTypeLabel(data.mimeType)}Message`,
         media_failed: mediaFailed,
         role: data.role,
       },
     });
     if (evtErr) throw new Error(`Falha ao gravar evento: ${evtErr.message}`);
 
-    // 4) Atualiza last_message_id da demanda (igual ao ingest).
+    // 4) Preview da fila: legenda se houver, senão rótulo de mídia.
+    const now = new Date().toISOString();
+    const preview = data.caption.trim()
+      ? data.caption.trim().slice(0, 200)
+      : mediaPreviewLabel(data.mimeType);
     await supabaseAdmin
       .from("demandas")
-      .update({ last_message_id: send.result.messageId } as never)
+      .update({
+        last_message_id: send.result.messageId,
+        last_message_preview: preview,
+        last_message_at: now,
+        updated_at: now,
+      } as never)
       .eq("id", data.demandId);
 
     return {
@@ -596,4 +593,13 @@ function sendMediaTypeLabel(mimeType: string): string {
   if (m.startsWith("audio/")) return "audio";
   if (m.startsWith("video/")) return "video";
   return "document";
+}
+
+/** Preview da fila quando a mídia enviada não tem legenda. */
+function mediaPreviewLabel(mimeType: string): string {
+  const m = mimeType.toLowerCase();
+  if (m.startsWith("image/")) return "[Imagem]";
+  if (m.startsWith("audio/")) return "[Áudio]";
+  if (m.startsWith("video/")) return "[Vídeo]";
+  return "[Documento]";
 }

@@ -1,11 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import {
-  fetchMediaFromEvolution,
-  uploadMediaToStorage,
-  uploadThumbToStorage,
-  bufferFromByteMap,
-} from "@/lib/demandas/media-storage";
+import { fetchMediaFromEvolution, uploadMediaToStorage, uploadThumbToStorage, bufferFromByteMap } from "@/lib/demandas/media-storage";
 
 const Body = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -42,6 +37,15 @@ const MEDIA_LABEL: Record<MediaKind, string> = {
   videoMessage: "Vídeo recebido",
   documentMessage: "Documento recebido",
   stickerMessage: "Figurinha recebida",
+};
+
+/** Preview da fila quando a mensagem é só mídia (sem legenda). */
+const PREVIEW_LABEL: Record<MediaKind, string> = {
+  imageMessage: "[Imagem]",
+  audioMessage: "[Áudio]",
+  videoMessage: "[Vídeo]",
+  documentMessage: "[Documento]",
+  stickerMessage: "[Figurinha]",
 };
 
 type Normalized = z.infer<typeof Body> & {
@@ -84,12 +88,6 @@ const ContactsUpdatePayload = z.object({
   ]),
 });
 
-/**
- * Shape leniente de uma mensagem de mídia. Só lemos metadados leves
- * (mime/caption/nome/tamanho/duração/thumbnail) — os bytes reais vêm depois
- * via getBase64FromMediaMessage. Campos binários pesados (mediaKey, sha256...)
- * são ignorados aqui e redigidos no log.
- */
 const MediaMessageSchema = z.object({
   mimetype: z.string().max(120).nullish(),
   caption: z.string().max(4000).nullish(),
@@ -135,9 +133,8 @@ function looksLikeEvolution(payload: any): boolean {
 }
 
 /**
- * Redator de payload pro log CRU: campos binários da Evolution (thumbnail,
- * chaves, hashes) viram placeholder. Sem isso, cada webhook de mídia despeja
- * centenas de linhas de bytes no log do Railway.
+ * Redator de payload pro log CRU: campos binários da Evolution viram
+ * placeholder — sem spam de kilobytes por webhook de mídia.
  */
 const BINARY_LOG_FIELDS = new Set([
   "jpegThumbnail",
@@ -195,7 +192,6 @@ async function handleContactsUpdate(
   for (const item of items) {
     const hasPhoto = typeof item.profilePicUrl === "string" || item.profilePicUrl === null;
     const hasName = typeof item.pushName === "string" && item.pushName.trim().length > 0;
-    // Se não houver nada relevante para atualizar, ignora
     if (!hasPhoto && !hasName) continue;
 
     const { data: found, error: findErr } = await (
@@ -214,9 +210,7 @@ async function handleContactsUpdate(
       });
       continue;
     }
-    if (!found) {
-      continue;
-    }
+    if (!found) continue;
 
     const patch: Record<string, any> = {};
     if (hasPhoto) {
@@ -264,7 +258,6 @@ function normalize(payload: unknown):
       return { ok: false, status: 200, body: { ok: true, ignored: "from_me" } };
     }
     const text = d.message?.conversation ?? d.message?.extendedTextMessage?.text ?? "";
-    // Detecta mídia: primeiro tipo presente em `message` vence.
     const mediaFound = MEDIA_KINDS.map((kind) => ({ kind, msg: d.message?.[kind] })).find(
       (x) => x.msg,
     );
@@ -282,13 +275,8 @@ function normalize(payload: unknown):
     return {
       ok: true,
       value: {
-        // Texto exibido = texto puro ou legenda da mídia (vazio se não houver).
         message: (text.trim() ? text : caption ?? "").slice(0, 4000),
-        contact: {
-          name: contactName,
-          phone,
-          external_id: jid,
-        },
+        contact: { name: contactName, phone, external_id: jid },
         channel_kind: "whatsapp",
         channel_type: "evolution",
         whatsapp_jid: jid,
@@ -313,11 +301,7 @@ function normalize(payload: unknown):
   }
   const parsed = Body.safeParse(payload);
   if (!parsed.success) {
-    return {
-      ok: false,
-      status: 400,
-      body: { error: "invalid_body", issues: parsed.error.flatten() },
-    };
+    return { ok: false, status: 400, body: { error: "invalid_body", issues: parsed.error.flatten() } };
   }
   return { ok: true, value: { ...parsed.data, channel_type: "simulation" } };
 }
@@ -326,6 +310,14 @@ function mediaTitleFor(b: Normalized): string {
   if (!b.media) return "Mensagem recebida";
   if (b.media.kind === "documentMessage" && b.media.fileName) return b.media.fileName.slice(0, 80);
   return MEDIA_LABEL[b.media.kind];
+}
+
+/** Texto do preview da fila: legenda/texto ou rótulo de mídia; null se nada. */
+function previewFor(b: Normalized): string | null {
+  const t = b.message.trim();
+  if (t) return t.slice(0, 200);
+  if (b.media) return PREVIEW_LABEL[b.media.kind];
+  return null;
 }
 
 export const Route = createFileRoute("/api/public/ingest/$token")({
@@ -364,10 +356,10 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           } else {
             console.error("[ingest] contacts.update inválido", parsed.error.flatten());
           }
-          return new Response(
-            JSON.stringify({ ok: true, event: "contacts.update" }),
-            { status: 200, headers: { "content-type": "application/json" } },
-          );
+          return new Response(JSON.stringify({ ok: true, event: "contacts.update" }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
         }
 
         const norm = normalize(payload);
@@ -423,8 +415,6 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             contactId = found.id;
             const incomingNameIsGeneric = !b.contact.name || b.contact.name === "Contato WhatsApp";
             const savedNameIsGeneric = !found.name || found.name === "Contato WhatsApp";
-            // Só atualiza se o nome recebido for válido e diferente do cadastrado,
-            // ou se o cadastrado for genérico e o recebido não for.
             if (
               b.contact.name &&
               b.contact.name !== found.name &&
@@ -482,6 +472,10 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           if (open) demandaId = open.id;
         }
 
+        // Preview da última mensagem (texto/legenda ou rótulo de mídia)
+        const preview = previewFor(b);
+        const messageAt = new Date().toISOString();
+
         // 3. Cria uma nova demanda se necessário
         if (!demandaId) {
           const title = b.title ?? (b.message.trim() ? b.message.slice(0, 80) : mediaTitleFor(b));
@@ -498,6 +492,8 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               whatsapp_jid: b.whatsapp_jid ?? null,
               instance_name: b.instance_name ?? null,
               last_message_id: b.message_id ?? null,
+              last_message_preview: preview,
+              last_message_at: messageAt,
             })
             .select("id, protocol")
             .single();
@@ -508,7 +504,12 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           demandaId = dem.id;
           protocol = dem.protocol as string | null;
         } else {
-          const patch: Record<string, unknown> = { last_message_id: b.message_id ?? null };
+          const patch: Record<string, unknown> = {
+            last_message_id: b.message_id ?? null,
+            last_message_preview: preview,
+            last_message_at: messageAt,
+            updated_at: messageAt,
+          };
           if (b.whatsapp_jid) {
             patch["whatsapp_jid"] = b.whatsapp_jid;
             patch["channel_type"] = b.channel_type;
@@ -543,9 +544,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           }
         }
 
-        // 4b. Mídia: baixa o arquivo decifrado da Evolution e sobe pro Storage
-        // privado. Falha aqui NUNCA derruba o webhook: loga com contexto e
-        // registra o evento mesmo assim, marcando metadata.media_failed.
+        // 4b. Mídia: baixa o arquivo decifrado da Evolution e sobe pro Storage privado.
         let mediaUrl: string | null = null;
         let mediaType: string | null = null;
         let mediaFileName: string | null = null;
@@ -572,9 +571,6 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               mediaFileName = fetched.media.fileName;
               mediaSeconds = b.media.seconds;
               mediaBytes = fetched.media.bytes;
-              // Thumbnail de vídeo (jpeg que o WhatsApp manda no payload):
-              // permite card de preview sem baixar o vídeo. Luxo, não
-              // obrigação — falha aqui só loga e segue sem thumb.
               if (b.media.kind === "videoMessage" && b.media.jpegThumbnail) {
                 const thumbBuf = bufferFromByteMap(b.media.jpegThumbnail);
                 if (thumbBuf && thumbBuf[0] === 0xff && thumbBuf[1] === 0xd8) {
@@ -584,14 +580,12 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
                     messageId: b.message_id,
                     buffer: thumbBuf,
                   });
-                  if (thumbUp.ok) {
-                    mediaThumb = thumbUp.path;
-                  } else {
+                  if (thumbUp.ok) mediaThumb = thumbUp.path;
+                  else
                     console.error("[ingest] thumb não persistido — card usará placeholder", {
                       message_id: b.message_id,
                       reason: thumbUp.reason,
                     });
-                  }
                 }
               }
             } else {

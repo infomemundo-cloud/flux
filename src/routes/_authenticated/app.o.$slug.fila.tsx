@@ -23,6 +23,7 @@ export const Route = createFileRoute("/_authenticated/app/o/$slug/fila")({
 });
 
 const PAGE_SIZE = 20;
+
 const STATES = [
   { v: undefined, label: "Todas" },
   { v: "novo", label: "Novo" },
@@ -49,15 +50,12 @@ function FilaPage() {
   const hasSelection = location.pathname.includes("/fila/demandas/");
   const [collapsed, setCollapsed] = useState(false);
   const orgSidebar = useOrgSidebar();
+
   // Estado 2 (foco no atendimento): abrir uma demanda recolhe a sidebar
-  // principal (ícones) e a fila junto, dando o máximo de espaço pra conversa
-  // + trilho. Estado 3 (retorno): fechar a demanda restaura as duas.
+  // principal (ícones) e a fila junto. Estado 3 (retorno): fechar restaura as duas.
   useEffect(() => {
     setCollapsed(hasSelection);
     orgSidebar?.setCollapsed(hasSelection);
-    // Só reage à mudança de hasSelection — orgSidebar é estável entre renders
-    // (mesma referência do Provider), incluí-lo no array recriaria o efeito
-    // à toa sempre que o objeto de contexto mudasse de identidade.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasSelection]);
 
@@ -101,10 +99,9 @@ function FilaPage() {
     .map(Number)
     .sort((a, b) => a - b)
     .flatMap((k) => pages[k]);
+
   // Atrasadas sobem pro topo, sem precisar de filtro — o resto mantém a
-  // ordem de chegada porque Array.sort é estável (JS garante isso desde
-  // 2019), então dois itens "empatados" (ambos atrasados, ou ambos não)
-  // nunca trocam de posição entre si.
+  // ordem de chegada porque Array.sort é estável (JS garante isso desde 2019).
   const data = [...loadedRows].sort(
     (a, b) => Number(isOverdueDemanda(b)) - Number(isOverdueDemanda(a)),
   );
@@ -125,6 +122,7 @@ function FilaPage() {
             <PanelLeftOpen className="h-4 w-4" />
           </button>
         )}
+
         {/* Coluna da Fila — não renderiza nada quando recolhida (sem trilho vazio) */}
         {!collapsed && (
           <div
@@ -178,6 +176,7 @@ function FilaPage() {
                         </div>
                       </PopoverContent>
                     </Popover>
+
                     {/* Filtro de status — ícone abre menu, fecha sozinho ao escolher */}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -203,6 +202,7 @@ function FilaPage() {
                         ))}
                       </DropdownMenuContent>
                     </DropdownMenu>
+
                     {/* Nova demanda — só ícone, fica no canto */}
                     <button
                       onClick={() => setShowNew(true)}
@@ -215,6 +215,7 @@ function FilaPage() {
                   </div>
                 </div>
               </div>
+
               {/* Lista Rolável de Demandas */}
               <div className="flex-1 overflow-y-auto scrollbar-thin p-2 space-y-1.5">
                 {loadingFirstPage && <ListSkeleton rows={6} />}
@@ -224,7 +225,8 @@ function FilaPage() {
                     <p className="mt-1 text-[11px] text-muted-foreground">Tente alterar os filtros de busca.</p>
                   </div>
                 )}
-                {/* Card no formato combinado: avatar+pip, nome, hora, prévia da mensagem. */}
+
+                {/* Card no formato combinado: avatar+pip, nome, hora, prévia da última mensagem. */}
                 {data.map((d: any) => {
                   const overdue = isOverdueDemanda(d);
                   const urgent = d.priority === "urgente";
@@ -248,13 +250,18 @@ function FilaPage() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
                           <span className="truncate text-xs font-semibold text-foreground">{contactName}</span>
-                          <span className="shrink-0 text-[10px] text-muted-foreground">{formatRelative(d.updated_at)}</span>
+                          <span className="shrink-0 text-[10px] text-muted-foreground">
+                            {formatRelative(d.last_message_at ?? d.updated_at)}
+                          </span>
                         </div>
-                        <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{d.title}</div>
+                        <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                          {d.last_message_preview || d.title}
+                        </div>
                       </div>
                     </Link>
                   );
                 })}
+
                 {hasMore && !loadingFirstPage && (
                   <div className="py-2 flex justify-center">
                     <button
@@ -270,6 +277,7 @@ function FilaPage() {
             </div>
           </div>
         )}
+
         {/* Área Principal de Detalhes da Demanda */}
         <div className={`${hasSelection ? "block" : "hidden sm:block"} flex-1 min-w-0 bg-card/20 overflow-hidden scrollbar-thin`}>
           {hasSelection ? (
@@ -286,6 +294,7 @@ function FilaPage() {
             </div>
           )}
         </div>
+
         {showNew && org && <NewDemandaModal orgId={org.id} onClose={() => setShowNew(false)} />}
       </div>
     </FilaSidebarContext.Provider>
@@ -301,6 +310,7 @@ function NewDemandaModal({ orgId, onClose }: { orgId: string; onClose: () => voi
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [dueAt, setDueAt] = useState("");
+
   const m = useMutation({
     mutationFn: () =>
       create({
@@ -321,6 +331,7 @@ function NewDemandaModal({ orgId, onClose }: { orgId: string; onClose: () => voi
     },
     onError: (e) => toast.error(friendlyError(e)),
   });
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-card border border-border rounded-lg w-full max-w-lg p-5" onClick={(e) => e.stopPropagation()}>
