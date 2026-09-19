@@ -130,7 +130,7 @@ function DemandaDetail() {
 
       setIsUploading(true);
       try {
-        const res = await fetch("/api/send-media", {
+        const res = await fetch("/api/public/send-media", {
           method: "POST",
           body: form,
         });
