@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import {
   CheckCircle2,
   Download,
@@ -44,6 +44,50 @@ function formatBytes(bytes: number): string {
   return `${bytes} B`;
 }
 
+/**
+ * Áudio com src CONGELADO no mount. A URL assinada (token de 1h) muda a cada
+ * refetch de 8s; atualizar o atributo src de um <audio> faz o navegador
+ * RECARREGAR a mídia (duração zera, controles grisam, playback morre).
+ * O key={mediaStableKey} no call site garante remount apenas quando o objeto
+ * do Storage muda de caminho — token novo não remonta nem recarrega.
+ */
+function StableAudio({ src, className }: { src: string; className?: string }) {
+  const [fixed] = useState(src);
+  return <audio controls preload="metadata" src={fixed} className={className} />;
+}
+
+/**
+ * Imagem com src CONGELADO no mount (mesmo princípio do StableAudio): evita
+ * refetch + flicker a cada refetch de 8s e cache-miss por token novo.
+ */
+function StableImg({
+  src,
+  alt,
+  className,
+  loading,
+  onError,
+  onClick,
+}: {
+  src: string;
+  alt?: string;
+  className?: string;
+  loading?: "lazy" | "eager";
+  onError?: () => void;
+  onClick?: (e: MouseEvent<HTMLImageElement>) => void;
+}) {
+  const [fixed] = useState(src);
+  return (
+    <img
+      src={fixed}
+      alt={alt}
+      className={className}
+      loading={loading}
+      onError={onError}
+      onClick={onClick}
+    />
+  );
+}
+
 function MediaFallback({
   label,
   reason,
@@ -82,6 +126,11 @@ function MediaFallback({
  * play sobreposto + chips de duração/tamanho) que abre o viewer na mesma aba;
  * áudio = player nativo; documento = card de download. Qualquer falha de URL
  * cai no fallback claro. Zero inline style: só classes utilitárias Tailwind.
+ *
+ * ESTABILIDADE DE MÍDIA: todo elemento de mídia usa src congelado no mount
+ * (StableAudio/StableImg) + key pelo caminho estável do objeto no Storage
+ * (tudo antes do "?"). URLs assinadas voláteis nunca mais recarregam mídia
+ * em reprodução — bug do player de áudio que zerava a duração a cada poll.
  */
 export function MessageBubble({
   avatar,
@@ -118,10 +167,20 @@ export function MessageBubble({
   const [imgBroken, setImgBroken] = useState(false);
   const [thumbBroken, setThumbBroken] = useState(false);
 
+  /**
+   * Identidade ESTÁVEL do objeto no Storage: o caminho da URL assinada (tudo
+   * antes do "?"). A URL completa muda a cada refetch de 8s (token novo de 1h)
+   * — o caminho só muda se o arquivo mudar: remount acontece apenas quando deve.
+   */
+  const mediaStableKey = media?.url ? media.url.split("?")[0] : null;
+  const thumbStableKey = media?.thumbUrl ? media.thumbUrl.split("?")[0] : null;
+
+  // Reseta os estados de "quebrada" só quando o OBJETO muda (caminho novo),
+  // não a cada token novo — evita loop de retry/flicker a cada poll.
   useEffect(() => {
     setImgBroken(false);
     setThumbBroken(false);
-  }, [media?.url, media?.thumbUrl]);
+  }, [mediaStableKey, thumbStableKey]);
 
   useEffect(() => {
     if (!lightbox) return;
@@ -147,14 +206,6 @@ export function MessageBubble({
           .filter(Boolean)
           .join(" · ")
       : null;
-
-  /**
-   * Identidade ESTÁVEL do objeto no Storage: o caminho da URL assinada (tudo
-   * antes do "?"). A URL completa muda a cada refetch de 8s (token novo de 1h)
-   * — usá-la como key recriava o player em loop e travava o modal. O caminho
-   * só muda se o arquivo mudar: remount acontece apenas quando deve.
-   */
-  const mediaStableKey = media?.url ? media.url.split("?")[0] : null;
 
   return (
     <li className={`group relative flex gap-2.5 pt-2 ${isClient ? "" : "sm:pl-8"}`}>
@@ -220,7 +271,8 @@ export function MessageBubble({
                   title="Ampliar imagem"
                   className="block w-full max-w-[220px] overflow-hidden rounded-xl bg-secondary/40 ring-1 ring-border/50 transition hover:ring-primary/40"
                 >
-                  <img
+                  <StableImg
+                    key={mediaStableKey ?? media.url}
                     src={media.url}
                     alt={media.fileName ?? "Imagem da conversa"}
                     loading="lazy"
@@ -232,7 +284,13 @@ export function MessageBubble({
               {isImage && imgBroken && (
                 <MediaFallback label="Imagem indisponível" reason={media.failedReason} onRetry={onRetryMedia} />
               )}
-              {isAudio && <audio controls preload="metadata" src={media.url} className="w-full max-w-[320px]" />}
+              {isAudio && (
+                <StableAudio
+                  key={mediaStableKey ?? media.url}
+                  src={media.url}
+                  className="w-full max-w-[320px]"
+                />
+              )}
               {isVideo && (
                 <div className="w-full max-w-[320px] overflow-hidden rounded-xl bg-secondary/40 ring-1 ring-border/50">
                   {/* Card de preview estilo WhatsApp: thumb + play sobreposto.
@@ -244,7 +302,8 @@ export function MessageBubble({
                     className="group/play relative block aspect-video w-full"
                   >
                     {media.thumbUrl && !thumbBroken ? (
-                      <img
+                      <StableImg
+                        key={thumbStableKey ?? media.thumbUrl}
                         src={media.thumbUrl}
                         alt=""
                         loading="lazy"
@@ -322,8 +381,9 @@ export function MessageBubble({
           </button>
           {isVideo ? (
             /* Viewer na mesma aba (padrão WhatsApp Web):
-               - key = caminho estável do objeto (NUNCA a URL assinada volátil,
-                 que muda a cada refetch de 8s e recriava o player em loop)
+               - key = caminho estável do objeto (NUNCA a URL assinada volátil)
+               - <source> (não src direto no video): mudar atributo de <source>
+                 NÃO recarrega o player sozinho — proteção extra contra poll
                - <source type> = decisão de codec sem sniffing
                - poster = frame imediato antes do primeiro buffer
                - preload="metadata" + autoPlay: autoplay puxa o stream; o
@@ -342,7 +402,7 @@ export function MessageBubble({
               Seu navegador não suporta a exibição deste vídeo.
             </video>
           ) : (
-            <img
+            <StableImg
               key={mediaStableKey ?? media.url}
               src={media.url}
               alt={media.fileName ?? "Imagem da conversa"}
