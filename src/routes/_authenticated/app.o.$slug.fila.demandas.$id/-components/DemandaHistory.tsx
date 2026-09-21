@@ -147,7 +147,6 @@ export function DemandaHistory({
               isClient={isClient}
               isOutgoing={isOutgoing}
               isInternal={isInternal}
-              messageLabel={isClient ? "Cliente" : isInternal ? "Nota interna" : "Enviada"}
               when={formatRelative(e.created_at)}
               content={e.content}
               quoted={quoted}
@@ -171,8 +170,7 @@ export function DemandaHistory({
         if (!line) return null;
         const Icon = line.icon;
         // Recuo próprio (pl-6) pra linha de sistema não ficar colada na
-        // borda da coluna: o ícone alinha sob o conteúdo dos balões, não
-        // sob o avatar — respiração visual longe da sidebar.
+        // borda da coluna: o ícone alinha sob o conteúdo dos balões.
         return (
           <div key={e.id} className="pl-6 pr-2 py-0.5">
             <SystemLine icon={Icon} when={formatRelative(e.created_at)}>

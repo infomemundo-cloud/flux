@@ -120,11 +120,11 @@ function MediaFallback({
 /**
  * Uma bolha de mensagem (cliente recebida / saída WhatsApp / comentário interno).
  * Puramente apresentacional: o route decide avatar, textos e callbacks.
- * Mídia no padrão WhatsApp Web: imagem = thumbnail clicável (lightbox);
- * vídeo = card de preview (thumb + play sobreposto + chips de duração/tamanho)
- * que abre o viewer na mesma aba (overlay escuro, player dedicado); áudio =
- * player nativo com src congelado (StableAudio); documento = card de download.
- * Qualquer falha de URL cai no fallback claro. Zero inline style.
+ * Metadados limpos e padronizados: Nome + [Badge] + ícone · timestamp —
+ * SEM palavras redundantes ("Enviada" saiu): o badge de PAPEL aparece quando
+ * existe (PROPRIETÁRIO/OPERADOR...); quando não existe, entra o badge de TIPO
+ * (CLIENTE / NOTA INTERNA / EQUIPE). Mídia no padrão WhatsApp Web com src
+ * congelado (StableAudio/StableImg) — poll de 8s não recarrega nada.
  */
 export function MessageBubble({
   avatar,
@@ -134,7 +134,6 @@ export function MessageBubble({
   isClient,
   isOutgoing,
   isInternal,
-  messageLabel,
   when,
   content,
   quoted,
@@ -149,7 +148,6 @@ export function MessageBubble({
   isClient: boolean;
   isOutgoing: boolean;
   isInternal?: boolean;
-  messageLabel: string;
   when: string;
   content?: string | null;
   quoted?: QuotedRef | null;
@@ -224,11 +222,20 @@ export function MessageBubble({
               : "border border-dashed border-border/80 border-l-[3px] border-l-[var(--pill-neutral-fg)] bg-secondary/40"
         }`}
       >
+        {/* Metadados: Nome + [Badge papel OU tipo] + ícone · timestamp */}
         <div className="flex flex-wrap items-center gap-x-1.5 text-xs">
           <span className="font-semibold text-foreground">{author}</span>
-          {authorRole && (
+          {authorRole ? (
             <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${rolePillClass}`}>
               {authorRole}
+            </span>
+          ) : (
+            <span
+              className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                isClient ? "pill-green" : isInternal ? "pill-neutral" : "pill-brand"
+              }`}
+            >
+              {isClient ? "Cliente" : isInternal ? "Nota interna" : "Equipe"}
             </span>
           )}
           <span className="text-muted-foreground inline-flex items-center gap-1">
@@ -240,7 +247,7 @@ export function MessageBubble({
             ) : (
               <MessageCircle className="h-3 w-3" />
             )}{" "}
-            {messageLabel} · {when}
+            {when}
           </span>
         </div>
         {quoted && (
@@ -378,9 +385,7 @@ export function MessageBubble({
                - key = caminho estável do objeto (NUNCA a URL assinada volátil)
                - <source> (não src direto no video): mudar atributo de <source>
                  NÃO recarrega o player sozinho — proteção extra contra o poll
-               - poster = frame imediato antes do primeiro buffer
-               - preload="metadata" + autoPlay: autoplay puxa o stream; o
-                 metadata evita pré-carga onde autoplay não está disponível */
+               - poster = frame imediato antes do primeiro buffer */
             <video
               key={mediaStableKey ?? media.url}
               controls

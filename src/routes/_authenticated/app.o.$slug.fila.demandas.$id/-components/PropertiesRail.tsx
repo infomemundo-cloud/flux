@@ -3,6 +3,7 @@ import {
   CalendarClock,
   Check,
   ChevronDown,
+  Copy,
   FileText,
   PanelRightClose,
   Tag,
@@ -13,6 +14,7 @@ import {
   UserX,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { StateEnum, PriorityEnum } from "@/lib/demandas/demandas-guard";
 import { STATE_LABEL } from "@/components/demandas-ui";
 import {
@@ -36,7 +38,7 @@ const STATE_DOT: Record<string, string> = {
 
 /**
  * Estilo DISCRETO de pílula (key-value à direita): sem borda, fundo sutil,
- * h-8 (respiração vertical), texto 11px, largura ajustada ao conteúdo.
+ * h-8, texto 11px, largura ajustada ao conteúdo.
  */
 const PILL_TRIGGER =
   "inline-flex h-8 items-center gap-1.5 rounded-lg bg-secondary/60 pl-2.5 pr-2 text-[11px] font-medium text-foreground/85 transition hover:bg-secondary";
@@ -187,8 +189,7 @@ function DueDatePicker({
 
 /**
  * Linha key-value horizontal: rótulo à esquerda (w-20, discreto),
- * controle à direita em pílula. py-2 pra respiração vertical no trilho
- * de 320px — itens não ficam achatados.
+ * controle à direita em pílula. py-2 pra respiração vertical no trilho.
  */
 function KVRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -214,10 +215,11 @@ type PropertiesRailProps = {
 
 /**
  * Trilho de propriedades com abas (Demanda / Contato / Notas).
- * SUPERFÍCIE SEPARADA: fundo bg-surface/70 (distinto do card branco do chat)
- * nos 3 temas. Aba Demanda em layout horizontal key-value com pílulas h-8;
- * prioridade como seletor compacto (pílula colorida + menu) pra nunca
- * quebrar linha no trilho de 320px.
+ * SUPERFÍCIE SEPARADA: fundo bg-surface/70 (equivalente tokenizado do
+ * slate-50/70 dark:slate-900/40) + border-l sutil — separa claramente a
+ * área do chat da área de propriedades nos 3 temas.
+ * Header h-12 idêntico ao do chat (border-b alinhado). Protocolo em
+ * DESTAQUE no topo da aba Demanda (badge mono + cópia rápida).
  */
 export function PropertiesRail({
   demanda,
@@ -248,17 +250,27 @@ export function PropertiesRail({
   const protocolUpper = (demanda.protocol ?? "").toUpperCase();
   const confirmMatches = confirmText.trim().toUpperCase() === protocolUpper && protocolUpper !== "";
 
+  const handleCopyProtocol = async () => {
+    if (!demanda.protocol) return;
+    try {
+      await navigator.clipboard.writeText(demanda.protocol);
+      toast.success("Protocolo copiado");
+    } catch {
+      toast.error("Não foi possível copiar");
+    }
+  };
+
   return (
     <aside className="hidden lg:flex w-[320px] 2xl:w-[340px] shrink-0 flex-col border-l border-border/60 bg-surface/70">
-      {/* Header FIXO h-14 (mesma altura do header do chat) */}
-      <header className="h-14 shrink-0 border-b border-border/50 px-4 flex items-center justify-between">
+      {/* Header FIXO h-12 (mesma altura do header do chat) */}
+      <header className="h-12 shrink-0 border-b border-border/50 px-4 flex items-center justify-between">
         <h2 className="text-sm font-bold text-foreground">Propriedades</h2>
         <button
           type="button"
           onClick={onCollapseRail}
           title="Recolher propriedades"
           aria-label="Recolher propriedades"
-          className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+          className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
         >
           <PanelRightClose className="h-4 w-4" />
         </button>
@@ -296,6 +308,24 @@ export function PropertiesRail({
       <div className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3">
         {activeTab === "demanda" && (
           <div className="space-y-1">
+            {/* Protocolo em DESTAQUE no topo: badge mono + cópia rápida */}
+            <KVRow label="Protocolo">
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-flex h-7 items-center rounded-md border border-border/60 bg-secondary/60 px-2.5 font-mono text-[11px] font-semibold tracking-wide text-foreground/80 dark:bg-secondary/40 dark:text-foreground/90">
+                  {demanda.protocol ?? "—"}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCopyProtocol}
+                  title="Copiar protocolo"
+                  aria-label="Copiar protocolo"
+                  className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+              </span>
+            </KVRow>
+
             {/* Estado — pílula com pip colorido */}
             <KVRow label="Estado">
               <DropdownMenu>
@@ -442,15 +472,6 @@ export function PropertiesRail({
                 </span>
               )}
             </KVRow>
-
-            {/* Protocolo — linha estática, leitura-only */}
-            {demanda.protocol && (
-              <KVRow label="Protocolo">
-                <span className="inline-flex h-8 items-center rounded-lg bg-secondary/40 px-2.5 font-mono text-[10px] font-semibold text-muted-foreground tabular-nums">
-                  {demanda.protocol}
-                </span>
-              </KVRow>
-            )}
           </div>
         )}
 

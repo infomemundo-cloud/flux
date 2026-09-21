@@ -15,12 +15,11 @@ type DemandaHeaderProps = {
 };
 
 /**
- * Header do chat — altura FIXA h-14 (mesma altura do header do trilho).
- * ORDEM: toggle da fila (SEMPRE visível, antes do avatar) → avatar →
- * nome · telefone (copiável) → badge do canal → expandir propriedades
- * (só com trilho recolhido) → X de fechar.
- * SEM protocolo aqui: ele já vive na linha "Protocolo" do trilho de
- * Propriedades — duplicar só pesava na linha de identidade.
+ * Header do chat — altura FIXA h-12 (48px), idêntica à do header do trilho
+ * de Propriedades, então as linhas border-b batem perfeitamente entre as
+ * colunas. Uma única linha: toggle da fila (SEMPRE visível, antes do
+ * avatar) → avatar compacto → nome · telefone (copiável) → badge do canal
+ * → expandir propriedades (só com trilho recolhido) → X de fechar.
  */
 export function DemandaHeader({
   contactName,
@@ -44,14 +43,14 @@ export function DemandaHeader({
   };
 
   return (
-    <header className="h-14 shrink-0 border-b border-border/50 bg-card px-3 flex items-center gap-2.5">
+    <header className="h-12 shrink-0 border-b border-border/50 bg-card px-3 flex items-center gap-2">
       {/* Toggle da fila — sempre visível, antes do avatar */}
       <button
         type="button"
         onClick={onToggleFila}
         title={filaCollapsed ? "Expandir fila" : "Recolher fila"}
         aria-label={filaCollapsed ? "Expandir fila" : "Recolher fila"}
-        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+        className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
       >
         {filaCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
       </button>
@@ -63,7 +62,7 @@ export function DemandaHeader({
           <span className="truncate font-bold text-foreground">{contactName}</span>
           {phone && (
             <>
-              <span className="hidden shrink-0 text-muted-foreground/50 md:inline">·</span>
+              <span className="shrink-0 text-muted-foreground/50">·</span>
               <button
                 type="button"
                 onClick={handleCopyPhone}
@@ -78,11 +77,11 @@ export function DemandaHeader({
       </div>
 
       {/* Canal + ações de layout + fechar */}
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1">
         <span
           title={isGroupChat ? "Conversa em grupo" : "WhatsApp"}
           aria-label={isGroupChat ? "Conversa em grupo" : "WhatsApp"}
-          className="inline-flex items-center gap-1 rounded-md bg-[var(--pill-green-bg)] px-2 py-1 text-[10px] font-bold text-[var(--pill-green-fg)]"
+          className="inline-flex items-center gap-1 rounded-md bg-[var(--pill-green-bg)] px-2 py-0.5 text-[10px] font-bold text-[var(--pill-green-fg)]"
         >
           {isGroupChat ? <Users className="h-3 w-3" /> : <MessageCircle className="h-3 w-3" />}
           {isGroupChat ? "Grupo" : "WhatsApp"}
@@ -93,7 +92,7 @@ export function DemandaHeader({
             onClick={onExpandRail}
             title="Expandir propriedades"
             aria-label="Expandir propriedades"
-            className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+            className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
           >
             <PanelRightOpen className="h-4 w-4" />
           </button>
@@ -103,7 +102,7 @@ export function DemandaHeader({
           onClick={onClose}
           title="Fechar demanda"
           aria-label="Fechar demanda"
-          className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+          className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
         >
           <X className="h-4 w-4" />
         </button>
