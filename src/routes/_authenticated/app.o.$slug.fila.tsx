@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { ListSkeleton } from "@/components/skeletons";
-import { listDemandas, createDemanda } from "@/lib/demandas/demandas.functions";
+import { listDemandas, createDemanda, markAllDemandasRead } from "@/lib/demandas/demandas.functions";
 import { getOrgBySlug } from "@/lib/orgs.functions";
 import { toast } from "sonner";
 import { friendlyError } from "@/lib/friendly-error";
@@ -16,7 +16,9 @@ import {
   Filter,
   MessageCircle,
   Users,
-  AlertTriangle,
+  MoreHorizontal,
+  CheckCheck,
+  CheckCircle2,
 } from "lucide-react";
 import { formatRelative } from "@/components/demandas-ui";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -63,6 +65,24 @@ function activityIso(d: any): string {
   return lm > up ? lm : up;
 }
 
+/** Cor do dot de estado no menu de filtro (mesmos tokens da borda do card). */
+function stateDotColor(v: string | undefined): string {
+  switch (v) {
+    case "novo":
+      return "bg-[var(--state-novo)]";
+    case "em_analise":
+      return "bg-[var(--state-analise)]";
+    case "aguardando_cliente":
+      return "bg-[var(--state-aguardando)]";
+    case "aguardando_revisao_humana":
+      return "bg-[var(--pill-violet-fg)]";
+    case "concluido":
+      return "bg-[var(--state-resolvido)]";
+    default:
+      return "bg-muted-foreground/30";
+  }
+}
+
 /**
  * Borda lateral de 4px: SLA estourado SEMPRE vence (carmim); senão, cor do
  * estado do ticket. Tokens de estado (não paleta hardcoded) pra manter os
@@ -89,12 +109,11 @@ function leftBorderColor(d: any): string {
 /**
  * Card da fila — hierarquia por "contraste passivo" (estilo e-mail moderno),
  * válida nos 3 temas SEM hardcoded de paleta:
- *  - NÃO LIDO: superfície elevada (bg-card; no dark sobe pra bg-popover,
- *    um tom acima do card) + ring visível + sombra profunda no dark +
- *    nome bold + prévia medium + dot primário no avatar.
- *  - LIDO: superfície afundada (bg-muted/40; no dark black/20, abaixo do
- *    background) + ring transparente + sem sombra + pesos normais + sem dot.
- * Light/Corporate não recebem overrides dark: continuam bg-card vs bg-muted/40.
+ * NÃO LIDO: superfície elevada (bg-card; no dark sobe pra bg-popover) +
+ * ring visível + sombra profunda no dark + nome bold + prévia medium +
+ * dot primário no avatar.
+ * LIDO: superfície afundada (bg-muted/40; no dark black/20) + ring
+ * transparente + sem sombra + pesos normais + sem dot.
  */
 function FilaCard({ d, slug }: { d: any; slug: string }) {
   const unread = !!d.unread;
@@ -127,9 +146,7 @@ function FilaCard({ d, slug }: { d: any; slug: string }) {
         <div className="flex items-center justify-between gap-2">
           <span
             className={`truncate text-xs ${
-              unread
-                ? "font-bold text-foreground"
-                : "font-medium text-muted-foreground dark:text-foreground/50"
+              unread ? "font-bold text-foreground" : "font-medium text-muted-foreground dark:text-foreground/50"
             }`}
           >
             {contactName}
@@ -182,6 +199,10 @@ function FilaPage() {
   }, [hasSelection]);
 
   const listFn = useServerFn(listDemandas);
+  const markAllFn = useServerFn(markAllDemandasRead);
+  const qc = useQueryClient();
+  // Abas: "fila" = tudo em ordem de atividade; "atrasadas" = só SLA estourado.
+  const [tab, setTab] = useState<"fila" | "atrasadas">("fila");
   const [state, setState] = useState<string | undefined>();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -196,13 +217,13 @@ function FilaPage() {
     return () => clearTimeout(t);
   }, [search]);
 
-  // Mudou filtro/busca/org → volta pro primeiro "lote".
+  // Mudou aba/filtro/busca/org → volta pro primeiro "lote".
   useEffect(() => {
     setLimit(PAGE_SIZE);
-  }, [state, debouncedSearch, org?.id]);
+  }, [tab, state, debouncedSearch, org?.id]);
 
   const { data: result, isFetching } = useQuery({
-    queryKey: ["demandas", org?.id, state, debouncedSearch, limit],
+    queryKey: ["demandas", org?.id, tab, state, debouncedSearch, limit],
     queryFn: () =>
       listFn({
         data: {
@@ -211,21 +232,28 @@ function FilaPage() {
           search: debouncedSearch || undefined,
           offset: 0,
           limit,
+          overdueOnly: tab === "atrasadas",
         },
       }),
     enabled: !!org?.id,
   });
 
-  // Ordem 100% autoritativa do servidor (atrasadas primeiro, depois atividade
-  // recente) — um snapshot só, sem mistura de tempos.
+  const markAll = useMutation({
+    mutationFn: () => markAllFn({ data: { orgId: org!.id } }),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ["demandas"] });
+      toast.success(`Tudo marcado como lido (${r.count} demandas).`);
+    },
+    onError: (e) => toast.error(friendlyError(e)),
+  });
+
+  // Ordem 100% autoritativa do servidor (atividade recente) — um snapshot só.
   const data = result?.rows ?? [];
-  const total = result?.total ?? 0;
+  const total = result?.total ?? 0;               // tamanho da aba atual (paginação)
+  const scopeTotal = result?.scopeTotal ?? 0;     // badge da aba Fila (escopo)
+  const overdueTotal = result?.overdueTotal ?? 0; // badge da aba Atrasadas
   const hasMore = data.length < total;
   const loadingFirstPage = isFetching && data.length === 0;
-
-  // Blocos visuais: SLA estourado fixado no topo; demais em ordem cronológica.
-  const overdueRows = data.filter((d: any) => isOverdueDemanda(d));
-  const normalRows = data.filter((d: any) => !isOverdueDemanda(d));
 
   return (
     <FilaSidebarContext.Provider value={{ collapsed, setCollapsed }}>
@@ -242,131 +270,158 @@ function FilaPage() {
           </button>
         )}
 
-        {/* Coluna da Fila — não renderiza nada quando recolhida (sem trilho vazio) */}
+        {/* Coluna da Fila — largura ampliada pra caber abas + toolbar sem apertar */}
         {!collapsed && (
           <div
-            className={`${hasSelection ? "hidden sm:flex" : "flex"} flex-col w-full sm:shrink-0 sm:w-[300px] lg:w-[320px] border-r border-border/50 bg-background`}
+            className={`${hasSelection ? "hidden sm:flex" : "flex"} flex-col w-full sm:shrink-0 sm:w-[330px] lg:w-[360px] border-r border-border/50 bg-background`}
           >
             <div className="flex flex-col h-full">
-              <div className="p-3 pb-2.5 shrink-0">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-                      <Inbox className="h-4 w-4" strokeWidth={2} />
-                    </div>
-                    <h1 className="text-base font-bold tracking-tight text-foreground truncate">Fila</h1>
-                    {total > 0 && (
-                      <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-primary shrink-0">
-                        {total}
+              {/* Header: abas com contagens + toolbar de ações + nova demanda */}
+              <div className="p-2.5 pb-2 shrink-0">
+                <div className="flex items-center justify-between gap-1.5">
+                  {/* Abas Fila / Atrasadas */}
+                  <div className="flex items-center gap-0.5 rounded-xl bg-muted/70 p-1 min-w-0">
+                    <button
+                      onClick={() => setTab("fila")}
+                      className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                        tab === "fila"
+                          ? "bg-card text-foreground shadow-[var(--shadow-card)]"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Fila
+                      <span className="rounded-full bg-primary/10 px-1.5 py-px text-[10px] font-bold tabular-nums text-primary">
+                        {scopeTotal}
                       </span>
-                    )}
+                    </button>
+                    <button
+                      onClick={() => setTab("atrasadas")}
+                      className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                        tab === "atrasadas"
+                          ? "bg-card text-foreground shadow-[var(--shadow-card)]"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Atrasadas
+                      <span
+                        className={`rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums ${
+                          overdueTotal > 0
+                            ? "bg-[var(--pill-red-bg)] text-[var(--pill-red-fg)]"
+                            : "bg-secondary text-muted-foreground"
+                        }`}
+                      >
+                        {overdueTotal}
+                      </span>
+                    </button>
                   </div>
-                  {/* Toolbar de ações em container pastel arredondado */}
-                  <div className="flex items-center gap-0.5 rounded-xl bg-muted/70 p-1 shrink-0">
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <button
-                          title="Buscar"
-                          aria-label="Buscar"
-                          className="relative grid place-items-center h-7 w-7 rounded-lg text-muted-foreground transition hover:bg-card hover:text-foreground hover:shadow-sm"
-                        >
-                          <Search className="h-3.5 w-3.5" />
-                          {search && (
-                            <span className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-primary" />
-                          )}
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent align="end" className="w-64 p-2">
-                        <div className="relative">
-                          <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                          <input
-                            autoFocus
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            placeholder="Buscar demanda ou contato..."
-                            className="h-9 pl-8 pr-7 rounded-xl border border-border/60 bg-background text-xs w-full outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
-                          />
-                          {search && (
-                            <button
-                              onClick={() => setSearch("")}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          )}
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          title="Filtrar por status"
-                          aria-label="Filtrar por status"
-                          className="relative grid place-items-center h-7 w-7 rounded-lg text-muted-foreground transition hover:bg-card hover:text-foreground hover:shadow-sm"
-                        >
-                          <Filter className="h-3.5 w-3.5" />
-                          {state && (
-                            <span
-                              className={`absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full ${
-                                state === "novo"
-                                  ? "bg-[var(--state-novo)]"
-                                  : state === "em_analise"
-                                    ? "bg-[var(--state-analise)]"
-                                    : state === "aguardando_cliente"
-                                      ? "bg-[var(--state-aguardando)]"
-                                      : state === "aguardando_revisao_humana"
-                                        ? "bg-[var(--pill-violet-fg)]"
-                                        : state === "concluido"
-                                          ? "bg-[var(--state-resolvido)]"
-                                          : "bg-primary"
-                              }`}
-                            />
-                          )}
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-52 rounded-xl">
-                        {STATES.map((s) => (
-                          <DropdownMenuItem
-                            key={s.label}
-                            onClick={() => setState(s.v)}
-                            className={`gap-2 text-xs cursor-pointer rounded-lg ${state === s.v ? "font-semibold text-primary" : ""}`}
+
+                  {/* Toolbar de ações + ação primária */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center gap-0.5 rounded-xl bg-muted/70 p-1">
+                      {/* Busca — ícone abre um popover com o campo, some quando fecha */}
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button
+                            title="Buscar"
+                            aria-label="Buscar"
+                            className="relative grid place-items-center h-7 w-7 rounded-lg text-muted-foreground transition hover:bg-card hover:text-foreground hover:shadow-sm"
                           >
-                            <span
-                              className={`h-2 w-2 rounded-full shrink-0 ${
-                                s.v === "novo"
-                                  ? "bg-[var(--state-novo)]"
-                                  : s.v === "em_analise"
-                                    ? "bg-[var(--state-analise)]"
-                                    : s.v === "aguardando_cliente"
-                                      ? "bg-[var(--state-aguardando)]"
-                                      : s.v === "aguardando_revisao_humana"
-                                        ? "bg-[var(--pill-violet-fg)]"
-                                        : s.v === "concluido"
-                                          ? "bg-[var(--state-resolvido)]"
-                                          : "bg-muted-foreground/30"
-                              }`}
+                            <Search className="h-3.5 w-3.5" />
+                            {search && (
+                              <span className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-primary" />
+                            )}
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent align="end" className="w-64 p-2">
+                          <div className="relative">
+                            <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                            <input
+                              autoFocus
+                              value={search}
+                              onChange={(e) => setSearch(e.target.value)}
+                              placeholder="Buscar demanda ou contato..."
+                              className="h-9 pl-8 pr-7 rounded-xl border border-border/60 bg-background text-xs w-full outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
                             />
-                            {s.label}
+                            {search && (
+                              <button
+                                onClick={() => setSearch("")}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            )}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                      {/* Filtro de status — ícone abre menu, fecha sozinho ao escolher */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            title="Filtrar por status"
+                            aria-label="Filtrar por status"
+                            className="relative grid place-items-center h-7 w-7 rounded-lg text-muted-foreground transition hover:bg-card hover:text-foreground hover:shadow-sm"
+                          >
+                            <Filter className="h-3.5 w-3.5" />
+                            {state && (
+                              <span className={`absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full ${stateDotColor(state)}`} />
+                            )}
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-52 rounded-xl">
+                          {STATES.map((s) => (
+                            <DropdownMenuItem
+                              key={s.label}
+                              onClick={() => setState(s.v)}
+                              className={`gap-2 text-xs cursor-pointer rounded-lg ${state === s.v ? "font-semibold text-primary" : ""}`}
+                            >
+                              <span className={`h-2 w-2 rounded-full shrink-0 ${stateDotColor(s.v)}`} />
+                              {s.label}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      {/* Mais opções — ações secundárias (a primária é o + ao lado) */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            title="Mais opções"
+                            aria-label="Mais opções"
+                            className="grid place-items-center h-7 w-7 rounded-lg text-muted-foreground transition hover:bg-card hover:text-foreground hover:shadow-sm"
+                          >
+                            <MoreHorizontal className="h-3.5 w-3.5" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56 rounded-xl">
+                          <DropdownMenuItem
+                            onClick={() => markAll.mutate()}
+                            disabled={markAll.isPending || !org}
+                            className="gap-2 text-xs cursor-pointer rounded-lg"
+                          >
+                            <CheckCheck className="h-3.5 w-3.5" />
+                            {markAll.isPending ? "Marcando..." : "Marcar todas como lidas"}
                           </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                    {/* Ação primária: nova demanda (visível, nunca escondida) */}
                     <button
                       onClick={() => setShowNew(true)}
                       title="Nova demanda"
                       aria-label="Nova demanda"
-                      className="grid place-items-center h-7 w-7 rounded-lg bg-primary text-primary-foreground shadow-sm transition hover:brightness-110 hover:shadow-md active:scale-[0.96]"
+                      className="grid place-items-center h-8 w-8 rounded-lg bg-primary text-primary-foreground shadow-sm transition hover:brightness-110 hover:shadow-md active:scale-[0.96]"
                     >
-                      <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+                      <Plus className="h-4 w-4" strokeWidth={2.5} />
                     </button>
                   </div>
                 </div>
               </div>
 
-              {/* Lista Rolável de Demandas — blocos SLA → recentes */}
+              {/* Lista Rolável de Demandas */}
               <div className="flex-1 overflow-y-auto scrollbar-thin p-2.5 pt-1 space-y-2">
                 {loadingFirstPage && <ListSkeleton rows={6} />}
-                {!loadingFirstPage && data.length === 0 && (
+
+                {/* Vazio da aba Fila */}
+                {!loadingFirstPage && tab === "fila" && data.length === 0 && (
                   <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
                     <div className="relative">
                       <div className="absolute inset-0 -z-10 translate-y-2 scale-90 rounded-3xl bg-primary/10 blur-2xl" />
@@ -381,24 +436,28 @@ function FilaPage() {
                   </div>
                 )}
 
-                {/* Bloco 1 — SLA estourado fixado no topo */}
-                {!loadingFirstPage && overdueRows.length > 0 && (
-                  <div className="flex items-center gap-1.5 px-1 pt-1 text-[10px] font-bold uppercase tracking-widest text-[var(--pill-red-fg)]">
-                    <AlertTriangle className="h-3 w-3" strokeWidth={2.4} />
-                    Fora do prazo · {overdueRows.length}
+                {/* Vazio da aba Atrasadas */}
+                {!loadingFirstPage && tab === "atrasadas" && data.length === 0 && (
+                  <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+                    <div className="relative">
+                      <div className="absolute inset-0 -z-10 translate-y-2 scale-90 rounded-3xl bg-[var(--pill-green-bg)] blur-2xl" />
+                      <div className="grid h-16 w-16 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
+                        <CheckCircle2 className="h-7 w-7 text-[var(--pill-green-fg)]" strokeWidth={1.8} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-foreground">Nenhuma demanda atrasada</div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {state === "concluido"
+                          ? "Demandas concluídas nunca estão atrasadas — remova o filtro de estado."
+                          : "Tudo em dia por aqui. O time está vencendo o SLA."}
+                      </p>
+                    </div>
                   </div>
                 )}
-                {overdueRows.map((d: any) => (
-                  <FilaCard key={d.id} d={d} slug={slug} />
-                ))}
 
-                {/* Bloco 2 — cronológico por atividade */}
-                {!loadingFirstPage && normalRows.length > 0 && overdueRows.length > 0 && (
-                  <div className="px-1 pt-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
-                    Recentes
-                  </div>
-                )}
-                {normalRows.map((d: any) => (
+                {/* Cards da aba atual — ordem de atividade vinda do servidor */}
+                {data.map((d: any) => (
                   <FilaCard key={d.id} d={d} slug={slug} />
                 ))}
 

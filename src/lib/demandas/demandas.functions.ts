@@ -6,7 +6,7 @@ import { StateEnum, PriorityEnum, OP_ROLES, assertMember } from "@/lib/demandas/
 /**
  * Shape da citação ("em resposta a…") gravada no metadata dos eventos.
  * É um snapshot da mensagem citada (autor + texto + tipo) — não um FK
- * rígido: se o evento original for excluído, a citação continua legível.
+ * rígida: se o evento original for excluído, a citação continua legível.
  */
 const QuotedSchema = z.object({
   event_id: z.string().uuid().optional(),
@@ -25,6 +25,10 @@ export const listDemandas = createServerFn({ method: "GET" })
         assignedToMe: z.boolean().optional(),
         assigneeId: z.string().uuid().nullable().optional(),
         search: z.string().optional(),
+        // Aba "Atrasadas": filtra só demandas com SLA estourado ANTES de
+        // ordenar/paginar. A aba "Fila" lista tudo em ordem de atividade
+        // (atrasadas inline, com a borda carmim delas).
+        overdueOnly: z.boolean().optional(),
         // Paginação: offset/limit com defaults seguros. limit tem teto de 100
         offset: z.number().int().min(0).default(0),
         limit: z.number().int().min(1).max(100).default(20),
@@ -49,31 +53,36 @@ export const listDemandas = createServerFn({ method: "GET" })
     const { data: rows, count, error } = await q;
     if (error) throw new Error(error.message);
     const now = Date.now();
-    // 2. Ordenação customizada no lado do servidor
-    //    Regra 1: atrasadas primeiro (due_at < now e state != 'concluido')
-    //    Regra 2: dentro dos grupos, por ÚLTIMA ATIVIDADE = max(last_message_at,
-    //    updated_at) — mesma chave que o card exibe (activityIso), então
-    //    posição e data visível nunca discordam.
+
+    // 2. Contagens do escopo (independentes da paginação e da aba):
+    //    scopeTotal = tudo que passou nos filtros (badge da aba Fila);
+    //    overdueTotal = SLA estourado dentro desse mesmo escopo (badge da
+    //    aba Atrasadas — mesma regra do card, então badge e lista batem).
+    const isOverdue = (r: any) =>
+      !!r.due_at && new Date(r.due_at).getTime() < now && r.state !== "concluido";
+    const scopeTotal = count ?? 0;
+    const overdueAll = (rows ?? []).filter(isOverdue);
+    const overdueTotal = overdueAll.length;
+
+    // 3. Conjunto de trabalho da aba atual + ordenação por ÚLTIMA ATIVIDADE
+    //    = max(last_message_at, updated_at) — mesma chave que o card exibe
+    //    (activityIso), então posição e data visível nunca discordam.
+    //    Com as abas, não existe mais "atrasadas primeiro" no sort: na aba
+    //    Fila elas vivem na posição natural de atividade (borda carmim nelas).
     const activityOf = (r: any) => {
       const lm = r.last_message_at ? new Date(r.last_message_at).getTime() : 0;
       const up = r.updated_at ? new Date(r.updated_at).getTime() : 0;
       return Math.max(lm, up);
     };
-    const isOverdue = (r: any) =>
-      !!r.due_at && new Date(r.due_at).getTime() < now && r.state !== "concluido";
-    const sortedRows = (rows ?? []).sort((a: any, b: any) => {
-      const oa = isOverdue(a);
-      const ob = isOverdue(b);
-      if (oa && !ob) return -1;
-      if (!oa && ob) return 1;
-      return activityOf(b) - activityOf(a);
-    });
-    // 3. Aplica a paginação manualmente no array já ordenado
-    const paginatedRows = sortedRows.slice(data.offset, data.offset + data.limit);
+    const working = data.overdueOnly ? overdueAll : (rows ?? []);
+    working.sort((a: any, b: any) => activityOf(b) - activityOf(a));
+
+    // 4. Paginação manual no array já ordenado (snapshot único por query)
+    const paginatedRows = working.slice(data.offset, data.offset + data.limit);
     const ids = paginatedRows.map((r: any) => r.id as string);
 
-    // 4. NÃO LIDAS POR USUÁRIO: última message_in da demanda vs viewed_at deste
-    //    membro em demanda_views. Sem view = nunca aberta = não lida.
+    // 5. NÃO LIDAS POR USUÁRIO: última message_in da demanda vs viewed_at
+    //    deste membro em demanda_views. Sem view = nunca aberta = não lida.
     //    Service role porque demanda_views tem RLS default-deny (policies só
     //    pra uso futuro via client; hoje tudo passa por aqui).
     if (ids.length > 0) {
@@ -103,7 +112,7 @@ export const listDemandas = createServerFn({ method: "GET" })
       }
     }
 
-    // 5. Resolve nomes dos responsáveis em batch (apenas dos itens paginados)
+    // 6. Resolve nomes dos responsáveis em batch (apenas dos itens paginados)
     const assignees: Record<string, { id: string; name: string }> = {};
     const assigneeIds = [
       ...new Set((paginatedRows ?? []).map((r: any) => r.assignee_id).filter(Boolean) as string[]),
@@ -126,10 +135,45 @@ export const listDemandas = createServerFn({ method: "GET" })
     return {
       rows: paginatedRows,
       assignees,
-      total: count ?? 0,
+      // total = tamanho da ABA atual (paginação); scopeTotal/overdueTotal =
+      // badges das abas, sempre do escopo completo filtrado.
+      total: data.overdueOnly ? overdueTotal : scopeTotal,
+      scopeTotal,
+      overdueTotal,
       offset: data.offset,
       limit: data.limit,
     };
+  });
+
+/**
+ * Marca TODAS as demandas da org como lidas pra este membro (upsert em
+ * demanda_views). É a ação secundária do menu "..." da fila — limpa os dots
+ * de não-lida de uma vez sem precisar abrir demanda por demanda.
+ */
+export const markAllDemandasRead = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ orgId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await assertMember(context.supabase, data.orgId, context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: ids, error } = await supabaseAdmin
+      .from("demandas")
+      .select("id")
+      .eq("org_id", data.orgId);
+    if (error) throw new Error(error.message);
+    const now = new Date().toISOString();
+    const payload = (ids ?? []).map((r: any) => ({
+      demanda_id: r.id as string,
+      user_id: context.userId,
+      viewed_at: now,
+    }));
+    if (payload.length > 0) {
+      const { error: upErr } = await supabaseAdmin
+        .from("demanda_views")
+        .upsert(payload, { onConflict: "demanda_id,user_id" });
+      if (upErr) throw new Error(upErr.message);
+    }
+    return { ok: true, count: payload.length };
   });
 
 export const getDemanda = createServerFn({ method: "GET" })
