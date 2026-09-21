@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   CheckCircle2,
   Download,
@@ -46,10 +46,10 @@ function formatBytes(bytes: number): string {
 
 /**
  * Áudio com src CONGELADO no mount. A URL assinada (token de 1h) muda a cada
- * refetch de 8s; atualizar o atributo src de um <audio> faz o navegador
- * RECARREGAR a mídia (duração zera, controles grisam, playback morre).
- * O key={mediaStableKey} no call site garante remount apenas quando o objeto
- * do Storage muda de caminho — token novo não remonta nem recarrega.
+ * refetch de 8s; atualizar o atributo src de um <audio> em reprodução faz o
+ * navegador RECARREGAR a mídia — era o bug do áudio que cortava no meio e
+ * piscava. O key={caminho estável} no call site garante remount apenas quando
+ * o objeto do Storage muda; token novo nunca mais recarrega o player.
  */
 function StableAudio({ src, className }: { src: string; className?: string }) {
   const [fixed] = useState(src);
@@ -73,7 +73,7 @@ function StableImg({
   className?: string;
   loading?: "lazy" | "eager";
   onError?: () => void;
-  onClick?: (e: MouseEvent<HTMLImageElement>) => void;
+  onClick?: (e: React.MouseEvent<HTMLImageElement>) => void;
 }) {
   const [fixed] = useState(src);
   return (
@@ -98,7 +98,7 @@ function MediaFallback({
   onRetry?: () => void;
 }) {
   return (
-    <div className="mt-2 flex w-full max-w-[320px] items-center gap-2 rounded-xl border border-dashed border-border/70 bg-secondary/40 px-3 py-2 text-[11px] text-muted-foreground">
+    <div className="mt-2 flex w-full max-w-[320px] items-center gap-2 rounded-lg border border-dashed border-border/80 bg-secondary/40 px-3 py-2 text-[11px] text-muted-foreground">
       <ImageIcon className="h-4 w-4 shrink-0 opacity-70" />
       <span className="min-w-0 flex-1 truncate">
         {label}
@@ -108,7 +108,7 @@ function MediaFallback({
         <button
           type="button"
           onClick={onRetry}
-          className="shrink-0 rounded-lg bg-card px-1.5 py-0.5 text-[10px] font-semibold text-foreground ring-1 ring-border/60 transition hover:ring-primary/40"
+          className="shrink-0 rounded-md border border-border bg-card px-1.5 py-0.5 text-[10px] font-semibold text-foreground transition hover:border-primary/40"
         >
           Tentar de novo
         </button>
@@ -120,17 +120,11 @@ function MediaFallback({
 /**
  * Uma bolha de mensagem (cliente recebida / saída WhatsApp / comentário interno).
  * Puramente apresentacional: o route decide avatar, textos e callbacks.
- * Redesign: bolhas rounded-2xl sem bordas duras — a separação vem do fundo
- * tintado + ring sutil + sombra flutuante. Mídia no padrão WhatsApp Web:
- * imagem = thumbnail clicável (lightbox); vídeo = card de preview (thumb +
- * play sobreposto + chips de duração/tamanho) que abre o viewer na mesma aba;
- * áudio = player nativo; documento = card de download. Qualquer falha de URL
- * cai no fallback claro. Zero inline style: só classes utilitárias Tailwind.
- *
- * ESTABILIDADE DE MÍDIA: todo elemento de mídia usa src congelado no mount
- * (StableAudio/StableImg) + key pelo caminho estável do objeto no Storage
- * (tudo antes do "?"). URLs assinadas voláteis nunca mais recarregam mídia
- * em reprodução — bug do player de áudio que zerava a duração a cada poll.
+ * Mídia no padrão WhatsApp Web: imagem = thumbnail clicável (lightbox);
+ * vídeo = card de preview (thumb + play sobreposto + chips de duração/tamanho)
+ * que abre o viewer na mesma aba (overlay escuro, player dedicado); áudio =
+ * player nativo com src congelado (StableAudio); documento = card de download.
+ * Qualquer falha de URL cai no fallback claro. Zero inline style.
  */
 export function MessageBubble({
   avatar,
@@ -168,15 +162,15 @@ export function MessageBubble({
   const [thumbBroken, setThumbBroken] = useState(false);
 
   /**
-   * Identidade ESTÁVEL do objeto no Storage: o caminho da URL assinada (tudo
-   * antes do "?"). A URL completa muda a cada refetch de 8s (token novo de 1h)
-   * — o caminho só muda se o arquivo mudar: remount acontece apenas quando deve.
+   * Identidade ESTÁVEL dos objetos no Storage: o caminho da URL assinada
+   * (tudo antes do "?"). A URL completa muda a cada refetch de 8s (token novo
+   * de 1h) — o caminho só muda se o arquivo mudar. Usado como key (remount só
+   * quando deve) e como dependência do reset de "quebrada" (sem loop de retry
+   * a cada poll).
    */
   const mediaStableKey = media?.url ? media.url.split("?")[0] : null;
   const thumbStableKey = media?.thumbUrl ? media.thumbUrl.split("?")[0] : null;
 
-  // Reseta os estados de "quebrada" só quando o OBJETO muda (caminho novo),
-  // não a cada token novo — evita loop de retry/flicker a cada poll.
   useEffect(() => {
     setImgBroken(false);
     setThumbBroken(false);
@@ -215,25 +209,25 @@ export function MessageBubble({
           onClick={onReply}
           title="Responder esta mensagem"
           aria-label="Responder esta mensagem"
-          className="absolute right-1.5 top-1/2 z-10 hidden h-6 w-6 -translate-y-1/2 place-items-center rounded-lg bg-card text-muted-foreground shadow-[var(--shadow-card)] ring-1 ring-border/50 transition hover:text-foreground hover:ring-primary/40 group-hover:grid"
+          className="absolute right-1.5 top-1/2 z-10 hidden h-6 w-6 -translate-y-1/2 place-items-center rounded-md border border-border bg-card text-muted-foreground shadow-sm transition hover:border-primary/40 hover:text-foreground group-hover:grid"
         >
           <Reply className="h-3 w-3" strokeWidth={2.2} />
         </button>
       )}
       {avatar}
       <div
-        className={`min-w-0 flex-1 px-4 py-3 ${
+        className={`min-w-0 flex-1 rounded-xl px-3.5 py-2.5 ${
           isClient
-            ? "rounded-2xl rounded-tl-md bg-card shadow-[var(--shadow-card)] ring-1 ring-border/50"
+            ? "border border-border border-l-[3px] border-l-[var(--pill-green-fg)] bg-card shadow-[var(--shadow-card)]"
             : isOutgoing
-              ? "rounded-2xl rounded-tr-md bg-primary/10 ring-1 ring-primary/15"
-              : "rounded-2xl rounded-tl-md border border-dashed border-border/60 bg-secondary/40"
+              ? "border border-primary/20 border-l-[3px] border-l-primary bg-primary/[0.04]"
+              : "border border-dashed border-border/80 border-l-[3px] border-l-[var(--pill-neutral-fg)] bg-secondary/40"
         }`}
       >
         <div className="flex flex-wrap items-center gap-x-1.5 text-xs">
           <span className="font-semibold text-foreground">{author}</span>
           {authorRole && (
-            <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${rolePillClass}`}>
+            <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${rolePillClass}`}>
               {authorRole}
             </span>
           )}
@@ -251,7 +245,7 @@ export function MessageBubble({
         </div>
         {quoted && (
           <div
-            className={`mt-2 rounded-lg border-l-2 bg-secondary/70 px-2.5 py-1.5 ${
+            className={`mt-1.5 rounded-md border-l-2 bg-secondary/70 px-2.5 py-1.5 ${
               quoted.kind === "message_in" ? "border-l-[var(--pill-green-fg)]" : "border-l-primary"
             }`}
           >
@@ -269,7 +263,7 @@ export function MessageBubble({
                   type="button"
                   onClick={() => setLightbox(true)}
                   title="Ampliar imagem"
-                  className="block w-full max-w-[220px] overflow-hidden rounded-xl bg-secondary/40 ring-1 ring-border/50 transition hover:ring-primary/40"
+                  className="block w-full max-w-[220px] overflow-hidden rounded-lg border border-border/60 bg-secondary/40 transition hover:border-primary/40"
                 >
                   <StableImg
                     key={mediaStableKey ?? media.url}
@@ -292,7 +286,7 @@ export function MessageBubble({
                 />
               )}
               {isVideo && (
-                <div className="w-full max-w-[320px] overflow-hidden rounded-xl bg-secondary/40 ring-1 ring-border/50">
+                <div className="w-full max-w-[320px] overflow-hidden rounded-lg border border-border/60 bg-secondary/40">
                   {/* Card de preview estilo WhatsApp: thumb + play sobreposto.
                       Nenhum <video> é montado na bolha — zero spinner/peso. */}
                   <button
@@ -321,12 +315,12 @@ export function MessageBubble({
                       </span>
                     </span>
                     {infoChips && (
-                      <span className="absolute bottom-1.5 right-1.5 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-white backdrop-blur-sm">
+                      <span className="absolute bottom-1.5 right-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-white backdrop-blur-sm">
                         {infoChips}
                       </span>
                     )}
                   </button>
-                  <div className="flex items-center justify-between gap-2 border-t border-border/50 px-2 py-1.5">
+                  <div className="flex items-center justify-between gap-2 border-t border-border/60 px-2 py-1.5">
                     <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
                       {media.fileName ?? "Vídeo"}
                     </span>
@@ -349,7 +343,7 @@ export function MessageBubble({
                   download={media.fileName ?? undefined}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex w-full max-w-[320px] items-center gap-2 rounded-xl bg-secondary/40 px-3 py-2 text-xs font-medium text-foreground ring-1 ring-border/50 transition hover:bg-secondary/70 hover:ring-primary/40"
+                  className="flex w-full max-w-[320px] items-center gap-2 rounded-lg border border-border/60 bg-secondary/40 px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 hover:bg-secondary/70"
                 >
                   <FileText className="h-4 w-4 shrink-0 text-primary" />
                   <span className="min-w-0 flex-1 truncate">{media.fileName ?? "Documento"}</span>
@@ -375,7 +369,7 @@ export function MessageBubble({
             type="button"
             aria-label="Fechar"
             onClick={() => setLightbox(false)}
-            className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-xl bg-white/10 text-white transition hover:bg-white/20"
+            className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-lg bg-white/10 text-white transition hover:bg-white/20"
           >
             <X className="h-5 w-5" />
           </button>
@@ -383,8 +377,7 @@ export function MessageBubble({
             /* Viewer na mesma aba (padrão WhatsApp Web):
                - key = caminho estável do objeto (NUNCA a URL assinada volátil)
                - <source> (não src direto no video): mudar atributo de <source>
-                 NÃO recarrega o player sozinho — proteção extra contra poll
-               - <source type> = decisão de codec sem sniffing
+                 NÃO recarrega o player sozinho — proteção extra contra o poll
                - poster = frame imediato antes do primeiro buffer
                - preload="metadata" + autoPlay: autoplay puxa o stream; o
                  metadata evita pré-carga onde autoplay não está disponível */
@@ -395,7 +388,7 @@ export function MessageBubble({
               playsInline
               preload="metadata"
               poster={media.thumbUrl ?? undefined}
-              className="w-full max-h-[85vh] rounded-xl shadow-lg object-contain bg-black"
+              className="w-full max-h-[85vh] rounded-lg shadow-lg object-contain bg-black"
               onClick={(e) => e.stopPropagation()}
             >
               <source src={media.url} type={media.mimeType ?? "video/mp4"} />
@@ -406,7 +399,7 @@ export function MessageBubble({
               key={mediaStableKey ?? media.url}
               src={media.url}
               alt={media.fileName ?? "Imagem da conversa"}
-              className="max-h-full max-w-full rounded-xl shadow-2xl"
+              className="max-h-full max-w-full rounded-lg shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             />
           )}

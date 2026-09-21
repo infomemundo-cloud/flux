@@ -1,79 +1,113 @@
-import { Link } from "@tanstack/react-router";
-import { PanelLeftClose, PanelRightOpen, X, MessageCircle } from "lucide-react";
+import { MessageCircle, PanelLeftClose, PanelLeftOpen, PanelRightOpen, Users, X } from "lucide-react";
+import { toast } from "sonner";
 import { ContactAvatar } from "@/components/contact-avatar";
 
+type DemandaHeaderProps = {
+  contactName: string;
+  contactAvatarUrl: string | null;
+  phone: string | null;
+  isGroupChat: boolean;
+  filaCollapsed: boolean;
+  onToggleFila: () => void;
+  railCollapsed: boolean;
+  onExpandRail: () => void;
+  onClose: () => void;
+};
+
 /**
- * Área 1 do detalhe: identidade do contato (avatar real, nome, chip de grupo,
- * protocolo, telefone) + controles de layout (recolher fila, reabrir trilho,
- * fechar painel). Puramente apresentacional: ações chegam prontas via props.
+ * Header do chat — altura FIXA h-14 (mesma altura do header do trilho).
+ * ORDEM: toggle da fila (SEMPRE visível, antes do avatar) → avatar →
+ * nome · telefone (copiável) → badge do canal → expandir propriedades
+ * (só com trilho recolhido) → X de fechar.
+ * SEM protocolo aqui: ele já vive na linha "Protocolo" do trilho de
+ * Propriedades — duplicar só pesava na linha de identidade.
  */
 export function DemandaHeader({
-  slug,
   contactName,
   contactAvatarUrl,
   phone,
-  protocol,
   isGroupChat,
-  onCollapseFila,
+  filaCollapsed,
+  onToggleFila,
   railCollapsed,
   onExpandRail,
-}: {
-  slug: string;
-  contactName: string;
-  contactAvatarUrl: string | null;
-  phone?: string | null;
-  protocol?: string | null;
-  isGroupChat: boolean;
-  onCollapseFila: () => void;
-  railCollapsed: boolean;
-  onExpandRail: () => void;
-}) {
+  onClose,
+}: DemandaHeaderProps) {
+  const handleCopyPhone = async () => {
+    if (!phone) return;
+    try {
+      await navigator.clipboard.writeText(phone);
+      toast.success("Telefone copiado");
+    } catch {
+      toast.error("Não foi possível copiar");
+    }
+  };
+
   return (
-    <div className="shrink-0 border-b border-border bg-card p-3 flex items-center gap-2.5">
+    <header className="h-14 shrink-0 border-b border-border/50 bg-card px-3 flex items-center gap-2.5">
+      {/* Toggle da fila — sempre visível, antes do avatar */}
       <button
-        onClick={onCollapseFila}
-        title="Recolher fila"
-        aria-label="Recolher fila"
-        className="hidden sm:grid shrink-0 place-items-center h-8 w-8 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition"
+        type="button"
+        onClick={onToggleFila}
+        title={filaCollapsed ? "Expandir fila" : "Recolher fila"}
+        aria-label={filaCollapsed ? "Expandir fila" : "Recolher fila"}
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
       >
-        <PanelLeftClose className="h-4 w-4" />
+        {filaCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
       </button>
-      <ContactAvatar url={contactAvatarUrl} name={contactName} tone="client" />
+
+      {/* Identidade do contato */}
+      <ContactAvatar url={contactAvatarUrl} name={contactName} size="sm" tone="client" />
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-1.5 min-w-0">
-          <span className="truncate text-sm font-semibold text-foreground">{contactName}</span>
-          {isGroupChat && (
-            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide pill-brand">
-              Grupo
-            </span>
+        <div className="flex min-w-0 items-center gap-1.5 text-xs">
+          <span className="truncate font-bold text-foreground">{contactName}</span>
+          {phone && (
+            <>
+              <span className="hidden shrink-0 text-muted-foreground/50 md:inline">·</span>
+              <button
+                type="button"
+                onClick={handleCopyPhone}
+                title="Clique para copiar"
+                className="hidden truncate text-[11px] text-muted-foreground transition tabular-nums hover:text-primary md:inline md:max-w-[140px]"
+              >
+                {phone}
+              </button>
+            </>
           )}
-          <span className="shrink-0 text-xs text-muted-foreground">· {protocol}</span>
         </div>
-        {phone && (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <MessageCircle className="h-3 w-3" strokeWidth={2.2} /> {phone}
-          </div>
-        )}
       </div>
-      {railCollapsed && (
-        <button
-          onClick={onExpandRail}
-          title="Expandir painel lateral"
-          aria-label="Expandir painel lateral"
-          className="hidden md:grid shrink-0 place-items-center h-8 w-8 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition"
+
+      {/* Canal + ações de layout + fechar */}
+      <div className="flex shrink-0 items-center gap-1.5">
+        <span
+          title={isGroupChat ? "Conversa em grupo" : "WhatsApp"}
+          aria-label={isGroupChat ? "Conversa em grupo" : "WhatsApp"}
+          className="inline-flex items-center gap-1 rounded-md bg-[var(--pill-green-bg)] px-2 py-1 text-[10px] font-bold text-[var(--pill-green-fg)]"
         >
-          <PanelRightOpen className="h-4 w-4" />
+          {isGroupChat ? <Users className="h-3 w-3" /> : <MessageCircle className="h-3 w-3" />}
+          {isGroupChat ? "Grupo" : "WhatsApp"}
+        </span>
+        {railCollapsed && (
+          <button
+            type="button"
+            onClick={onExpandRail}
+            title="Expandir propriedades"
+            aria-label="Expandir propriedades"
+            className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+          >
+            <PanelRightOpen className="h-4 w-4" />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onClose}
+          title="Fechar demanda"
+          aria-label="Fechar demanda"
+          className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+        >
+          <X className="h-4 w-4" />
         </button>
-      )}
-      <Link
-        to="/app/o/$slug/fila"
-        params={{ slug }}
-        title="Fechar"
-        aria-label="Fechar painel"
-        className="shrink-0 grid place-items-center h-8 w-8 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition"
-      >
-        <X className="h-4 w-4" />
-      </Link>
-    </div>
+      </div>
+    </header>
   );
 }

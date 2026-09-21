@@ -73,7 +73,6 @@ function DemandaDetail() {
   const { data: org } = useQuery({ queryKey: ["org", slug], queryFn: () => orgFn({ data: { slug } }) });
   const canDelete = org?.role === "owner" || org?.role === "admin";
   const isManager = !!org && MANAGER_ROLES.has(org.role);
-
   const opsFn = useServerFn(listOperators);
   const { data: operators } = useQuery({
     queryKey: ["operators", org?.id],
@@ -101,7 +100,6 @@ function DemandaDetail() {
     mutationFn: async () => {
       const d = data?.demanda as any;
       const goViaWhatsapp = viaWhatsapp && !!d?.whatsapp_jid;
-
       // Caminho 1: comentário interno (sempre sem anexo — anexo só no WhatsApp).
       if (!goViaWhatsapp) {
         if (!comment.trim()) throw new Error("Escreva algo antes de enviar.");
@@ -116,7 +114,6 @@ function DemandaDetail() {
           },
         });
       }
-
       // Caminho 2: texto puro no WhatsApp (sem anexo).
       if (!attachment) {
         if (!comment.trim()) throw new Error("Escreva algo antes de enviar.");
@@ -139,13 +136,7 @@ function DemandaDetail() {
           },
         });
       }
-
-      // Caminho 3: WhatsApp COM anexo.
-      // Chamada DIRETA da server function via useServerFn (navegador → endpoint
-      // serverFn com cookies): é o mesmo caminho de auth de todas as outras
-      // mutations do projeto. Chamada in-process a partir de rota NÃO carrega
-      // a sessão pro middleware requireSupabaseAuth (era o 401 "No authorization
-      // header provided"). O arquivo vai como base64 no input validado.
+      // Caminho 3: WhatsApp COM anexo (base64 no input validado da server fn).
       setIsUploading(true);
       try {
         const fileBase64 = await toBase64(attachment.file);
@@ -213,24 +204,22 @@ function DemandaDetail() {
 
   const contactName = resolveContactName(d);
   const isGroupChat = !!d.whatsapp_jid?.endsWith("@g.us");
-
+  const filaCollapsed = filaSidebar?.collapsed ?? false;
   const handleReply = (target: ReplyTarget) => {
     setReplyTo(target);
     composerRef.current?.focus();
   };
-
   const handleAttach = (file: File) => {
     const kind = file.type.startsWith("image/")
       ? "image"
       : file.type.startsWith("audio/")
-      ? "audio"
-      : file.type.startsWith("video/")
-      ? "video"
-      : "document";
+        ? "audio"
+        : file.type.startsWith("video/")
+          ? "video"
+          : "document";
     const previewUrl = kind === "image" ? URL.createObjectURL(file) : null;
     setAttachment({ file, previewUrl, kind });
   };
-
   const handleRemoveAttachment = () => {
     if (attachment?.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
     setAttachment(null);
@@ -240,17 +229,16 @@ function DemandaDetail() {
     <div className="relative flex h-full">
       <div className="flex flex-col min-w-0 flex-1">
         <DemandaHeader
-          slug={slug}
           contactName={contactName}
           contactAvatarUrl={d.contacts?.avatar_url ?? null}
           phone={d.contacts?.phone ?? null}
-          protocol={d.protocol}
           isGroupChat={isGroupChat}
-          onCollapseFila={() => filaSidebar?.setCollapsed(true)}
+          filaCollapsed={filaCollapsed}
+          onToggleFila={() => filaSidebar?.setCollapsed(!filaCollapsed)}
           railCollapsed={railCollapsed}
           onExpandRail={() => setRailCollapsed(false)}
+          onClose={() => navigate({ to: "/app/o/$slug/fila", params: { slug } })}
         />
-
         <DemandaHistory
           demandaId={id}
           events={data.events}
@@ -264,7 +252,6 @@ function DemandaDetail() {
           onReply={handleReply}
           onRetryMedia={() => qc.invalidateQueries({ queryKey: ["demanda", id] })}
         />
-
         <DemandaComposer
           hasWhatsapp={!!d.whatsapp_jid}
           viaWhatsapp={viaWhatsapp}
@@ -282,7 +269,6 @@ function DemandaDetail() {
           textareaRef={composerRef}
         />
       </div>
-
       {!railCollapsed && (
         <PropertiesRail
           demanda={d}

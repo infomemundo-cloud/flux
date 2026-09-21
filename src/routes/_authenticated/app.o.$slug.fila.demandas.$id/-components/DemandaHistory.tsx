@@ -1,47 +1,39 @@
-import { useEffect, useRef } from "react";
-import { STATE_LABEL, formatRelative } from "@/components/demandas-ui";
-import { ContactAvatar } from "@/components/contact-avatar";
-import { GitBranch, Flag, AlertCircle, UserCheck, Circle } from "lucide-react";
+import { useEffect, useRef, type ReactNode } from "react";
+import {
+  CalendarClock,
+  CheckCircle2,
+  Flag,
+  GitBranch,
+  Inbox,
+  MessageCircle,
+  UserCog,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { formatRelative, STATE_LABEL } from "@/components/demandas-ui";
+import { MessageBubble, type BubbleMedia, type QuotedRef } from "./MessageBubble";
 import { SystemLine } from "./SystemLine";
-import { MessageBubble, type BubbleMedia } from "./MessageBubble";
 import { TeamAvatar } from "./TeamAvatar";
+import { ContactAvatar } from "@/components/contact-avatar";
 
 /**
- * Snapshot da mensagem sendo respondida (reply estilo WhatsApp).
+ * Alvo de reply (citação) calculado pelo DemandaHistory a partir do evento.
+ * O snapshot completo (author/content/kind) é passado pro composer, que grava
+ * no metadata do comentário ou envia como quoted na mensagem do WhatsApp.
  */
 export type ReplyTarget = {
   event_id: string;
   author: string;
   content: string;
   kind: string;
-  message_id: string | null;
-  from_me: boolean;
-  participant: string | null;
+  message_id?: string | null;
+  from_me?: boolean;
+  participant?: string | null;
 };
 
-/**
- * Área 2 do detalhe: lista de eventos com rolagem própria e auto-scroll
- * pro final a cada mensagem nova (ou troca de demanda).
- * Puramente apresentacional: identidade dos atores e URLs assinadas de mídia
- * (incluindo o thumbnail do vídeo, usado como poster no modal) vêm prontas
- * do route/getDemanda.
- */
-export function DemandaHistory({
-  demandaId,
-  events,
-  description,
-  contactName,
-  contactAvatarUrl,
-  isGroupChat,
-  nameOf,
-  roleOf,
-  isAIOf,
-  onReply,
-  onRetryMedia,
-}: {
+type DemandaHistoryProps = {
   demandaId: string;
   events: any[];
-  description?: string | null;
+  description: string | null;
   contactName: string;
   contactAvatarUrl: string | null;
   isGroupChat: boolean;
@@ -49,148 +41,157 @@ export function DemandaHistory({
   roleOf: (uid?: string | null) => string | null;
   isAIOf: (uid?: string | null) => boolean;
   onReply: (target: ReplyTarget) => void;
-  onRetryMedia?: () => void;
-}) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const lastEventId = events[events.length - 1]?.id;
+  onRetryMedia: () => void;
+};
 
-  // Auto-scroll pro final quando chega mensagem nova ou troca a demanda.
+/**
+ * Ícone + texto de cada evento de sistema. O SystemLine é apresentacional
+ * (recebe icon/children/when prontos), então a composição de linguagem
+ * ("Fulano mudou o estado de X para Y") vive aqui, junto dos dados.
+ */
+function systemLineFor(
+  e: any,
+  nameOf: (uid?: string | null, fallback?: string) => string,
+): { icon: LucideIcon; text: string } | null {
+  const actor = nameOf(e.actor_id, "Sistema");
+  const stateLabel = (v: any) => (v ? ((STATE_LABEL as Record<string, string>)[v] ?? v) : "—");
+  switch (e.kind) {
+    case "created":
+      return { icon: Inbox, text: `Demanda criada por ${actor}` };
+    case "state_changed":
+      return {
+        icon: GitBranch,
+        text: `${actor} mudou o estado de ${stateLabel(e.from_value)} para ${stateLabel(e.to_value)}`,
+      };
+    case "assigned": {
+      const from = e.from_value ? nameOf(e.from_value) : null;
+      const to = e.to_value ? nameOf(e.to_value) : null;
+      if (to && from) return { icon: UserCog, text: `Responsável alterado de ${from} para ${to}` };
+      if (to) return { icon: UserCog, text: `Atribuída a ${to}` };
+      return { icon: UserCog, text: `Responsável removido${from ? ` (${from})` : ""}` };
+    }
+    case "priority_changed":
+      return {
+        icon: Flag,
+        text: `${actor} mudou a prioridade de ${e.from_value ?? "—"} para ${e.to_value ?? "—"}`,
+      };
+    case "due_updated":
+      return { icon: CalendarClock, text: `${actor} atualizou o prazo` };
+    case "closed":
+      return { icon: CheckCircle2, text: `Demanda concluída${e.actor_id ? ` por ${actor}` : ""}` };
+    default:
+      return null;
+  }
+}
+
+export function DemandaHistory({
+  events,
+  description,
+  contactName,
+  contactAvatarUrl,
+  nameOf,
+  roleOf,
+  isAIOf,
+  onReply,
+  onRetryMedia,
+}: DemandaHistoryProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const lastCountRef = useRef(0);
+
+  // Auto-scroll só quando chega evento novo (não no primeiro load).
   useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [demandaId, lastEventId]);
+    if (events.length > lastCountRef.current && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+    lastCountRef.current = events.length;
+  }, [events.length]);
+
+  const avatarFor = (uid?: string | null, isClient?: boolean): ReactNode => {
+    if (isClient) return <ContactAvatar url={contactAvatarUrl} name={contactName} size="sm" tone="client" />;
+    return <TeamAvatar name={nameOf(uid)} isAI={isAIOf(uid)} />;
+  };
 
   return (
-    <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-thin p-4">
+    <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3 space-y-1">
       {description && (
-        <div className="mb-4 rounded-lg border border-dashed border-border bg-card/60 p-3 text-xs text-muted-foreground whitespace-pre-wrap">
+        <div className="ml-10 rounded-lg border border-dashed border-border/60 bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
           {description}
         </div>
       )}
-      <ul className="space-y-1">
-        {events.map((e: any) => {
+      {events.map((e: any) => {
+        if (e.kind === "message_in" || e.kind === "message_out" || e.kind === "commented") {
           const isClient = e.kind === "message_in";
+          const isInternal = e.kind === "commented";
           const isOutgoing = e.kind === "message_out";
-          const isComment = e.kind === "commented";
-          const isChatMessage = isClient || isOutgoing || isComment;
-          const when = formatRelative(e.created_at);
-
-          if (!isChatMessage) {
-            const fallbackByKind: Record<string, string> = {
-              created: "Entrada externa",
-              state_changed: "Automação",
-              priority_changed: "Automação",
-              assigned: "Atribuição automática",
-            };
-            const fallback = fallbackByKind[e.kind] ?? "Sistema";
-            const who = <span className="font-semibold text-foreground/80">{nameOf(e.actor_id, fallback)}</span>;
-
-            if (e.kind === "state_changed")
-              return (
-                <SystemLine key={e.id} icon={GitBranch} when={when}>
-                  {who} mudou o estado de <b className="text-foreground/80">{STATE_LABEL[e.from_value] ?? e.from_value}</b> para{" "}
-                  <b className="text-foreground/80">{STATE_LABEL[e.to_value] ?? e.to_value}</b>
-                </SystemLine>
-              );
-            if (e.kind === "priority_changed")
-              return (
-                <SystemLine key={e.id} icon={Flag} when={when}>
-                  {who} mudou a prioridade de <b className="text-foreground/80">{e.from_value}</b> para{" "}
-                  <b className="text-foreground/80">{e.to_value}</b>
-                </SystemLine>
-              );
-            if (e.kind === "created")
-              return (
-                <SystemLine key={e.id} icon={AlertCircle} when={when}>
-                  {who} criou a demanda
-                </SystemLine>
-              );
-            if (e.kind === "assigned")
-              return (
-                <SystemLine key={e.id} icon={UserCheck} when={when}>
-                  {who} atribuiu para{" "}
-                  <b className="text-foreground/80">{e.to_value ? nameOf(e.to_value, "usuário removido") : "sem responsável"}</b>
-                </SystemLine>
-              );
-            return (
-              <SystemLine key={e.id} icon={Circle} when={when}>
-                {who} · {e.kind}
-              </SystemLine>
-            );
-          }
-
-          const author = isClient
-            ? isGroupChat
-              ? e.metadata?.participant_name ?? contactName
-              : contactName
-            : nameOf(e.actor_id, "Atendente");
-          const authorRole = isClient ? "Cliente" : roleOf(e.actor_id);
-          const isAI = isAIOf(e.actor_id);
-          // Comentário interno ganha rótulo explícito: nunca confundir com
-          // mensagem que foi (ou seria) enviada ao cliente.
-          const messageLabel = isClient
-            ? "mensagem recebida"
-            : isOutgoing
-            ? "resposta enviada"
-            : "comentário interno";
-          const quoted = e.metadata?.quoted as
-            | undefined
-            | { author?: string; content?: string; kind?: string };
-
-          // Mídia: só monta o objeto se o evento tem linha de mídia OU falha
-          // registrada; URLs assinadas (mídia + thumb) são as únicas aceitas.
-          const failedReason: string | null = e.metadata?.media_failed ?? null;
-          const media: BubbleMedia | null =
-            e.media_url || failedReason
-              ? {
-                  mediaKind: e.metadata?.media_kind ?? null,
-                  mimeType: e.media_type ?? null,
-                  url: e.media_url ? (e.media_url_signed ?? null) : null,
-                  fileName: e.file_name ?? null,
-                  failedReason,
-                  seconds: typeof e.metadata?.media_seconds === "number" ? e.metadata.media_seconds : null,
-                  bytes: typeof e.metadata?.media_bytes === "number" ? e.metadata.media_bytes : null,
-                  thumbUrl: e.metadata?.media_thumb ? (e.media_thumb_signed ?? null) : null,
-                }
-              : null;
+          const quoted = e.metadata?.quoted as QuotedRef | null;
+          const media: BubbleMedia | null = e.media_url
+            ? {
+                mediaKind: e.metadata?.media_kind ?? null,
+                mimeType: e.media_type ?? null,
+                url: e.media_url_signed ?? null,
+                fileName: e.file_name ?? null,
+                failedReason: e.metadata?.media_failed ?? null,
+                seconds: e.metadata?.media_seconds ?? null,
+                bytes: e.metadata?.media_bytes ?? null,
+                thumbUrl: e.media_thumb_signed ?? null,
+              }
+            : null;
 
           return (
             <MessageBubble
               key={e.id}
-              avatar={
-                isClient ? (
-                  <ContactAvatar url={contactAvatarUrl} name={author} size="sm" tone="client" />
-                ) : (
-                  <TeamAvatar name={author} isAI={isAI} size="sm" />
-                )
-              }
-              author={author}
-              authorRole={authorRole}
-              rolePillClass={isClient ? "pill-green" : isAI ? "pill-violet" : "pill-brand"}
+              avatar={avatarFor(e.actor_id, isClient)}
+              author={nameOf(e.actor_id, isClient ? contactName : "Sistema")}
+              authorRole={roleOf(e.actor_id)}
+              rolePillClass={isAIOf(e.actor_id) ? "pill-violet" : isClient ? "pill-green" : "pill-brand"}
               isClient={isClient}
               isOutgoing={isOutgoing}
-              isInternal={isComment}
-              messageLabel={messageLabel}
-              when={when}
+              isInternal={isInternal}
+              messageLabel={isClient ? "Cliente" : isInternal ? "Nota interna" : "Enviada"}
+              when={formatRelative(e.created_at)}
               content={e.content}
               quoted={quoted}
               media={media}
               onReply={() =>
                 onReply({
                   event_id: e.id,
-                  author,
-                  content: e.content ?? "",
+                  author: nameOf(e.actor_id, isClient ? contactName : "Sistema"),
+                  content: e.content ?? "[mídia]",
                   kind: e.kind,
-                  message_id: e.metadata?.message_id ?? null,
-                  from_me: e.kind === "message_out",
-                  participant: e.metadata?.participant_jid ?? null,
+                  message_id: e.metadata?.message_id,
+                  from_me: isOutgoing,
+                  participant: e.metadata?.participant_name ?? null,
                 })
               }
               onRetryMedia={onRetryMedia}
             />
           );
-        })}
-      </ul>
+        }
+        const line = systemLineFor(e, nameOf);
+        if (!line) return null;
+        const Icon = line.icon;
+        // Recuo próprio (pl-6) pra linha de sistema não ficar colada na
+        // borda da coluna: o ícone alinha sob o conteúdo dos balões, não
+        // sob o avatar — respiração visual longe da sidebar.
+        return (
+          <div key={e.id} className="pl-6 pr-2 py-0.5">
+            <SystemLine icon={Icon} when={formatRelative(e.created_at)}>
+              {line.text}
+            </SystemLine>
+          </div>
+        );
+      })}
+      {events.length === 0 && (
+        <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary">
+            <MessageCircle className="h-5 w-5" strokeWidth={1.8} />
+          </div>
+          <div className="text-sm font-semibold text-foreground">Nenhuma mensagem ainda</div>
+          <p className="text-xs text-muted-foreground max-w-[240px]">
+            Envie uma mensagem ou espere o cliente entrar em contato.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

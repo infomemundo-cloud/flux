@@ -1,252 +1,223 @@
 import { useState } from "react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  PanelRightClose,
-  Trash2,
-  UserCheck,
-  Flag,
   CalendarClock,
-  UserCog,
-  Activity,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
+  Check,
+  ChevronDown,
+  FileText,
+  PanelRightClose,
+  Tag,
+  Trash2,
+  User,
+  UserCheck,
+  UserRound,
+  UserX,
+  X,
 } from "lucide-react";
-import { STATE_COLOR } from "@/lib/demandas/state-colors";
+import { StateEnum, PriorityEnum } from "@/lib/demandas/demandas-guard";
 import { STATE_LABEL } from "@/components/demandas-ui";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 
-const NEXT_STATES = ["novo", "em_analise", "aguardando_cliente", "aguardando_revisao_humana", "concluido"] as const;
-const PRIORITIES = ["baixa", "media", "alta", "urgente"] as const;
+/** Mesmos tokens de cor dos pips/bordas da fila — consistência visual. */
+const STATE_DOT: Record<string, string> = {
+  novo: "bg-[var(--state-novo)]",
+  em_analise: "bg-[var(--state-analise)]",
+  aguardando_cliente: "bg-[var(--state-aguardando)]",
+  aguardando_revisao_humana: "bg-[var(--pill-violet-fg)]",
+  concluido: "bg-[var(--state-resolvido)]",
+};
 
-/** Classe compartilhada dos "gatilhos" compactos do trilho (Select e Prazo). */
-export const RAIL_TRIGGER_CLS =
-  "w-full h-8 px-2 rounded-md border border-border/60 bg-card text-xs font-medium text-left hover:bg-accent/50 focus:ring-1 focus:ring-ring transition-colors";
+/**
+ * Estilo DISCRETO de pílula (key-value à direita): sem borda, fundo sutil,
+ * h-8 (respiração vertical), texto 11px, largura ajustada ao conteúdo.
+ */
+const PILL_TRIGGER =
+  "inline-flex h-8 items-center gap-1.5 rounded-lg bg-secondary/60 pl-2.5 pr-2 text-[11px] font-medium text-foreground/85 transition hover:bg-secondary";
 
-const MONTHS_PT = [
-  "janeiro",
-  "fevereiro",
-  "março",
-  "abril",
-  "maio",
-  "junho",
-  "julho",
-  "agosto",
-  "setembro",
-  "outubro",
-  "novembro",
-  "dezembro",
-];
-const WEEKDAYS_PT = ["D", "S", "T", "Q", "Q", "S", "S"];
+/** Prioridade ATIVA: cores semânticas via pills do design system. */
+const PRIORITY_ACTIVE: Record<string, string> = {
+  baixa: "pill-neutral font-semibold",
+  media: "pill-amber font-semibold",
+  alta: "pill-orange font-semibold",
+  urgente: "pill-red font-bold",
+};
 
-function pad2(n: number) {
-  return String(n).padStart(2, "0");
+/** Borda sutil da prioridade ativa: o próprio foreground da pill em 30–40%. */
+const PRIORITY_EDGE: Record<string, string> = {
+  baixa: "border-[color-mix(in_oklch,var(--pill-neutral-fg)_30%,transparent)]",
+  media: "border-[color-mix(in_oklch,var(--pill-amber-fg)_30%,transparent)]",
+  alta: "border-[color-mix(in_oklch,var(--pill-orange-fg)_30%,transparent)]",
+  urgente: "border-[color-mix(in_oklch,var(--pill-red-fg)_40%,transparent)]",
+};
+
+/** Dot de prioridade no menu (mesma família de cor da pill ativa). */
+const PRIORITY_DOT: Record<string, string> = {
+  baixa: "bg-muted-foreground/50",
+  media: "bg-[var(--pill-amber-fg)]",
+  alta: "bg-[var(--pill-orange-fg)]",
+  urgente: "bg-[var(--pill-red-fg)]",
+};
+
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
-function startOfDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
+/**
+ * Prazo em formato de pílula inline: ícone + data·hora (ou "Sem prazo"),
+ * popover com Calendar + input de hora + atalhos rápidos. Carmim sutil
+ * quando vencido. X interno limpa o prazo.
+ */
+function DueDatePicker({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (v: string | null) => void;
+}) {
+  const parts = value ? new Date(value) : null;
+  const time = parts
+    ? `${String(parts.getHours()).padStart(2, "0")}:${String(parts.getMinutes()).padStart(2, "0")}`
+    : "18:00";
+  const overdue = !!parts && parts.getTime() < Date.now();
 
-function formatDueLabel(iso: string) {
-  return new Date(iso).toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-/** Popover de prazo (calendário + hora/minuto) — usado só pelo trilho. */
-function DueDatePicker({ value, onChange }: { value: string | null; onChange: (iso: string | null) => void }) {
-  const [open, setOpen] = useState(false);
-  const [view, setView] = useState(() => startOfDay(value ? new Date(value) : new Date()));
-  const [selected, setSelected] = useState<Date | null>(value ? new Date(value) : null);
-  const [hour, setHour] = useState(value ? new Date(value).getHours() : new Date().getHours());
-  const [minute, setMinute] = useState(value ? new Date(value).getMinutes() : 0);
-
-  const handleOpenChange = (next: boolean) => {
-    if (next) {
-      const base = value ? new Date(value) : new Date();
-      setView(startOfDay(base));
-      setSelected(value ? new Date(value) : null);
-      setHour(value ? new Date(value).getHours() : new Date().getHours());
-      setMinute(value ? new Date(value).getMinutes() : 0);
-    }
-    setOpen(next);
+  const commit = (d: Date, t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    const nd = new Date(d);
+    nd.setHours(h || 0, m || 0, 0, 0);
+    onChange(nd.toISOString());
+  };
+  const quick = (days: number, hour: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    d.setHours(hour, 0, 0, 0);
+    onChange(d.toISOString());
   };
 
-  const commit = (day: Date, h: number, m: number) => {
-    const dt = new Date(day);
-    dt.setHours(h, m, 0, 0);
-    onChange(dt.toISOString());
-  };
-
-  const pickDay = (day: Date) => {
-    setSelected(day);
-    commit(day, hour, minute);
-  };
-
-  const changeHour = (h: number) => {
-    setHour(h);
-    if (selected) commit(selected, h, minute);
-  };
-
-  const changeMinute = (m: number) => {
-    setMinute(m);
-    if (selected) commit(selected, hour, m);
-  };
-
-  const pickToday = () => {
-    const now = new Date();
-    const day = startOfDay(now);
-    setSelected(day);
-    setView(day);
-    setHour(now.getHours());
-    setMinute(now.getMinutes());
-    commit(day, now.getHours(), now.getMinutes());
-  };
-
-  const cells: { date: Date; inMonth: boolean }[] = [];
-  const firstWeekday = new Date(view.getFullYear(), view.getMonth(), 1).getDay();
-  const daysInMonth = new Date(view.getFullYear(), view.getMonth() + 1, 0).getDate();
-  const daysInPrev = new Date(view.getFullYear(), view.getMonth(), 0).getDate();
-  for (let i = firstWeekday - 1; i >= 0; i--) {
-    cells.push({ date: new Date(view.getFullYear(), view.getMonth() - 1, daysInPrev - i), inMonth: false });
-  }
-  for (let d = 1; d <= daysInMonth; d++) {
-    cells.push({ date: new Date(view.getFullYear(), view.getMonth(), d), inMonth: true });
-  }
-  while (cells.length % 7 !== 0) {
-    const last = cells[cells.length - 1].date;
-    cells.push({ date: new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1), inMonth: false });
-  }
-
-  const todayMs = startOfDay(new Date()).getTime();
-  const selectedMs = selected ? startOfDay(selected).getTime() : null;
-
-  const navBtn =
-    "grid place-items-center h-7 w-7 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground active:scale-90 transition-all duration-150";
-  const timeSelect =
-    "h-8 flex-1 rounded-md border border-border/60 bg-card px-1.5 text-xs font-medium tabular-nums text-foreground outline-none transition-colors hover:bg-accent/50 focus:ring-1 focus:ring-ring cursor-pointer";
+  const label = parts
+    ? `${String(parts.getDate()).padStart(2, "0")}/${String(parts.getMonth() + 1).padStart(2, "0")} · ${time}`
+    : "Sem prazo";
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>
-        <button className={`${RAIL_TRIGGER_CLS} group flex items-center justify-between gap-1.5`}>
-          {value ? (
-            <span className="truncate tabular-nums">{formatDueLabel(value)}</span>
-          ) : (
-            <span className="text-muted-foreground font-normal">Sem prazo</span>
-          )}
-          <CalendarClock className="h-3 w-3 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-primary" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        side="left"
-        align="center"
-        sideOffset={10}
-        collisionPadding={12}
-        className="w-[252px] rounded-xl border-border/60 p-3 shadow-lg max-h-[calc(100vh-24px)] overflow-y-auto scrollbar-thin"
-      >
-        <div className="mb-2 flex items-center justify-between">
+    <div className="relative inline-flex">
+      <Popover>
+        <PopoverTrigger asChild>
           <button
             type="button"
-            onClick={() => setView(new Date(view.getFullYear(), view.getMonth() - 1, 1))}
-            className={navBtn}
-            aria-label="Mês anterior"
+            className={`${PILL_TRIGGER} pr-7 ${overdue ? "text-destructive" : ""}`}
           >
-            <ChevronLeft className="h-3.5 w-3.5" />
+            <CalendarClock
+              className={`h-3.5 w-3.5 shrink-0 ${overdue ? "text-destructive" : "text-muted-foreground"}`}
+            />
+            <span className="tabular-nums">{label}</span>
           </button>
-          <div className="text-xs font-semibold capitalize text-foreground">
-            {MONTHS_PT[view.getMonth()]} {view.getFullYear()}
-          </div>
-          <button
-            type="button"
-            onClick={() => setView(new Date(view.getFullYear(), view.getMonth() + 1, 1))}
-            className={navBtn}
-            aria-label="Próximo mês"
-          >
-            <ChevronRight className="h-3.5 w-3.5" />
-          </button>
-        </div>
-        <div className="mb-1 grid grid-cols-7 gap-0.5">
-          {WEEKDAYS_PT.map((w, i) => (
-            <div key={i} className="grid h-6 place-items-center text-[10px] font-semibold text-muted-foreground/60">
-              {w}
-            </div>
-          ))}
-        </div>
-        <div className="grid grid-cols-7 gap-0.5">
-          {cells.map((c, i) => {
-            const ms = startOfDay(c.date).getTime();
-            const isSel = ms === selectedMs;
-            const isToday = ms === todayMs;
-            return (
+        </PopoverTrigger>
+        <PopoverContent
+          side="left"
+          align="end"
+          sideOffset={12}
+          collisionPadding={16}
+          sticky="always"
+          className="w-auto max-h-[calc(100dvh-6rem)] overflow-y-auto rounded-2xl p-0"
+        >
+          <Calendar
+            mode="single"
+            selected={parts ?? undefined}
+            onSelect={(d) => d && commit(d, time)}
+            className="rounded-none"
+          />
+          <div className="flex items-center gap-2 border-t border-border/50 px-3 py-2">
+            <input
+              type="time"
+              value={time}
+              onChange={(e) => parts && commit(parts, e.target.value)}
+              className="h-8 rounded-lg border border-border/60 bg-background px-2 text-[11px] tabular-nums outline-none transition focus:border-primary/50"
+            />
+            <div className="flex flex-1 justify-end gap-1">
               <button
-                key={i}
                 type="button"
-                onClick={() => pickDay(c.date)}
-                className={`grid h-7 w-7 place-items-center rounded-lg text-[11px] tabular-nums transition-all duration-150 active:scale-90 ${
-                  isSel
-                    ? "bg-primary text-primary-foreground font-semibold shadow-sm scale-105"
-                    : isToday
-                    ? "text-primary font-semibold ring-1 ring-primary/40 hover:bg-primary/10"
-                    : c.inMonth
-                    ? "text-foreground hover:bg-secondary"
-                    : "text-muted-foreground/40 hover:bg-secondary/60"
-                }`}
+                onClick={() => quick(0, 18)}
+                className="rounded-md bg-secondary/70 px-1.5 py-1 text-[10px] font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
               >
-                {c.date.getDate()}
+                Hoje 18h
               </button>
-            );
-          })}
-        </div>
-        <div className="mt-3 flex items-center gap-1.5 border-t border-border/50 pt-2.5">
-          <Clock className="h-3 w-3 shrink-0 text-muted-foreground/60" />
-          <select aria-label="Hora" value={hour} onChange={(e) => changeHour(Number(e.target.value))} className={timeSelect}>
-            {Array.from({ length: 24 }, (_, h) => (
-              <option key={h} value={h}>
-                {pad2(h)}
-              </option>
-            ))}
-          </select>
-          <span className="text-xs font-semibold text-muted-foreground">:</span>
-          <select aria-label="Minuto" value={minute} onChange={(e) => changeMinute(Number(e.target.value))} className={timeSelect}>
-            {Array.from({ length: 60 }, (_, m) => (
-              <option key={m} value={m}>
-                {pad2(m)}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="mt-2.5 flex items-center justify-between border-t border-border/50 pt-2">
-          <button
-            type="button"
-            onClick={() => onChange(null)}
-            className="rounded-md px-1.5 py-1 text-[11px] font-medium text-muted-foreground transition-all duration-150 hover:text-destructive hover:bg-destructive/10 active:scale-95"
-          >
-            Limpar
-          </button>
-          <button
-            type="button"
-            onClick={pickToday}
-            className="rounded-md px-1.5 py-1 text-[11px] font-medium text-primary transition-all duration-150 hover:bg-primary/10 active:scale-95"
-          >
-            Hoje
-          </button>
-        </div>
-      </PopoverContent>
-    </Popover>
+              <button
+                type="button"
+                onClick={() => quick(1, 9)}
+                className="rounded-md bg-secondary/70 px-1.5 py-1 text-[10px] font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+              >
+                Amanhã 9h
+              </button>
+              <button
+                type="button"
+                onClick={() => quick(7, 18)}
+                className="rounded-md bg-secondary/70 px-1.5 py-1 text-[10px] font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+              >
+                +7 dias
+              </button>
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
+      {parts && (
+        <button
+          type="button"
+          title="Limpar prazo"
+          aria-label="Limpar prazo"
+          onClick={() => onChange(null)}
+          className="absolute right-1.5 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
+    </div>
   );
 }
 
 /**
- * Trilho de propriedades (Estado/Prioridade/Prazo/Responsável + Zona de Perigo).
- * Puramente apresentacional + estado local de confirmação de exclusão;
- * mutations e identidade de atores vêm prontas do route via props.
+ * Linha key-value horizontal: rótulo à esquerda (w-20, discreto),
+ * controle à direita em pílula. py-2 pra respiração vertical no trilho
+ * de 320px — itens não ficam achatados.
+ */
+function KVRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-2">
+      <span className="w-20 shrink-0 text-[11px] font-medium text-muted-foreground">{label}</span>
+      <div className="flex min-w-0 flex-1 justify-end">{children}</div>
+    </div>
+  );
+}
+
+type PropertiesRailProps = {
+  demanda: any;
+  onUpdate: (patch: any) => void;
+  onCollapseRail: () => void;
+  orgUserId: string | undefined;
+  isManager: boolean;
+  operators: any[];
+  nameOf: (uid?: string | null) => string;
+  canDelete: boolean;
+  onDelete: () => void;
+  deletePending: boolean;
+};
+
+/**
+ * Trilho de propriedades com abas (Demanda / Contato / Notas).
+ * SUPERFÍCIE SEPARADA: fundo bg-surface/70 (distinto do card branco do chat)
+ * nos 3 temas. Aba Demanda em layout horizontal key-value com pílulas h-8;
+ * prioridade como seletor compacto (pílula colorida + menu) pra nunca
+ * quebrar linha no trilho de 320px.
  */
 export function PropertiesRail({
   demanda,
@@ -259,147 +230,357 @@ export function PropertiesRail({
   canDelete,
   onDelete,
   deletePending,
-}: {
-  demanda: { state: string; priority: string; due_at: string | null; assignee_id: string | null };
-  onUpdate: (patch: Record<string, unknown>) => void;
-  onCollapseRail: () => void;
-  orgUserId?: string;
-  isManager: boolean;
-  operators: { user_id: string; email: string | null }[];
-  nameOf: (uid?: string | null, fallback?: string) => string;
-  canDelete: boolean;
-  onDelete: () => void;
-  deletePending: boolean;
-}) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
+}: PropertiesRailProps) {
+  const [activeTab, setActiveTab] = useState<"demanda" | "contato" | "notas">("demanda");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+
+  const contact = demanda.contacts;
+  const hasContact = !!contact;
+
+  const memberLabel = (op: any) => op.name ?? op.email ?? nameOf(op.user_id);
+  const assigneeOp = operators.find((op: any) => op.user_id === demanda.assignee_id);
+  const assigneeLabel = assigneeOp
+    ? memberLabel(assigneeOp)
+    : demanda.assignee_id
+      ? nameOf(demanda.assignee_id)
+      : null;
+  const protocolUpper = (demanda.protocol ?? "").toUpperCase();
+  const confirmMatches = confirmText.trim().toUpperCase() === protocolUpper && protocolUpper !== "";
 
   return (
-    <aside className="hidden md:flex md:flex-col w-[195px] shrink-0 border-l border-border/80 bg-muted/15 select-none overflow-y-auto scrollbar-thin">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border/60 bg-card/50">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">Propriedades</span>
+    <aside className="hidden lg:flex w-[320px] 2xl:w-[340px] shrink-0 flex-col border-l border-border/60 bg-surface/70">
+      {/* Header FIXO h-14 (mesma altura do header do chat) */}
+      <header className="h-14 shrink-0 border-b border-border/50 px-4 flex items-center justify-between">
+        <h2 className="text-sm font-bold text-foreground">Propriedades</h2>
         <button
+          type="button"
           onClick={onCollapseRail}
-          title="Recolher painel"
-          aria-label="Recolher painel"
-          className="rounded-md p-1 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+          title="Recolher propriedades"
+          aria-label="Recolher propriedades"
+          className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
         >
-          <PanelRightClose className="h-3.5 w-3.5" />
+          <PanelRightClose className="h-4 w-4" />
         </button>
-      </div>
-      <div className="divide-y divide-border/50 text-xs">
-        <div className="p-2.5 space-y-1">
-          <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <Activity className="h-3 w-3 text-primary/70" strokeWidth={2.2} /> Estado
-          </label>
-          <Select value={demanda.state} onValueChange={(v) => onUpdate({ state: v })}>
-            <SelectTrigger className={RAIL_TRIGGER_CLS}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="end" className="text-xs">
-              {NEXT_STATES.map((s) => (
-                <SelectItem key={s} value={s} className="text-xs">
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className={`h-2 w-2 rounded-full ${STATE_COLOR[s] ?? "bg-muted-foreground/40"}`} />
-                    {STATE_LABEL[s]}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="p-2.5 space-y-1">
-          <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <Flag className="h-3 w-3 text-primary/70" strokeWidth={2.2} /> Prioridade
-          </label>
-          <Select value={demanda.priority} onValueChange={(v) => onUpdate({ priority: v })}>
-            <SelectTrigger className={RAIL_TRIGGER_CLS}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="end" className="text-xs">
-              {PRIORITIES.map((p) => (
-                <SelectItem key={p} value={p} className="text-xs capitalize">
-                  {p}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="p-2.5 space-y-1">
-          <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <CalendarClock className="h-3 w-3 text-primary/70" strokeWidth={2.2} /> Prazo
-          </label>
-          <DueDatePicker value={demanda.due_at ?? null} onChange={(iso) => onUpdate({ due_at: iso })} />
-        </div>
-        {orgUserId !== undefined && (
-          <div className="p-2.5 space-y-1">
-            <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              <UserCog className="h-3 w-3 text-primary/70" strokeWidth={2.2} /> Responsável
-            </label>
-            {isManager ? (
-              <Select
-                value={demanda.assignee_id ?? "none"}
-                onValueChange={(v) => onUpdate({ assignee_id: v === "none" ? null : v })}
-              >
-                <SelectTrigger className={RAIL_TRIGGER_CLS}>
-                  <SelectValue placeholder="Sem responsável" />
-                </SelectTrigger>
-                <SelectContent align="end" className="text-xs">
-                  <SelectItem value="none" className="text-xs">
-                    — Sem responsável —
-                  </SelectItem>
-                  {operators.map((o) => (
-                    <SelectItem key={o.user_id} value={o.user_id} className="text-xs">
-                      {o.email ?? o.user_id.slice(0, 8)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <div className={`${RAIL_TRIGGER_CLS} flex items-center truncate`}>
-                {demanda.assignee_id ? nameOf(demanda.assignee_id) : <span className="text-muted-foreground font-normal">Sem responsável</span>}
-              </div>
-            )}
-            {demanda.assignee_id !== orgUserId && (
+      </header>
+
+      {/* Tabs */}
+      <div className="shrink-0 border-b border-border/50 px-2">
+        <div className="flex gap-1 py-2">
+          {[
+            { key: "demanda", label: "Demanda", icon: FileText },
+            { key: "contato", label: "Contato", icon: User },
+            { key: "notas", label: "Notas", icon: Tag },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            return (
               <button
-                onClick={() => onUpdate({ assignee_id: orgUserId })}
-                className="mt-1 flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key as any)}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                  activeTab === tab.key
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                }`}
               >
-                <UserCheck className="h-3 w-3" /> Atribuir a mim
+                <Icon className="h-3 w-3" />
+                {tab.label}
               </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Conteúdo da aba */}
+      <div className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3">
+        {activeTab === "demanda" && (
+          <div className="space-y-1">
+            {/* Estado — pílula com pip colorido */}
+            <KVRow label="Estado">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" className={PILL_TRIGGER}>
+                    <span
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATE_DOT[demanda.state] ?? "bg-muted-foreground/40"}`}
+                    />
+                    <span>{STATE_LABEL[demanda.state] ?? demanda.state}</span>
+                    <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52 rounded-xl">
+                  {StateEnum.options.map((s) => (
+                    <DropdownMenuItem
+                      key={s}
+                      onClick={() => onUpdate({ state: s })}
+                      className="gap-2 rounded-lg text-xs cursor-pointer"
+                    >
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${STATE_DOT[s] ?? "bg-muted-foreground/40"}`} />
+                      <span className="flex-1">{STATE_LABEL[s]}</span>
+                      {demanda.state === s && <Check className="h-3.5 w-3.5 text-primary" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </KVRow>
+
+            {/* Prioridade — seletor compacto: pílula colorida da atual + menu */}
+            <KVRow label="Prioridade">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[10px] font-bold uppercase tracking-wide transition ${PRIORITY_ACTIVE[demanda.priority]} ${PRIORITY_EDGE[demanda.priority]}`}
+                  >
+                    {demanda.priority}
+                    <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44 rounded-xl">
+                  {PriorityEnum.options.map((p) => (
+                    <DropdownMenuItem
+                      key={p}
+                      onClick={() => onUpdate({ priority: p })}
+                      className="gap-2 rounded-lg text-xs cursor-pointer"
+                    >
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${PRIORITY_DOT[p]}`} />
+                      <span className="flex-1 text-[10px] font-bold uppercase tracking-wide">{p}</span>
+                      {demanda.priority === p && <Check className="h-3.5 w-3.5 text-primary" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </KVRow>
+
+            {/* Prazo — pílula com data·hora + popover com Calendar */}
+            <KVRow label="Prazo">
+              <DueDatePicker value={demanda.due_at ?? null} onChange={(v) => onUpdate({ due_at: v })} />
+            </KVRow>
+
+            {/* Responsável — pílula com iniciais + nome; menu só pra managers */}
+            <KVRow label="Responsável">
+              {isManager ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button type="button" className={PILL_TRIGGER} title={assigneeLabel ?? "Sem responsável"}>
+                      {assigneeLabel ? (
+                        <>
+                          <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-primary/15 text-[8px] font-bold text-primary">
+                            {initials(assigneeLabel)}
+                          </span>
+                          <span className="max-w-[150px] truncate">{assigneeLabel}</span>
+                        </>
+                      ) : (
+                        <>
+                          <UserRound className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <span className="text-muted-foreground">Atribuir</span>
+                        </>
+                      )}
+                      <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-60 rounded-xl">
+                    <DropdownMenuItem
+                      onClick={() => onUpdate({ assignee_id: orgUserId ?? null })}
+                      className="gap-2 rounded-lg text-xs cursor-pointer"
+                    >
+                      <UserCheck className="h-3.5 w-3.5" />
+                      Atribuir pra mim
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    {operators.map((op: any) => {
+                      const label = memberLabel(op);
+                      return (
+                        <DropdownMenuItem
+                          key={op.user_id}
+                          onClick={() => onUpdate({ assignee_id: op.user_id })}
+                          className="gap-2 rounded-lg text-xs cursor-pointer"
+                        >
+                          <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-secondary text-[8px] font-bold text-secondary-foreground">
+                            {initials(label)}
+                          </span>
+                          <span className="flex-1 truncate">{label}</span>
+                          <span className="shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground/70">
+                            {op.role}
+                          </span>
+                          {demanda.assignee_id === op.user_id && <Check className="h-3.5 w-3.5 text-primary" />}
+                        </DropdownMenuItem>
+                      );
+                    })}
+                    {demanda.assignee_id && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => onUpdate({ assignee_id: null })}
+                          className="gap-2 rounded-lg text-xs cursor-pointer text-destructive focus:text-destructive"
+                        >
+                          <UserX className="h-3.5 w-3.5" />
+                          Remover responsável
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <span
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-secondary/40 pl-2.5 pr-2.5 text-[11px] font-medium text-muted-foreground"
+                  title={assigneeLabel ?? "Sem responsável"}
+                >
+                  {assigneeLabel ? (
+                    <>
+                      <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-secondary text-[8px] font-bold text-secondary-foreground">
+                        {initials(assigneeLabel)}
+                      </span>
+                      <span className="max-w-[150px] truncate">{assigneeLabel}</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserRound className="h-3.5 w-3.5" />
+                      <span>Sem responsável</span>
+                    </>
+                  )}
+                </span>
+              )}
+            </KVRow>
+
+            {/* Protocolo — linha estática, leitura-only */}
+            {demanda.protocol && (
+              <KVRow label="Protocolo">
+                <span className="inline-flex h-8 items-center rounded-lg bg-secondary/40 px-2.5 font-mono text-[10px] font-semibold text-muted-foreground tabular-nums">
+                  {demanda.protocol}
+                </span>
+              </KVRow>
             )}
           </div>
         )}
-      </div>
-      {canDelete && (
-        <div className="mt-auto border-t border-border/60 p-2.5 bg-card/40">
-          {!confirmDelete ? (
-            <button
-              onClick={() => setConfirmDelete(true)}
-              className="w-full h-7 flex items-center justify-center gap-1.5 rounded-md border border-destructive/20 text-destructive text-[11px] font-medium hover:bg-destructive/10 transition-colors"
-            >
-              <Trash2 className="h-3 w-3" /> Excluir demanda
-            </button>
-          ) : (
-            <div className="space-y-1.5">
-              <p className="text-[10px] text-muted-foreground text-center">Excluir permanentemente?</p>
-              <div className="flex gap-1.5">
-                <button
-                  onClick={() => setConfirmDelete(false)}
-                  disabled={deletePending}
-                  className="h-7 flex-1 rounded border border-border bg-card text-[11px] font-medium hover:bg-secondary"
-                >
-                  Não
-                </button>
-                <button
-                  onClick={onDelete}
-                  disabled={deletePending}
-                  className="h-7 flex-1 rounded bg-destructive text-destructive-foreground text-[11px] font-medium hover:opacity-90 disabled:opacity-50"
-                >
-                  {deletePending ? "..." : "Sim"}
-                </button>
+
+        {activeTab === "contato" && (
+          <div className="space-y-4">
+            {hasContact ? (
+              <>
+                <div className="flex items-center gap-3">
+                  <div className="grid h-12 w-12 place-items-center rounded-full bg-primary/10 text-primary">
+                    <User className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-bold text-foreground truncate">{contact.name || "Sem nome"}</div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      {contact.phone || contact.email || "Sem contato"}
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-1.5 text-xs">
+                  {contact.phone && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">Telefone:</span>
+                      <span className="font-medium text-foreground tabular-nums">{contact.phone}</span>
+                    </div>
+                  )}
+                  {contact.email && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">E-mail:</span>
+                      <span className="font-medium text-foreground">{contact.email}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="rounded-lg border border-dashed border-border/60 bg-secondary/30 p-3 text-[11px] text-muted-foreground">
+                  Etiquetas e tags do contato serão implementadas na Fase 2.
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+                <div className="grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary">
+                  <User className="h-5 w-5" strokeWidth={1.8} />
+                </div>
+                <div className="text-sm font-semibold text-foreground">Sem contato</div>
+                <p className="text-xs text-muted-foreground max-w-[240px]">
+                  Esta demanda não está vinculada a um contato.
+                </p>
               </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "notas" && (
+          <div className="rounded-lg border border-dashed border-border/60 bg-secondary/30 p-3 text-[11px] text-muted-foreground">
+            Notas permanentes do cliente serão implementadas na Fase 2.
+          </div>
+        )}
+      </div>
+
+      {/* Zona de perigo DISCRETA — link pequeno, não botão largo */}
+      {canDelete && (
+        <div className="shrink-0 border-t border-border/50 px-4 py-2.5">
+          <button
+            type="button"
+            onClick={() => {
+              setConfirmText("");
+              setConfirmOpen(true);
+            }}
+            className="mx-auto flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium text-destructive/70 transition hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="h-3 w-3" />
+            Excluir demanda
+          </button>
+        </div>
+      )}
+
+      {/* Confirmação de exclusão: digitar o protocolo exatamente */}
+      {confirmOpen && (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm p-4"
+          onClick={() => setConfirmOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-card p-5 shadow-[var(--shadow-pop)] ring-1 ring-border/50"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-bold text-foreground">Excluir demanda</div>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Ação permanente: histórico, mensagens e mídias serão removidos. Digite o protocolo para confirmar.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmOpen(false)}
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
-          )}
+            <div className="mt-3 rounded-xl bg-destructive/10 px-3 py-2 text-center font-mono text-sm font-bold tracking-wide text-destructive">
+              {demanda.protocol}
+            </div>
+            <input
+              autoFocus
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder={demanda.protocol ?? "DM-XXXXXX"}
+              className="mt-3 h-10 w-full rounded-xl border border-border/60 bg-background px-3 text-center font-mono text-xs outline-none transition focus:border-destructive/50 focus:ring-2 focus:ring-destructive/15"
+            />
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmOpen(false)}
+                className="h-9 flex-1 rounded-xl bg-secondary text-xs font-semibold text-secondary-foreground transition hover:bg-secondary/80"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={!confirmMatches || deletePending}
+                onClick={() => {
+                  setConfirmOpen(false);
+                  onDelete();
+                }}
+                className="h-9 flex-1 rounded-xl bg-destructive text-xs font-semibold text-destructive-foreground transition hover:brightness-110 disabled:opacity-50"
+              >
+                {deletePending ? "Excluindo..." : "Excluir"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </aside>

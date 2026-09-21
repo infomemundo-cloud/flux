@@ -87,8 +87,10 @@ export type Database = {
           id: string
           metadata: Json
           name: string | null
+          notes: string | null
           org_id: string
           phone: string | null
+          tags: Json
           updated_at: string
         }
         Insert: {
@@ -100,8 +102,10 @@ export type Database = {
           id?: string
           metadata?: Json
           name?: string | null
+          notes?: string | null
           org_id: string
           phone?: string | null
+          tags?: Json
           updated_at?: string
         }
         Update: {
@@ -113,8 +117,10 @@ export type Database = {
           id?: string
           metadata?: Json
           name?: string | null
+          notes?: string | null
           org_id?: string
           phone?: string | null
+          tags?: Json
           updated_at?: string
         }
         Relationships: [
@@ -478,6 +484,38 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      quick_replies: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          label: string
+          org_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          label: string
+          org_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          label?: string
+          org_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quick_replies_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       webhook_tokens: {
         Row: {
