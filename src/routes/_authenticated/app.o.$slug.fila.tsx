@@ -87,10 +87,14 @@ function leftBorderColor(d: any): string {
 }
 
 /**
- * Card da fila — hierarquia por "contraste passivo" (estilo e-mail moderno):
- * NÃO LIDA = card branco flutuante + nome bold + prévia medium + dot azul no
- * avatar; LIDA = fundo esmaecido, pesos normais, sem sombra, sem dot.
- * Sem pip vermelho sobre o avatar: urgência vive na borda lateral + bloco.
+ * Card da fila — hierarquia por "contraste passivo" (estilo e-mail moderno),
+ * válida nos 3 temas SEM hardcoded de paleta:
+ *  - NÃO LIDO: superfície elevada (bg-card; no dark sobe pra bg-popover,
+ *    um tom acima do card) + ring visível + sombra profunda no dark +
+ *    nome bold + prévia medium + dot primário no avatar.
+ *  - LIDO: superfície afundada (bg-muted/40; no dark black/20, abaixo do
+ *    background) + ring transparente + sem sombra + pesos normais + sem dot.
+ * Light/Corporate não recebem overrides dark: continuam bg-card vs bg-muted/40.
  */
 function FilaCard({ d, slug }: { d: any; slug: string }) {
   const unread = !!d.unread;
@@ -102,8 +106,8 @@ function FilaCard({ d, slug }: { d: any; slug: string }) {
       params={{ slug, id: d.id }}
       className={`group relative flex gap-3 overflow-hidden rounded-xl py-3 pl-4 pr-3 transition-all duration-150 ${
         unread
-          ? "bg-card shadow-[var(--shadow-card)] ring-1 ring-border/40 hover:shadow-[var(--shadow-pop)] hover:ring-primary/30"
-          : "bg-muted/40 shadow-none ring-1 ring-transparent hover:bg-muted/60"
+          ? "bg-card dark:bg-popover shadow-[var(--shadow-card)] ring-1 ring-border/60 dark:ring-white/10 dark:shadow-[0_4px_12px_oklch(0_0_0/0.5)] hover:shadow-[var(--shadow-pop)] hover:ring-primary/40"
+          : "bg-muted/40 dark:bg-black/20 shadow-none ring-1 ring-transparent hover:bg-muted/60 dark:hover:bg-black/25"
       }`}
     >
       {/* Indicador lateral: SLA estourado (carmim) ou cor do estado */}
@@ -115,7 +119,7 @@ function FilaCard({ d, slug }: { d: any; slug: string }) {
           <span
             title="Não lida"
             aria-label="Não lida"
-            className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-[var(--state-novo)] ring-2 ring-card"
+            className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-primary ring-2 ring-card dark:ring-popover"
           />
         )}
       </div>
@@ -123,17 +127,23 @@ function FilaCard({ d, slug }: { d: any; slug: string }) {
         <div className="flex items-center justify-between gap-2">
           <span
             className={`truncate text-xs ${
-              unread ? "font-bold text-foreground" : "font-medium text-foreground/70"
+              unread
+                ? "font-bold text-foreground"
+                : "font-medium text-muted-foreground dark:text-foreground/50"
             }`}
           >
             {contactName}
           </span>
           {/* Canal + horário: sutis, sem roubar o protagonismo da prévia */}
-          <span className="flex shrink-0 items-center gap-1 text-[10px] tabular-nums text-muted-foreground">
+          <span
+            className={`flex shrink-0 items-center gap-1 text-[10px] tabular-nums ${
+              unread ? "text-muted-foreground" : "text-muted-foreground/70"
+            }`}
+          >
             <span
               title={isGroup ? "Conversa em grupo" : "WhatsApp"}
               aria-label={isGroup ? "Conversa em grupo" : "WhatsApp"}
-              className="text-muted-foreground/70"
+              className={unread ? "text-muted-foreground/80" : "text-muted-foreground/60"}
             >
               {isGroup ? <Users className="h-3 w-3" /> : <MessageCircle className="h-3 w-3" />}
             </span>
@@ -142,7 +152,9 @@ function FilaCard({ d, slug }: { d: any; slug: string }) {
         </div>
         <div
           className={`mt-0.5 truncate text-[11px] ${
-            unread ? "font-medium text-foreground/80" : "font-normal text-muted-foreground"
+            unread
+              ? "font-medium text-foreground/80"
+              : "font-normal text-muted-foreground/70 dark:text-foreground/40"
           }`}
         >
           {d.last_message_preview || d.title}
