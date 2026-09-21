@@ -238,6 +238,32 @@ export type Database = {
           },
         ]
       }
+      demanda_views: {
+        Row: {
+          demanda_id: string
+          user_id: string
+          viewed_at: string
+        }
+        Insert: {
+          demanda_id: string
+          user_id: string
+          viewed_at?: string
+        }
+        Update: {
+          demanda_id?: string
+          user_id?: string
+          viewed_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "demanda_views_demanda_id_fkey"
+            columns: ["demanda_id"]
+            isOneToOne: false
+            referencedRelation: "demandas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       demandas: {
         Row: {
           assignee_id: string | null

@@ -71,7 +71,8 @@ export const orgDashboard = createServerFn({ method: "GET" })
       counts[r.state] = (counts[r.state] ?? 0) + 1;
       // Aberta = tudo que não está concluída/fechada (inclui aguardando
       // revisão humana) — regra definida com o produto.
-      const isOpen = r.state !== "concluido" && r.state !== "fechado";
+      const state = r.state as string;
+      const isOpen = state !== "concluido" && state !== "fechado";
       if (isOpen) openTotal++;
       // Vencida = aberta com prazo estourado, exceto aguardando revisão
       // humana (mesmo predicado do pip vermelho da fila).

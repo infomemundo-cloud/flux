@@ -7,13 +7,22 @@ import { listDemandas, createDemanda } from "@/lib/demandas/demandas.functions";
 import { getOrgBySlug } from "@/lib/orgs.functions";
 import { toast } from "sonner";
 import { friendlyError } from "@/lib/friendly-error";
-import { Plus, Search, X, PanelLeftOpen, Inbox, Filter } from "lucide-react";
+import {
+  Plus,
+  Search,
+  X,
+  PanelLeftOpen,
+  Inbox,
+  Filter,
+  MessageCircle,
+  Users,
+  AlertTriangle,
+} from "lucide-react";
 import { formatRelative } from "@/components/demandas-ui";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FilaSidebarContext } from "@/lib/demandas/fila-sidebar-context";
 import { useOrgSidebar } from "@/lib/org-sidebar-context";
-import { STATE_COLOR } from "@/lib/demandas/state-colors";
 import { resolveContactName } from "@/lib/demandas/resolve-contact-name";
 import { ContactAvatar } from "@/components/contact-avatar";
 
@@ -54,6 +63,95 @@ function activityIso(d: any): string {
   return lm > up ? lm : up;
 }
 
+/**
+ * Borda lateral de 4px: SLA estourado SEMPRE vence (carmim); senão, cor do
+ * estado do ticket. Tokens de estado (não paleta hardcoded) pra manter os
+ * 3 temas do design system coerentes.
+ */
+function leftBorderColor(d: any): string {
+  if (isOverdueDemanda(d)) return "bg-[var(--pill-red-fg)]";
+  switch (d.state) {
+    case "novo":
+      return "bg-[var(--state-novo)]";
+    case "em_analise":
+      return "bg-[var(--state-analise)]";
+    case "aguardando_cliente":
+      return "bg-[var(--state-aguardando)]";
+    case "aguardando_revisao_humana":
+      return "bg-[var(--pill-violet-fg)]";
+    case "concluido":
+      return "bg-[var(--state-resolvido)]";
+    default:
+      return "bg-muted-foreground/40";
+  }
+}
+
+/**
+ * Card da fila — hierarquia por "contraste passivo" (estilo e-mail moderno):
+ * NÃO LIDA = card branco flutuante + nome bold + prévia medium + dot azul no
+ * avatar; LIDA = fundo esmaecido, pesos normais, sem sombra, sem dot.
+ * Sem pip vermelho sobre o avatar: urgência vive na borda lateral + bloco.
+ */
+function FilaCard({ d, slug }: { d: any; slug: string }) {
+  const unread = !!d.unread;
+  const contactName = resolveContactName(d);
+  const isGroup = !!d.whatsapp_jid?.endsWith("@g.us");
+  return (
+    <Link
+      to="/app/o/$slug/fila/demandas/$id"
+      params={{ slug, id: d.id }}
+      className={`group relative flex gap-3 overflow-hidden rounded-xl py-3 pl-4 pr-3 transition-all duration-150 ${
+        unread
+          ? "bg-card shadow-[var(--shadow-card)] ring-1 ring-border/40 hover:shadow-[var(--shadow-pop)] hover:ring-primary/30"
+          : "bg-muted/40 shadow-none ring-1 ring-transparent hover:bg-muted/60"
+      }`}
+    >
+      {/* Indicador lateral: SLA estourado (carmim) ou cor do estado */}
+      <span className={`absolute left-0 top-2 bottom-2 w-1 rounded-r-full ${leftBorderColor(d)}`} />
+      <div className="relative shrink-0">
+        <ContactAvatar url={d.contacts?.avatar_url ?? null} name={contactName} tone="neutral" />
+        {/* Dot discreto de NÃO LIDA — some quando a demanda é aberta */}
+        {unread && (
+          <span
+            title="Não lida"
+            aria-label="Não lida"
+            className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-[var(--state-novo)] ring-2 ring-card"
+          />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <span
+            className={`truncate text-xs ${
+              unread ? "font-bold text-foreground" : "font-medium text-foreground/70"
+            }`}
+          >
+            {contactName}
+          </span>
+          {/* Canal + horário: sutis, sem roubar o protagonismo da prévia */}
+          <span className="flex shrink-0 items-center gap-1 text-[10px] tabular-nums text-muted-foreground">
+            <span
+              title={isGroup ? "Conversa em grupo" : "WhatsApp"}
+              aria-label={isGroup ? "Conversa em grupo" : "WhatsApp"}
+              className="text-muted-foreground/70"
+            >
+              {isGroup ? <Users className="h-3 w-3" /> : <MessageCircle className="h-3 w-3" />}
+            </span>
+            {formatRelative(activityIso(d))}
+          </span>
+        </div>
+        <div
+          className={`mt-0.5 truncate text-[11px] ${
+            unread ? "font-medium text-foreground/80" : "font-normal text-muted-foreground"
+          }`}
+        >
+          {d.last_message_preview || d.title}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
 function FilaPage() {
   const { slug } = useParams({ from: "/_authenticated/app/o/$slug/fila" });
   const location = useLocation();
@@ -77,11 +175,8 @@ function FilaPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   // Paginação por LIMIT crescente (não por páginas cacheadas): cada clique em
   // "Mais demandas" refaz UMA query com limit = carregados + 20, devolvendo a
-  // lista inteira de um único snapshot do servidor. Antes, página 0 ficava
-  // congelada no state e a página 1 vinha de um snapshot mais novo — mensagens
-  // recém-chegadas apareciam DEPOIS de itens antigos (bug relatado).
+  // lista inteira de um único snapshot do servidor.
   const [limit, setLimit] = useState(PAGE_SIZE);
-  const [assignees, setAssignees] = useState<Record<string, any>>({});
   const [showNew, setShowNew] = useState(false);
 
   useEffect(() => {
@@ -109,17 +204,16 @@ function FilaPage() {
     enabled: !!org?.id,
   });
 
-  useEffect(() => {
-    if (!result) return;
-    setAssignees((prev) => ({ ...prev, ...result.assignees }));
-  }, [result]);
-
   // Ordem 100% autoritativa do servidor (atrasadas primeiro, depois atividade
   // recente) — um snapshot só, sem mistura de tempos.
   const data = result?.rows ?? [];
   const total = result?.total ?? 0;
   const hasMore = data.length < total;
   const loadingFirstPage = isFetching && data.length === 0;
+
+  // Blocos visuais: SLA estourado fixado no topo; demais em ordem cronológica.
+  const overdueRows = data.filter((d: any) => isOverdueDemanda(d));
+  const normalRows = data.filter((d: any) => !isOverdueDemanda(d));
 
   return (
     <FilaSidebarContext.Provider value={{ collapsed, setCollapsed }}>
@@ -130,7 +224,7 @@ function FilaPage() {
             onClick={() => setCollapsed(false)}
             title="Expandir fila"
             aria-label="Expandir fila"
-            className="absolute top-3 left-3 z-10 grid place-items-center h-8 w-8 rounded-lg bg-card border border-border shadow-sm text-muted-foreground/70 hover:bg-secondary hover:text-foreground transition"
+            className="absolute top-3 left-3 z-10 grid place-items-center h-8 w-8 rounded-xl bg-card text-muted-foreground/70 shadow-[var(--shadow-card)] ring-1 ring-border/40 transition hover:text-foreground hover:shadow-[var(--shadow-pop)]"
           >
             <PanelLeftOpen className="h-4 w-4" />
           </button>
@@ -139,10 +233,10 @@ function FilaPage() {
         {/* Coluna da Fila — não renderiza nada quando recolhida (sem trilho vazio) */}
         {!collapsed && (
           <div
-            className={`${hasSelection ? "hidden sm:flex" : "flex"} flex-col w-full sm:shrink-0 sm:w-[300px] lg:w-[320px] border-r border-border/60 bg-background`}
+            className={`${hasSelection ? "hidden sm:flex" : "flex"} flex-col w-full sm:shrink-0 sm:w-[300px] lg:w-[320px] border-r border-border/50 bg-background`}
           >
             <div className="flex flex-col h-full">
-              <div className="p-3.5 border-b border-border bg-card shrink-0 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+              <div className="p-3 pb-2.5 shrink-0">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
@@ -150,22 +244,24 @@ function FilaPage() {
                     </div>
                     <h1 className="text-base font-bold tracking-tight text-foreground truncate">Fila</h1>
                     {total > 0 && (
-                      <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary shrink-0">
+                      <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-primary shrink-0">
                         {total}
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {/* Busca — ícone abre um popover com o campo, some quando fecha */}
+                  {/* Toolbar de ações em container pastel arredondado */}
+                  <div className="flex items-center gap-0.5 rounded-xl bg-muted/70 p-1 shrink-0">
                     <Popover>
                       <PopoverTrigger asChild>
                         <button
                           title="Buscar"
                           aria-label="Buscar"
-                          className="relative grid place-items-center h-8 w-8 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition"
+                          className="relative grid place-items-center h-7 w-7 rounded-lg text-muted-foreground transition hover:bg-card hover:text-foreground hover:shadow-sm"
                         >
-                          <Search className="h-4 w-4" />
-                          {search && <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-primary" />}
+                          <Search className="h-3.5 w-3.5" />
+                          {search && (
+                            <span className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-primary" />
+                          )}
                         </button>
                       </PopoverTrigger>
                       <PopoverContent align="end" className="w-64 p-2">
@@ -176,7 +272,7 @@ function FilaPage() {
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             placeholder="Buscar demanda ou contato..."
-                            className="h-9 pl-8 pr-7 rounded-lg border border-border bg-background text-xs w-full outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/10 transition"
+                            className="h-9 pl-8 pr-7 rounded-xl border border-border/60 bg-background text-xs w-full outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
                           />
                           {search && (
                             <button
@@ -189,99 +285,117 @@ function FilaPage() {
                         </div>
                       </PopoverContent>
                     </Popover>
-
-                    {/* Filtro de status — ícone abre menu, fecha sozinho ao escolher */}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button
                           title="Filtrar por status"
                           aria-label="Filtrar por status"
-                          className="relative grid place-items-center h-8 w-8 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition"
+                          className="relative grid place-items-center h-7 w-7 rounded-lg text-muted-foreground transition hover:bg-card hover:text-foreground hover:shadow-sm"
                         >
-                          <Filter className="h-4 w-4" />
-                          {state && <span className={`absolute top-1 right-1 h-1.5 w-1.5 rounded-full ${STATE_COLOR[state] ?? "bg-primary"}`} />}
+                          <Filter className="h-3.5 w-3.5" />
+                          {state && (
+                            <span
+                              className={`absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full ${
+                                state === "novo"
+                                  ? "bg-[var(--state-novo)]"
+                                  : state === "em_analise"
+                                    ? "bg-[var(--state-analise)]"
+                                    : state === "aguardando_cliente"
+                                      ? "bg-[var(--state-aguardando)]"
+                                      : state === "aguardando_revisao_humana"
+                                        ? "bg-[var(--pill-violet-fg)]"
+                                        : state === "concluido"
+                                          ? "bg-[var(--state-resolvido)]"
+                                          : "bg-primary"
+                              }`}
+                            />
+                          )}
                         </button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuContent align="end" className="w-52 rounded-xl">
                         {STATES.map((s) => (
                           <DropdownMenuItem
                             key={s.label}
                             onClick={() => setState(s.v)}
-                            className={`gap-2 text-xs cursor-pointer ${state === s.v ? "font-semibold text-primary" : ""}`}
+                            className={`gap-2 text-xs cursor-pointer rounded-lg ${state === s.v ? "font-semibold text-primary" : ""}`}
                           >
-                            <span className={`h-2 w-2 rounded-full shrink-0 ${s.v ? STATE_COLOR[s.v] ?? "bg-muted-foreground/40" : "bg-muted-foreground/30"}`} />
+                            <span
+                              className={`h-2 w-2 rounded-full shrink-0 ${
+                                s.v === "novo"
+                                  ? "bg-[var(--state-novo)]"
+                                  : s.v === "em_analise"
+                                    ? "bg-[var(--state-analise)]"
+                                    : s.v === "aguardando_cliente"
+                                      ? "bg-[var(--state-aguardando)]"
+                                      : s.v === "aguardando_revisao_humana"
+                                        ? "bg-[var(--pill-violet-fg)]"
+                                        : s.v === "concluido"
+                                          ? "bg-[var(--state-resolvido)]"
+                                          : "bg-muted-foreground/30"
+                              }`}
+                            />
                             {s.label}
                           </DropdownMenuItem>
                         ))}
                       </DropdownMenuContent>
                     </DropdownMenu>
-
-                    {/* Nova demanda — só ícone, fica no canto */}
                     <button
                       onClick={() => setShowNew(true)}
                       title="Nova demanda"
                       aria-label="Nova demanda"
-                      className="grid place-items-center h-8 w-8 rounded-lg bg-primary text-primary-foreground shadow-sm hover:brightness-110 active:scale-[0.98] transition"
+                      className="grid place-items-center h-7 w-7 rounded-lg bg-primary text-primary-foreground shadow-sm transition hover:brightness-110 hover:shadow-md active:scale-[0.96]"
                     >
-                      <Plus className="h-4 w-4" strokeWidth={2.5} />
+                      <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
                     </button>
                   </div>
                 </div>
               </div>
 
-              {/* Lista Rolável de Demandas */}
-              <div className="flex-1 overflow-y-auto scrollbar-thin p-2 space-y-1.5">
+              {/* Lista Rolável de Demandas — blocos SLA → recentes */}
+              <div className="flex-1 overflow-y-auto scrollbar-thin p-2.5 pt-1 space-y-2">
                 {loadingFirstPage && <ListSkeleton rows={6} />}
                 {!loadingFirstPage && data.length === 0 && (
-                  <div className="rounded-xl border border-dashed border-border bg-card/40 p-8 text-center my-4">
-                    <div className="text-xs font-semibold">Nenhuma demanda encontrada</div>
-                    <p className="mt-1 text-[11px] text-muted-foreground">Tente alterar os filtros de busca.</p>
+                  <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+                    <div className="relative">
+                      <div className="absolute inset-0 -z-10 translate-y-2 scale-90 rounded-3xl bg-primary/10 blur-2xl" />
+                      <div className="grid h-16 w-16 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
+                        <Inbox className="h-7 w-7 text-primary" strokeWidth={1.6} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-foreground">Nenhuma demanda encontrada</div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">Tente alterar os filtros de busca.</p>
+                    </div>
                   </div>
                 )}
 
-                {/* Card no formato combinado: avatar+pip, nome, hora da última
-                    movimentação (mesma chave que ordena), prévia da mensagem. */}
-                {data.map((d: any) => {
-                  const overdue = isOverdueDemanda(d);
-                  const urgent = d.priority === "urgente";
-                  const flagged = d.state !== "concluido" && (urgent || overdue);
-                  const contactName = resolveContactName(d);
-                  const stateColor = STATE_COLOR[d.state] ?? "bg-muted-foreground/40";
-                  return (
-                    <Link
-                      key={d.id}
-                      to="/app/o/$slug/fila/demandas/$id"
-                      params={{ slug, id: d.id }}
-                      className="group relative flex gap-2.5 overflow-hidden rounded-lg bg-card border border-border/70 pl-3 pr-2.5 py-2.5 transition-all hover:shadow-sm hover:border-primary/40"
-                    >
-                      <span className={`absolute left-0 top-0 h-full w-[3px] ${stateColor}`} />
-                      <div className="relative shrink-0">
-                        <ContactAvatar url={d.contacts?.avatar_url ?? null} name={contactName} tone="neutral" />
-                        {flagged && (
-                          <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-destructive ring-2 ring-card" />
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="truncate text-xs font-semibold text-foreground">{contactName}</span>
-                          <span className="shrink-0 text-[10px] text-muted-foreground">
-                            {formatRelative(activityIso(d))}
-                          </span>
-                        </div>
-                        <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                          {d.last_message_preview || d.title}
-                        </div>
-                      </div>
-                    </Link>
-                  );
-                })}
+                {/* Bloco 1 — SLA estourado fixado no topo */}
+                {!loadingFirstPage && overdueRows.length > 0 && (
+                  <div className="flex items-center gap-1.5 px-1 pt-1 text-[10px] font-bold uppercase tracking-widest text-[var(--pill-red-fg)]">
+                    <AlertTriangle className="h-3 w-3" strokeWidth={2.4} />
+                    Fora do prazo · {overdueRows.length}
+                  </div>
+                )}
+                {overdueRows.map((d: any) => (
+                  <FilaCard key={d.id} d={d} slug={slug} />
+                ))}
+
+                {/* Bloco 2 — cronológico por atividade */}
+                {!loadingFirstPage && normalRows.length > 0 && overdueRows.length > 0 && (
+                  <div className="px-1 pt-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
+                    Recentes
+                  </div>
+                )}
+                {normalRows.map((d: any) => (
+                  <FilaCard key={d.id} d={d} slug={slug} />
+                ))}
 
                 {hasMore && !loadingFirstPage && (
                   <div className="py-2 flex justify-center">
                     <button
                       onClick={() => setLimit((l) => l + PAGE_SIZE)}
                       disabled={isFetching}
-                      className="h-8 px-4 rounded-md border border-border bg-card text-xs font-medium text-foreground hover:bg-accent transition disabled:opacity-60"
+                      className="h-8 px-4 rounded-xl bg-card text-xs font-medium text-foreground shadow-[var(--shadow-card)] ring-1 ring-border/40 transition hover:shadow-[var(--shadow-pop)] hover:ring-primary/30 disabled:opacity-60"
                     >
                       {isFetching ? "Carregando..." : `Mais demandas (${data.length}/${total})`}
                     </button>
@@ -297,14 +411,21 @@ function FilaPage() {
           {hasSelection ? (
             <Outlet />
           ) : (
-            <div className="h-full flex flex-col items-center justify-center gap-3 text-center p-8">
-              <div className="h-14 w-14 rounded-2xl bg-primary/10 grid place-items-center">
-                <Inbox className="h-6 w-6 text-primary" strokeWidth={1.8} />
+            <div className="h-full flex flex-col items-center justify-center gap-4 p-8 text-center">
+              <div className="relative">
+                <div className="absolute inset-0 -z-10 translate-y-3 scale-90 rounded-3xl bg-primary/10 blur-2xl" />
+                <div className="grid h-20 w-20 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
+                  <Inbox className="h-9 w-9 text-primary" strokeWidth={1.6} />
+                </div>
               </div>
-              <div className="text-sm font-semibold text-foreground">Selecione uma demanda para começar</div>
-              <p className="text-[13px] text-muted-foreground max-w-[240px]">
-                Escolha uma conversa na lista à esquerda para ver o histórico e responder.
-              </p>
+              <div>
+                <div className="text-lg font-semibold tracking-tight text-foreground">
+                  Selecione uma demanda para começar
+                </div>
+                <p className="mt-1.5 max-w-[260px] text-sm text-muted-foreground">
+                  Escolha uma conversa na lista à esquerda para ver o histórico e responder com contexto.
+                </p>
+              </div>
             </div>
           )}
         </div>
@@ -347,11 +468,17 @@ function NewDemandaModal({ orgId, onClose }: { orgId: string; onClose: () => voi
   });
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-card border border-border rounded-lg w-full max-w-lg p-5" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div
+        className="bg-card rounded-2xl w-full max-w-lg p-5 shadow-[var(--shadow-pop)] ring-1 ring-border/50"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-bold">Nova demanda</h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+          <button
+            onClick={onClose}
+            className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -361,33 +488,33 @@ function NewDemandaModal({ orgId, onClose }: { orgId: string; onClose: () => voi
             placeholder="Título"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="w-full h-9 px-3 rounded-md border border-input bg-background text-xs outline-none focus:border-primary"
+            className="w-full h-10 px-3 rounded-xl border border-border/60 bg-background text-xs outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
           />
           <textarea
             placeholder="Descrição (opcional)"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className="w-full min-h-20 p-3 rounded-md border border-input bg-background text-xs outline-none focus:border-primary"
+            className="w-full min-h-20 p-3 rounded-xl border border-border/60 bg-background text-xs outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
           />
           <div className="grid grid-cols-2 gap-2">
             <input
               placeholder="Nome do contato"
               value={contactName}
               onChange={(e) => setContactName(e.target.value)}
-              className="h-9 px-3 rounded-md border border-input bg-background text-xs outline-none focus:border-primary"
+              className="h-10 px-3 rounded-xl border border-border/60 bg-background text-xs outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
             />
             <input
               placeholder="Telefone"
               value={contactPhone}
               onChange={(e) => setContactPhone(e.target.value)}
-              className="h-9 px-3 rounded-md border border-input bg-background text-xs outline-none focus:border-primary"
+              className="h-10 px-3 rounded-xl border border-border/60 bg-background text-xs outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
             />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <select
               value={priority}
               onChange={(e) => setPriority(e.target.value as any)}
-              className="h-9 px-3 rounded-md border border-input bg-background text-xs outline-none focus:border-primary"
+              className="h-10 px-3 rounded-xl border border-border/60 bg-background text-xs outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
             >
               <option value="baixa">Baixa</option>
               <option value="media">Média</option>
@@ -398,12 +525,12 @@ function NewDemandaModal({ orgId, onClose }: { orgId: string; onClose: () => voi
               type="datetime-local"
               value={dueAt}
               onChange={(e) => setDueAt(e.target.value)}
-              className="h-9 px-3 rounded-md border border-input bg-background text-xs outline-none focus:border-primary"
+              className="h-10 px-3 rounded-xl border border-border/60 bg-background text-xs outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
             />
           </div>
           <button
             disabled={m.isPending}
-            className="w-full h-9 rounded-md bg-primary text-primary-foreground text-xs font-semibold disabled:opacity-60 hover:brightness-110 transition"
+            className="w-full h-10 rounded-xl bg-primary text-primary-foreground text-xs font-semibold shadow-md shadow-primary/20 transition hover:brightness-110 hover:shadow-lg disabled:opacity-60"
           >
             {m.isPending ? "Criando..." : "Criar demanda"}
           </button>

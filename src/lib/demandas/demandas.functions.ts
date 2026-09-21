@@ -15,21 +15,6 @@ const QuotedSchema = z.object({
   kind: z.string().max(40),
 });
 
-/**
- * Última movimentação real da demanda = mais recente entre a última mensagem
- * (last_message_at) e qualquer update (updated_at: transição de estado,
- * atribuição, edição). É a chave única de ordenação DA FILA e também o que o
- * card exibe — posição e data visível nunca discordam.
- * (Backfill do preview preencheu last_message_at sem tocar em updated_at, e
- * updates sem mensagem movem updated_at — ordenar por um e exibir o outro
- * era a causa do "embaralhamento".)
- */
-function activityOf(r: any): number {
-  const lm = r.last_message_at ? new Date(r.last_message_at).getTime() : 0;
-  const up = r.updated_at ? new Date(r.updated_at).getTime() : 0;
-  return Math.max(lm, up);
-}
-
 export const listDemandas = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
@@ -66,17 +51,59 @@ export const listDemandas = createServerFn({ method: "GET" })
     const now = Date.now();
     // 2. Ordenação customizada no lado do servidor
     //    Regra 1: atrasadas primeiro (due_at < now e state != 'concluido')
-    //    Regra 2: dentro dos grupos, por ÚLTIMA ATIVIDADE (mensagem ou update)
+    //    Regra 2: dentro dos grupos, por ÚLTIMA ATIVIDADE = max(last_message_at,
+    //    updated_at) — mesma chave que o card exibe (activityIso), então
+    //    posição e data visível nunca discordam.
+    const activityOf = (r: any) => {
+      const lm = r.last_message_at ? new Date(r.last_message_at).getTime() : 0;
+      const up = r.updated_at ? new Date(r.updated_at).getTime() : 0;
+      return Math.max(lm, up);
+    };
+    const isOverdue = (r: any) =>
+      !!r.due_at && new Date(r.due_at).getTime() < now && r.state !== "concluido";
     const sortedRows = (rows ?? []).sort((a: any, b: any) => {
-      const isOverdueA = a.due_at && new Date(a.due_at).getTime() < now && a.state !== "concluido";
-      const isOverdueB = b.due_at && new Date(b.due_at).getTime() < now && b.state !== "concluido";
-      if (isOverdueA && !isOverdueB) return -1;
-      if (!isOverdueA && isOverdueB) return 1;
+      const oa = isOverdue(a);
+      const ob = isOverdue(b);
+      if (oa && !ob) return -1;
+      if (!oa && ob) return 1;
       return activityOf(b) - activityOf(a);
     });
     // 3. Aplica a paginação manualmente no array já ordenado
     const paginatedRows = sortedRows.slice(data.offset, data.offset + data.limit);
-    // Resolve nomes dos responsáveis em batch (apenas dos itens paginados)
+    const ids = paginatedRows.map((r: any) => r.id as string);
+
+    // 4. NÃO LIDAS POR USUÁRIO: última message_in da demanda vs viewed_at deste
+    //    membro em demanda_views. Sem view = nunca aberta = não lida.
+    //    Service role porque demanda_views tem RLS default-deny (policies só
+    //    pra uso futuro via client; hoje tudo passa por aqui).
+    if (ids.length > 0) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: evs } = await supabaseAdmin
+        .from("demanda_events")
+        .select("demanda_id, created_at")
+        .eq("kind", "message_in")
+        .in("demanda_id", ids)
+        .order("created_at", { ascending: false });
+      const lastInbound = new Map<string, string>();
+      for (const e of evs ?? []) {
+        if (!lastInbound.has(e.demanda_id)) lastInbound.set(e.demanda_id, e.created_at);
+      }
+      const { data: views } = await supabaseAdmin
+        .from("demanda_views")
+        .select("demanda_id, viewed_at")
+        .eq("user_id", context.userId)
+        .in("demanda_id", ids);
+      const viewed = new Map<string, string>(
+        (views ?? []).map((v: any) => [v.demanda_id, v.viewed_at]),
+      );
+      for (const r of paginatedRows as any[]) {
+        const li = lastInbound.get(r.id);
+        const vw = viewed.get(r.id);
+        r.unread = !!li && (!vw || li > vw);
+      }
+    }
+
+    // 5. Resolve nomes dos responsáveis em batch (apenas dos itens paginados)
     const assignees: Record<string, { id: string; name: string }> = {};
     const assigneeIds = [
       ...new Set((paginatedRows ?? []).map((r: any) => r.assignee_id).filter(Boolean) as string[]),
@@ -116,6 +143,22 @@ export const getDemanda = createServerFn({ method: "GET" })
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!dem) throw new Error("Demanda não encontrada");
+
+    // Marca como vista pra este usuário — o dot de "não lida" some na fila.
+    // Upsert idempotente (PK demanda_id+user_id); falha aqui NÃO pode
+    // derrubar a abertura da demanda, então engolimos com log.
+    try {
+      const { supabaseAdmin: adminViews } = await import("@/integrations/supabase/client.server");
+      await adminViews
+        .from("demanda_views")
+        .upsert(
+          { demanda_id: data.id, user_id: context.userId, viewed_at: new Date().toISOString() },
+          { onConflict: "demanda_id,user_id" },
+        );
+    } catch (e) {
+      console.error("[getDemanda] falha ao marcar vista", e);
+    }
+
     const { data: events } = await context.supabase
       .from("demanda_events")
       .select("*")

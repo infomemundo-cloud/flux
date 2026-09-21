@@ -42,6 +42,12 @@ type OrgSidebarProps = {
   onSignOut: () => void;
 };
 
+/**
+ * Sidebar desktop da org — redesign "Umbler uTalk": itens com cantos
+ * arredondados generosos (rounded-xl), hover/active em transparência suave
+ * sobre a sidebar aveludada, badges em pílula e ícones com micro-scaling
+ * no hover. Sem bordas duras: a separação vem do fundo e das sombras.
+ */
 export function OrgSidebar({
   slug,
   activePath,
@@ -55,15 +61,15 @@ export function OrgSidebar({
 }: OrgSidebarProps) {
   const visibleItems = ORG_NAV_ITEMS.filter((n) => !n.adminOnly || isOwnerOrAdmin);
   return (
-    <aside className="hidden sm:flex h-screen flex-col justify-between overflow-hidden sticky top-0 left-0 bg-sidebar text-sidebar-foreground border-r border-sidebar-border/60">
+    <aside className="hidden sm:flex h-screen flex-col justify-between overflow-hidden sticky top-0 left-0 bg-sidebar text-sidebar-foreground border-r border-sidebar-border/40">
       {!collapsed && (
-        <div className="shrink-0 pt-4 pb-2 px-4">
+        <div className="shrink-0 pt-5 pb-2 px-4">
           <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/45">
             Operação
           </div>
         </div>
       )}
-      <nav className="flex-1 overflow-y-auto space-y-0.5 px-2 py-1">
+      <nav className="flex-1 overflow-y-auto space-y-1 px-3 py-1">
         {visibleItems.map((n) => {
           const to = `/app/o/${slug}/${n.segment}`;
           const active = activePath.startsWith(to);
@@ -74,23 +80,33 @@ export function OrgSidebar({
               to={to}
               preload="intent"
               title={n.label}
-              className={`group relative flex items-center gap-2.5 py-2 rounded-lg text-[13px] font-medium transition-colors ${collapsed ? "justify-center px-2" : "px-3"} ${active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"}`}
+              className={`group relative flex items-center gap-3 rounded-xl py-2.5 text-[13px] font-medium transition-all duration-150 ${
+                collapsed ? "justify-center px-2" : "px-3"
+              } ${
+                active
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+                  : "text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+              }`}
             >
               {active && (
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[3px] rounded-r-full bg-sidebar-primary" />
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-sidebar-primary" />
               )}
               <Icon
-                className={`h-[17px] w-[17px] shrink-0 ${active ? "text-sidebar-accent-foreground" : "text-sidebar-foreground/65 group-hover:text-sidebar-foreground"}`}
+                className={`h-[18px] w-[18px] shrink-0 transition-transform duration-150 group-hover:scale-105 ${
+                  active
+                    ? "text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/65 group-hover:text-sidebar-foreground"
+                }`}
                 strokeWidth={1.9}
               />
-              {!collapsed && n.label}
+              {!collapsed && <span className="truncate">{n.label}</span>}
               {n.label === "Fila" && newCount > 0 && !collapsed && (
-                <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-sidebar-primary text-sidebar-primary-foreground">
+                <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-sidebar-primary px-2 py-0.5 text-[10px] font-bold tabular-nums text-sidebar-primary-foreground">
                   <Bell className="h-3 w-3" /> {newCount}
                 </span>
               )}
               {n.label === "Fila" && newCount > 0 && collapsed && (
-                <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-sidebar-primary" />
+                <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-sidebar-primary" />
               )}
             </Link>
           );
@@ -98,7 +114,7 @@ export function OrgSidebar({
       </nav>
       {/* Footer: único lugar com o toggle de collapse — não existe mais um
           segundo botão no topo. Fica sempre ao lado do ThemeCycleButton. */}
-      <div className="mt-auto shrink-0 border-t border-sidebar-border bg-sidebar p-2">
+      <div className="mt-auto shrink-0 border-t border-sidebar-border/60 bg-sidebar p-2.5">
         <div className={`flex items-center gap-1.5 ${collapsed ? "flex-col" : ""}`}>
           <div className="min-w-0 flex-1">
             <UserMenu
@@ -116,7 +132,7 @@ export function OrgSidebar({
               onClick={onToggle}
               aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
               title={collapsed ? "Expandir menu" : "Recolher menu"}
-              className="grid place-items-center h-8 w-8 rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+              className="grid place-items-center h-8 w-8 rounded-xl text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
             >
               {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
             </button>
