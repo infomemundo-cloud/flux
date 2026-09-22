@@ -102,7 +102,12 @@ function DemandaDetail() {
   // O contactId vem da demanda carregada; sem contato, a mutation erroa com
   // mensagem clara (o trilho já esconde os controles nesse caso).
   const saveContact = useMutation({
-    mutationFn: (patch: { notes?: string | null; tags?: ContactTag[]; company?: string | null }) => {
+    mutationFn: (patch: {
+      notes?: string | null;
+      tags?: ContactTag[];
+      company?: string | null;
+      email?: string | null;
+    }) => {
       const cid = (data?.demanda as any)?.contact_id;
       if (!cid) throw new Error("Demanda sem contato vinculado.");
       return updateContactFn({ data: { contactId: cid, ...patch } });

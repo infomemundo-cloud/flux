@@ -245,6 +245,7 @@ type PropertiesRailProps = {
     notes?: string | null;
     tags?: ContactTag[];
     company?: string | null;
+    email?: string | null;
   }) => void;
   contactSaving: boolean;
   onOpenDemanda: (id: string) => void;
@@ -279,6 +280,7 @@ export function PropertiesRail({
   const [confirmText, setConfirmText] = useState("");
   const [notes, setNotes] = useState("");
   const [company, setCompany] = useState("");
+  const [email, setEmail] = useState("");
   const [tagOpen, setTagOpen] = useState(false);
   const [tagQuery, setTagQuery] = useState("");
 
@@ -326,11 +328,13 @@ export function PropertiesRail({
   useEffect(() => {
     setNotes(contact?.notes ?? "");
     setCompany(contact?.company ?? "");
+    setEmail(contact?.email ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contact?.id, contact?.notes, contact?.company]);
+  }, [contact?.id, contact?.notes, contact?.company, contact?.email]);
 
   const notesDirty = notes !== (contact?.notes ?? "");
   const companyDirty = company !== (contact?.company ?? "");
+  const emailDirty = email !== (contact?.email ?? "");
 
   // Feedback sutil de salvamento: flash "salvo" após cada mutation concluir.
   const wasSaving = useRef(false);
@@ -362,6 +366,16 @@ export function PropertiesRail({
   };
   const saveCompany = () => {
     if (companyDirty) onSaveContact({ company: company.trim() || null });
+  };
+  const saveEmail = () => {
+    if (!emailDirty) return;
+    const clean = email.trim();
+    // Validação leve no cliente (formato); o servidor revalida com zod email.
+    if (clean && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean)) {
+      toast.error("E-mail inválido — verifique o formato.");
+      return;
+    }
+    onSaveContact({ email: clean || null });
   };
   const handleCopyPhone = async () => {
     if (!contact?.phone) return;
@@ -698,12 +712,18 @@ export function PropertiesRail({
                 <div className="space-y-1">
                   <div className="flex items-center justify-between gap-2 py-1.5">
                     <span className="w-20 shrink-0 text-[11px] font-medium text-muted-foreground">E-mail</span>
-                    <span
-                      className="min-w-0 flex-1 truncate text-right text-xs text-foreground/85"
-                      title={contact.email ?? undefined}
-                    >
-                      {contact.email || "—"}
-                    </span>
+                    <input
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      onBlur={saveEmail}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                      }}
+                      type="email"
+                      placeholder="—"
+                      maxLength={120}
+                      className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-right text-xs text-foreground outline-none transition hover:border-border/60 focus:border-primary/50 focus:bg-background"
+                    />
                   </div>
                   <div className="flex items-center justify-between gap-2 py-1.5">
                     <span className="w-20 shrink-0 text-[11px] font-medium text-muted-foreground">Empresa</span>

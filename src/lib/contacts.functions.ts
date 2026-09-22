@@ -4,8 +4,9 @@ import { z } from "zod";
 import { assertMember } from "@/lib/demandas/demandas-guard";
 
 /**
- * CRM leve do contato: notas permanentes + etiquetas coloridas + empresa.
- * Edição restrita a papéis humanos de operação (agente_ia fica fora).
+ * CRM leve do contato: notas permanentes + etiquetas coloridas + empresa +
+ * e-mail. Edição pra todos os papéis humanos de operação (owner, admin,
+ * gerente, operador — agente_ia fica fora por não usar UI).
  * Escrita via supabaseAdmin + guard assertMember (defesa em profundidade:
  * a policy "members access contacts" existiria como segunda camada).
  */
@@ -43,6 +44,13 @@ export const updateContact = createServerFn({ method: "POST" })
         notes: z.string().max(4000).nullable().optional(),
         tags: z.array(TagSchema).max(12).optional(),
         company: z.string().trim().max(120).nullable().optional(),
+        email: z
+          .string()
+          .trim()
+          .max(120)
+          .email({ message: "E-mail inválido." })
+          .nullable()
+          .optional(),
       })
       .parse(d),
   )
@@ -62,6 +70,7 @@ export const updateContact = createServerFn({ method: "POST" })
     if (data.notes !== undefined) patch.notes = data.notes;
     if (data.tags !== undefined) patch.tags = data.tags;
     if (data.company !== undefined) patch.company = data.company;
+    if (data.email !== undefined) patch.email = data.email;
     if (Object.keys(patch).length === 0) return { ok: true };
     const { error } = await supabaseAdmin
       .from("contacts")
