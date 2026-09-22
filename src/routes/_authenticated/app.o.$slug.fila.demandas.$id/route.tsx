@@ -136,7 +136,10 @@ function DemandaDetail() {
           },
         });
       }
-      // Caminho 3: WhatsApp COM anexo (base64 no input validado da server fn).
+      // Caminho 3: WhatsApp COM anexo (inclui áudio gravado no composer).
+      // Chamada DIRETA da server function via useServerFn (navegador → endpoint
+      // serverFn com cookies): é o mesmo caminho de auth de todas as outras
+      // mutations do projeto. O arquivo vai como base64 no input validado.
       setIsUploading(true);
       try {
         const fileBase64 = await toBase64(attachment.file);
@@ -204,7 +207,6 @@ function DemandaDetail() {
 
   const contactName = resolveContactName(d);
   const isGroupChat = !!d.whatsapp_jid?.endsWith("@g.us");
-  const filaCollapsed = filaSidebar?.collapsed ?? false;
   const handleReply = (target: ReplyTarget) => {
     setReplyTo(target);
     composerRef.current?.focus();
@@ -217,13 +219,18 @@ function DemandaDetail() {
         : file.type.startsWith("video/")
           ? "video"
           : "document";
-    const previewUrl = kind === "image" ? URL.createObjectURL(file) : null;
+    // Áudio ganha object URL também: é o que permite o player de preview
+    // no card de anexo do composer (revogado no remove e no success).
+    const previewUrl = kind === "image" || kind === "audio" ? URL.createObjectURL(file) : null;
     setAttachment({ file, previewUrl, kind });
   };
   const handleRemoveAttachment = () => {
     if (attachment?.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
     setAttachment(null);
   };
+
+  const filaCollapsed = filaSidebar?.collapsed ?? false;
+  const handleToggleFila = () => filaSidebar?.setCollapsed(!filaCollapsed);
 
   return (
     <div className="relative flex h-full">
@@ -234,7 +241,7 @@ function DemandaDetail() {
           phone={d.contacts?.phone ?? null}
           isGroupChat={isGroupChat}
           filaCollapsed={filaCollapsed}
-          onToggleFila={() => filaSidebar?.setCollapsed(!filaCollapsed)}
+          onToggleFila={handleToggleFila}
           railCollapsed={railCollapsed}
           onExpandRail={() => setRailCollapsed(false)}
           onClose={() => navigate({ to: "/app/o/$slug/fila", params: { slug } })}

@@ -53,7 +53,27 @@ function formatBytes(bytes: number): string {
  */
 function StableAudio({ src, className }: { src: string; className?: string }) {
   const [fixed] = useState(src);
-  return <audio controls preload="metadata" src={fixed} className={className} />;
+  return (
+    <audio
+      controls
+      preload="metadata"
+      src={fixed}
+      className={className}
+      onLoadedMetadata={(e) => {
+        // Áudio gravado no navegador (webm/mp4 sem duração no header) chega
+        // com duration = Infinity e o player mostra só 0:00. O seek gigante
+        // força o browser a calcular a duração real; volta pro zero em seguida.
+        const el = e.currentTarget;
+        if (el.duration === Infinity) {
+          el.currentTime = 1e101;
+          el.ontimeupdate = () => {
+            el.ontimeupdate = null;
+            el.currentTime = 0;
+          };
+        }
+      }}
+    />
+  );
 }
 
 /**
