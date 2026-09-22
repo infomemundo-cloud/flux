@@ -53,7 +53,6 @@ export const listDemandas = createServerFn({ method: "GET" })
     const { data: rows, count, error } = await q;
     if (error) throw new Error(error.message);
     const now = Date.now();
-
     // 2. Contagens do escopo (independentes da paginação e da aba):
     //    scopeTotal = tudo que passou nos filtros (badge da aba Fila);
     //    overdueTotal = SLA estourado dentro desse mesmo escopo (badge da
@@ -63,7 +62,6 @@ export const listDemandas = createServerFn({ method: "GET" })
     const scopeTotal = count ?? 0;
     const overdueAll = (rows ?? []).filter(isOverdue);
     const overdueTotal = overdueAll.length;
-
     // 3. Conjunto de trabalho da aba atual + ordenação por ÚLTIMA ATIVIDADE
     //    = max(last_message_at, updated_at) — mesma chave que o card exibe
     //    (activityIso), então posição e data visível nunca discordam.
@@ -76,11 +74,9 @@ export const listDemandas = createServerFn({ method: "GET" })
     };
     const working = data.overdueOnly ? overdueAll : (rows ?? []);
     working.sort((a: any, b: any) => activityOf(b) - activityOf(a));
-
     // 4. Paginação manual no array já ordenado (snapshot único por query)
     const paginatedRows = working.slice(data.offset, data.offset + data.limit);
     const ids = paginatedRows.map((r: any) => r.id as string);
-
     // 5. NÃO LIDAS POR USUÁRIO: última message_in da demanda vs viewed_at
     //    deste membro em demanda_views. Sem view = nunca aberta = não lida.
     //    Service role porque demanda_views tem RLS default-deny (policies só
@@ -111,7 +107,6 @@ export const listDemandas = createServerFn({ method: "GET" })
         r.unread = !!li && (!vw || li > vw);
       }
     }
-
     // 6. Resolve nomes dos responsáveis em batch (apenas dos itens paginados)
     const assignees: Record<string, { id: string; name: string }> = {};
     const assigneeIds = [
@@ -182,7 +177,9 @@ export const getDemanda = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const { data: dem, error } = await context.supabase
       .from("demandas")
-      .select("*, contacts:contact_id(id, name, phone, email, avatar_url), channels:channel_id(id, kind, name)")
+      .select(
+        "*, contacts:contact_id(id, name, phone, email, avatar_url, notes, tags, company), channels:channel_id(id, kind, name)",
+      )
       .eq("id", data.id)
       .maybeSingle();
     if (error) throw new Error(error.message);
@@ -260,7 +257,48 @@ export const getDemanda = createServerFn({ method: "GET" })
         }),
       );
     }
-    return { demanda: dem, events: signedEvents, actors, viewerId: context.userId };
+
+    // "Demanda nº X deste contato" + anteriores (aba Demanda do trilho).
+    // Três queries baratas (2 head counts + lista limitada) só quando existe
+    // contato vinculado; sem contato, contactStats = null e o trilho omite.
+    let contactStats: {
+      posicao: number;
+      total: number;
+      anteriores: { id: string; protocol: string | null; state: string; created_at: string }[];
+    } | null = null;
+    if (dem.contact_id) {
+      const { count: total, error: totErr } = await context.supabase
+        .from("demandas")
+        .select("id", { count: "exact", head: true })
+        .eq("contact_id", dem.contact_id);
+      if (totErr) throw new Error(totErr.message);
+      const { count: before, error: befErr } = await context.supabase
+        .from("demandas")
+        .select("id", { count: "exact", head: true })
+        .eq("contact_id", dem.contact_id)
+        .lt("created_at", dem.created_at);
+      if (befErr) throw new Error(befErr.message);
+      const { data: anteriores, error: antErr } = await context.supabase
+        .from("demandas")
+        .select("id, protocol, state, created_at")
+        .eq("contact_id", dem.contact_id)
+        .lt("created_at", dem.created_at)
+        .order("created_at", { ascending: false })
+        .limit(4);
+      if (antErr) throw new Error(antErr.message);
+      contactStats = {
+        posicao: (before ?? 0) + 1,
+        total: total ?? 1,
+        anteriores: (anteriores ?? []) as {
+          id: string;
+          protocol: string | null;
+          state: string;
+          created_at: string;
+        }[],
+      };
+    }
+
+    return { demanda: dem, events: signedEvents, actors, viewerId: context.userId, contactStats };
   });
 
 export const createDemanda = createServerFn({ method: "POST" })

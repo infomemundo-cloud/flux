@@ -1,11 +1,14 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarClock,
   Check,
   ChevronDown,
   Copy,
   FileText,
+  History,
   PanelRightClose,
+  Plus,
+  Search,
   Tag,
   Trash2,
   User,
@@ -15,8 +18,16 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { StateEnum, PriorityEnum } from "@/lib/demandas/demandas-guard";
-import { STATE_LABEL } from "@/components/demandas-ui";
+import { STATE_LABEL, formatRelative } from "@/components/demandas-ui";
+import {
+  listOrgTags,
+  DEFAULT_TAG_SUGGESTIONS,
+  type ContactTag,
+} from "@/lib/contacts.functions";
+import { ContactAvatar } from "@/components/contact-avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,10 +47,7 @@ const STATE_DOT: Record<string, string> = {
   concluido: "bg-[var(--state-resolvido)]",
 };
 
-/**
- * Estilo DISCRETO de pílula (key-value à direita): sem borda, fundo sutil,
- * h-8, texto 11px, largura ajustada ao conteúdo.
- */
+/** Pílula discreta (key-value à direita): sem borda, fundo sutil, h-8. */
 const PILL_TRIGGER =
   "inline-flex h-8 items-center gap-1.5 rounded-lg bg-secondary/60 pl-2.5 pr-2 text-[11px] font-medium text-foreground/85 transition hover:bg-secondary";
 
@@ -67,6 +75,35 @@ const PRIORITY_DOT: Record<string, string> = {
   urgente: "bg-[var(--pill-red-fg)]",
 };
 
+/** Etiquetas do contato: pills do design system (tematizadas de graça). */
+const TAG_PILL: Record<ContactTag["color"], string> = {
+  brand: "pill-brand",
+  amber: "pill-amber",
+  orange: "pill-orange",
+  violet: "pill-violet",
+  green: "pill-green",
+  red: "pill-red",
+  neutral: "pill-neutral",
+};
+
+const TAG_DOT: Record<ContactTag["color"], string> = {
+  brand: "bg-[var(--pill-brand-fg)]",
+  amber: "bg-[var(--pill-amber-fg)]",
+  orange: "bg-[var(--pill-orange-fg)]",
+  violet: "bg-[var(--pill-violet-fg)]",
+  green: "bg-[var(--pill-green-fg)]",
+  red: "bg-[var(--pill-red-fg)]",
+  neutral: "bg-[var(--pill-neutral-fg)]",
+};
+
+const TAG_COLOR_KEYS = Object.keys(TAG_PILL) as ContactTag["color"][];
+
+/** Cor determinística pra etiqueta recém-criada (sem picker pesado). */
+function colorForLabel(label: string): ContactTag["color"] {
+  const h = (label.charCodeAt(0) || 65) + label.length;
+  return TAG_COLOR_KEYS[h % TAG_COLOR_KEYS.length];
+}
+
 function initials(name: string): string {
   return name
     .split(/\s+/)
@@ -77,9 +114,8 @@ function initials(name: string): string {
 }
 
 /**
- * Prazo em formato de pílula inline: ícone + data·hora (ou "Sem prazo"),
- * popover com Calendar + input de hora + atalhos rápidos. Carmim sutil
- * quando vencido. X interno limpa o prazo.
+ * Prazo em pílula inline: popover com Calendar + hora + atalhos, abrindo pro
+ * lado do chat (estável em telas menores). Carmim sutil quando vencido.
  */
 function DueDatePicker({
   value,
@@ -115,10 +151,7 @@ function DueDatePicker({
     <div className="relative inline-flex">
       <Popover>
         <PopoverTrigger asChild>
-          <button
-            type="button"
-            className={`${PILL_TRIGGER} pr-7 ${overdue ? "text-destructive" : ""}`}
-          >
+          <button type="button" className={`${PILL_TRIGGER} pr-7 ${overdue ? "text-destructive" : ""}`}>
             <CalendarClock
               className={`h-3.5 w-3.5 shrink-0 ${overdue ? "text-destructive" : "text-muted-foreground"}`}
             />
@@ -187,10 +220,7 @@ function DueDatePicker({
   );
 }
 
-/**
- * Linha key-value horizontal: rótulo à esquerda (w-20, discreto),
- * controle à direita em pílula. py-2 pra respiração vertical no trilho.
- */
+/** Linha key-value horizontal: rótulo à esquerda (w-20), controle à direita. */
 function KVRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 py-2">
@@ -211,15 +241,22 @@ type PropertiesRailProps = {
   canDelete: boolean;
   onDelete: () => void;
   deletePending: boolean;
+  onSaveContact: (patch: {
+    notes?: string | null;
+    tags?: ContactTag[];
+    company?: string | null;
+  }) => void;
+  contactSaving: boolean;
+  onOpenDemanda: (id: string) => void;
 };
 
 /**
  * Trilho de propriedades com abas (Demanda / Contato / Notas).
- * SUPERFÍCIE SEPARADA: fundo bg-surface/70 (equivalente tokenizado do
- * slate-50/70 dark:slate-900/40) + border-l sutil — separa claramente a
- * área do chat da área de propriedades nos 3 temas.
- * Header h-12 idêntico ao do chat (border-b alinhado). Protocolo em
- * DESTAQUE no topo da aba Demanda (badge mono + cópia rápida).
+ * Aba Contato (CRM): topo com avatar real + nome + telefone copiável;
+ * e-mail (leitura) e empresa (edição inline no blur/Enter); combobox de
+ * etiquetas com sugestões da org + sementes padrão + criação inline;
+ * badges coloridos com X discreto. Salvamento via updateContact com
+ * feedback sutil (salvando… / salvo).
  */
 export function PropertiesRail({
   demanda,
@@ -232,13 +269,108 @@ export function PropertiesRail({
   canDelete,
   onDelete,
   deletePending,
+  onSaveContact,
+  contactSaving,
+  onOpenDemanda,
 }: PropertiesRailProps) {
   const [activeTab, setActiveTab] = useState<"demanda" | "contato" | "notas">("demanda");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmText, setConfirmText] = useState("");
+  const [notes, setNotes] = useState("");
+  const [company, setCompany] = useState("");
+  const [tagOpen, setTagOpen] = useState(false);
+  const [tagQuery, setTagQuery] = useState("");
+
+  const qc = useQueryClient();
+  const orgTagsFn = useServerFn(listOrgTags);
 
   const contact = demanda.contacts;
   const hasContact = !!contact;
+  const tags: ContactTag[] = Array.isArray(contact?.tags) ? contact.tags : [];
+  const contactStats = demanda.contactStats ?? null;
+
+  // Sugestões de etiqueta da org (só busca quando a aba Contato está aberta).
+  const { data: orgTags } = useQuery({
+    queryKey: ["org-tags", demanda.org_id],
+    queryFn: () => orgTagsFn({ data: { orgId: demanda.org_id } }),
+    enabled: !!demanda.org_id && activeTab === "contato",
+  });
+
+  const suggestions = useMemo<ContactTag[]>(() => {
+    const map = new Map<string, ContactTag>();
+    for (const t of orgTags ?? []) map.set(t.label.toLowerCase(), t);
+    for (const t of DEFAULT_TAG_SUGGESTIONS) {
+      const k = t.label.toLowerCase();
+      if (!map.has(k)) map.set(k, t);
+    }
+    return [...map.values()].sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  }, [orgTags]);
+
+  const selectedKeys = new Set(tags.map((t) => t.label.toLowerCase()));
+  const filteredSuggestions = useMemo(() => {
+    const q = tagQuery.trim().toLowerCase();
+    return suggestions
+      .filter((s) => !selectedKeys.has(s.label.toLowerCase()))
+      .filter((s) => (q ? s.label.toLowerCase().includes(q) : true))
+      .slice(0, 8);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestions, tagQuery, tags]);
+
+  const exactExists =
+    suggestions.some((s) => s.label.toLowerCase() === tagQuery.trim().toLowerCase()) ||
+    selectedKeys.has(tagQuery.trim().toLowerCase());
+  const canCreateTag = tagQuery.trim().length > 0 && tagQuery.trim().length <= 24 && !exactExists;
+
+  // Sincroniza rascunhos quando troca o contato ou o valor salvo muda.
+  useEffect(() => {
+    setNotes(contact?.notes ?? "");
+    setCompany(contact?.company ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contact?.id, contact?.notes, contact?.company]);
+
+  const notesDirty = notes !== (contact?.notes ?? "");
+  const companyDirty = company !== (contact?.company ?? "");
+
+  // Feedback sutil de salvamento: flash "salvo" após cada mutation concluir.
+  const wasSaving = useRef(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+  useEffect(() => {
+    if (wasSaving.current && !contactSaving) {
+      setSavedFlash(true);
+      wasSaving.current = contactSaving;
+      const t = window.setTimeout(() => setSavedFlash(false), 1600);
+      return () => window.clearTimeout(t);
+    }
+    wasSaving.current = contactSaving;
+  }, [contactSaving]);
+
+  const addTag = (tag: ContactTag) => {
+    onSaveContact({ tags: [...tags, tag] });
+    setTagOpen(false);
+    setTagQuery("");
+  };
+  const createTag = (label: string) => {
+    const clean = label.trim();
+    if (!clean) return;
+    addTag({ label: clean, color: colorForLabel(clean) });
+    // Nova etiqueta vira sugestão da org inteira na hora.
+    qc.invalidateQueries({ queryKey: ["org-tags", demanda.org_id] });
+  };
+  const removeTag = (label: string) => {
+    onSaveContact({ tags: tags.filter((t) => t.label !== label) });
+  };
+  const saveCompany = () => {
+    if (companyDirty) onSaveContact({ company: company.trim() || null });
+  };
+  const handleCopyPhone = async () => {
+    if (!contact?.phone) return;
+    try {
+      await navigator.clipboard.writeText(contact.phone);
+      toast.success("Telefone copiado");
+    } catch {
+      toast.error("Não foi possível copiar");
+    }
+  };
 
   const memberLabel = (op: any) => op.name ?? op.email ?? nameOf(op.user_id);
   const assigneeOp = operators.find((op: any) => op.user_id === demanda.assignee_id);
@@ -259,6 +391,14 @@ export function PropertiesRail({
       toast.error("Não foi possível copiar");
     }
   };
+
+  const savingHint = contactSaving ? (
+    <span className="text-[10px] text-muted-foreground animate-pulse">salvando…</span>
+  ) : savedFlash ? (
+    <span className="inline-flex items-center gap-1 text-[10px] text-[var(--pill-green-fg)]">
+      <Check className="h-3 w-3" /> salvo
+    </span>
+  ) : null;
 
   return (
     <aside className="hidden lg:flex w-[320px] 2xl:w-[340px] shrink-0 flex-col border-l border-border/60 bg-surface/70">
@@ -308,10 +448,10 @@ export function PropertiesRail({
       <div className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3">
         {activeTab === "demanda" && (
           <div className="space-y-1">
-            {/* Protocolo em DESTAQUE no topo: badge mono + cópia rápida */}
+            {/* Protocolo em destaque no topo */}
             <KVRow label="Protocolo">
               <span className="inline-flex items-center gap-1">
-                <span className="inline-flex h-7 items-center rounded-md border border-border/60 bg-secondary/60 px-2.5 font-mono text-[11px] font-semibold tracking-wide text-foreground/80 dark:bg-secondary/40 dark:text-foreground/90">
+                <span className="inline-flex h-8 items-center rounded-lg border border-border/60 bg-secondary/60 px-2.5 font-mono text-[11px] font-semibold tracking-wide text-foreground/80">
                   {demanda.protocol ?? "—"}
                 </span>
                 <button
@@ -319,14 +459,63 @@ export function PropertiesRail({
                   onClick={handleCopyProtocol}
                   title="Copiar protocolo"
                   aria-label="Copiar protocolo"
-                  className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                  className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
                 >
                   <Copy className="h-3.5 w-3.5" />
                 </button>
               </span>
             </KVRow>
 
-            {/* Estado — pílula com pip colorido */}
+            {/* Histórico do contato */}
+            {contactStats && (
+              <KVRow label="Histórico">
+                {contactStats.total <= 1 ? (
+                  <span className="inline-flex h-8 items-center rounded-lg bg-secondary/60 px-2.5 text-[11px] font-medium text-muted-foreground">
+                    1ª demanda deste contato
+                  </span>
+                ) : (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button type="button" className={PILL_TRIGGER} title="Demandas deste contato">
+                        <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="tabular-nums">
+                          #{contactStats.posicao} de {contactStats.total}
+                        </span>
+                        <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-64 rounded-xl p-1.5">
+                      <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                        Anteriores
+                      </div>
+                      {contactStats.anteriores.map((a: any) => (
+                        <button
+                          key={a.id}
+                          type="button"
+                          onClick={() => onOpenDemanda(a.id)}
+                          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition hover:bg-secondary"
+                        >
+                          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                            {a.protocol ?? "—"}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate">{STATE_LABEL[a.state] ?? a.state}</span>
+                          <span className="shrink-0 text-[10px] text-muted-foreground">
+                            {formatRelative(a.created_at)}
+                          </span>
+                        </button>
+                      ))}
+                      {contactStats.anteriores.length === 0 && (
+                        <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+                          Nenhuma anterior — esta é a mais recente do contato.
+                        </div>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+                )}
+              </KVRow>
+            )}
+
+            {/* Estado */}
             <KVRow label="Estado">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -354,7 +543,7 @@ export function PropertiesRail({
               </DropdownMenu>
             </KVRow>
 
-            {/* Prioridade — seletor compacto: pílula colorida da atual + menu */}
+            {/* Prioridade */}
             <KVRow label="Prioridade">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -382,12 +571,12 @@ export function PropertiesRail({
               </DropdownMenu>
             </KVRow>
 
-            {/* Prazo — pílula com data·hora + popover com Calendar */}
+            {/* Prazo */}
             <KVRow label="Prazo">
               <DueDatePicker value={demanda.due_at ?? null} onChange={(v) => onUpdate({ due_at: v })} />
             </KVRow>
 
-            {/* Responsável — pílula com iniciais + nome; menu só pra managers */}
+            {/* Responsável */}
             <KVRow label="Responsável">
               {isManager ? (
                 <DropdownMenu>
@@ -479,33 +668,155 @@ export function PropertiesRail({
           <div className="space-y-4">
             {hasContact ? (
               <>
+                {/* Topo: avatar real + nome + telefone copiável */}
                 <div className="flex items-center gap-3">
-                  <div className="grid h-12 w-12 place-items-center rounded-full bg-primary/10 text-primary">
-                    <User className="h-5 w-5" />
-                  </div>
+                  <ContactAvatar url={contact.avatar_url ?? null} name={contact.name || "Sem nome"} tone="client" />
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-bold text-foreground truncate">{contact.name || "Sem nome"}</div>
-                    <div className="text-xs text-muted-foreground truncate">
-                      {contact.phone || contact.email || "Sem contato"}
+                    <div className="truncate text-sm font-bold text-foreground">
+                      {contact.name || "Sem nome"}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span className="truncate tabular-nums">{contact.phone || "Sem telefone"}</span>
+                      {contact.phone && (
+                        <button
+                          type="button"
+                          onClick={handleCopyPhone}
+                          title="Copiar telefone"
+                          aria-label="Copiar telefone"
+                          className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground/70 transition hover:bg-secondary hover:text-foreground"
+                        >
+                          <Copy className="h-3 w-3" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
-                <div className="space-y-1.5 text-xs">
-                  {contact.phone && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">Telefone:</span>
-                      <span className="font-medium text-foreground tabular-nums">{contact.phone}</span>
-                    </div>
-                  )}
-                  {contact.email && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">E-mail:</span>
-                      <span className="font-medium text-foreground">{contact.email}</span>
-                    </div>
-                  )}
+
+                {/* E-mail (leitura) + Empresa (edição inline) */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-2 py-1.5">
+                    <span className="w-20 shrink-0 text-[11px] font-medium text-muted-foreground">E-mail</span>
+                    <span
+                      className="min-w-0 flex-1 truncate text-right text-xs text-foreground/85"
+                      title={contact.email ?? undefined}
+                    >
+                      {contact.email || "—"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 py-1.5">
+                    <span className="w-20 shrink-0 text-[11px] font-medium text-muted-foreground">Empresa</span>
+                    <input
+                      value={company}
+                      onChange={(e) => setCompany(e.target.value)}
+                      onBlur={saveCompany}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                      }}
+                      placeholder="—"
+                      maxLength={120}
+                      className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-right text-xs text-foreground outline-none transition hover:border-border/60 focus:border-primary/50 focus:bg-background"
+                    />
+                  </div>
                 </div>
-                <div className="rounded-lg border border-dashed border-border/60 bg-secondary/30 p-3 text-[11px] text-muted-foreground">
-                  Etiquetas e tags do contato serão implementadas na Fase 2.
+
+                {/* Etiquetas: badges + combobox de sugestões/criação */}
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-muted-foreground">Etiquetas</span>
+                    <span className="flex items-center gap-1.5">
+                      {savingHint}
+                      <span className="text-[10px] tabular-nums text-muted-foreground">{tags.length}/12</span>
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {tags.map((t) => (
+                      <span
+                        key={t.label}
+                        className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold ${TAG_PILL[t.color] ?? "pill-neutral"}`}
+                      >
+                        {t.label}
+                        <button
+                          type="button"
+                          onClick={() => removeTag(t.label)}
+                          title={`Remover ${t.label}`}
+                          aria-label={`Remover ${t.label}`}
+                          className="opacity-70 transition hover:opacity-100"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                    <Popover
+                      open={tagOpen}
+                      onOpenChange={(o) => {
+                        setTagOpen(o);
+                        if (!o) setTagQuery("");
+                      }}
+                    >
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          disabled={tags.length >= 12}
+                          title={tags.length >= 12 ? "Limite de 12 etiquetas" : "Adicionar etiqueta"}
+                          className="inline-flex h-7 items-center gap-1.5 rounded-md border border-dashed border-border/70 px-2 text-[10px] font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:opacity-50"
+                        >
+                          <Plus className="h-3 w-3" />
+                          Etiqueta
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent align="start" className="w-56 rounded-xl p-1.5">
+                        <div className="relative mb-1">
+                          <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+                          <input
+                            autoFocus
+                            value={tagQuery}
+                            onChange={(e) => setTagQuery(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                const exact = filteredSuggestions.find(
+                                  (s) => s.label.toLowerCase() === tagQuery.trim().toLowerCase(),
+                                );
+                                if (exact) addTag(exact);
+                                else if (canCreateTag) createTag(tagQuery);
+                              }
+                            }}
+                            placeholder="Buscar ou criar..."
+                            maxLength={24}
+                            className="h-8 w-full rounded-md border border-border/60 bg-background pl-7 pr-2 text-[11px] outline-none transition focus:border-primary/50"
+                          />
+                        </div>
+                        <div className="max-h-40 overflow-y-auto scrollbar-thin">
+                          {filteredSuggestions.map((s) => (
+                            <button
+                              key={s.label}
+                              type="button"
+                              onClick={() => addTag(s)}
+                              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] transition hover:bg-secondary"
+                            >
+                              <span className={`h-2 w-2 shrink-0 rounded-full ${TAG_DOT[s.color]}`} />
+                              <span className="min-w-0 flex-1 truncate">{s.label}</span>
+                            </button>
+                          ))}
+                          {canCreateTag && (
+                            <button
+                              type="button"
+                              onClick={() => createTag(tagQuery)}
+                              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] font-medium text-primary transition hover:bg-secondary"
+                            >
+                              <Plus className="h-3 w-3 shrink-0" />
+                              <span className="truncate">Criar etiqueta “{tagQuery.trim()}”</span>
+                            </button>
+                          )}
+                          {filteredSuggestions.length === 0 && !canCreateTag && (
+                            <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+                              Nenhuma sugestão encontrada.
+                            </div>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                 </div>
               </>
             ) : (
@@ -523,13 +834,39 @@ export function PropertiesRail({
         )}
 
         {activeTab === "notas" && (
-          <div className="rounded-lg border border-dashed border-border/60 bg-secondary/30 p-3 text-[11px] text-muted-foreground">
-            Notas permanentes do cliente serão implementadas na Fase 2.
-          </div>
+          hasContact ? (
+            <div className="space-y-2">
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Anotações permanentes sobre este cliente (preferências, contexto recorrente)..."
+                maxLength={4000}
+                className="min-h-28 w-full resize-y rounded-xl border border-border/60 bg-background p-3 text-xs outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
+              />
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-[10px] tabular-nums text-muted-foreground">
+                  {notes.length}/4000 {savingHint}
+                </span>
+                <button
+                  type="button"
+                  disabled={!notesDirty || contactSaving}
+                  onClick={() => onSaveContact({ notes })}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-[11px] font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-50"
+                >
+                  {!notesDirty && savedFlash && <Check className="h-3 w-3" />}
+                  {contactSaving ? "Salvando..." : notesDirty ? "Salvar notas" : savedFlash ? "Salvo" : "Salvar notas"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-border/60 bg-secondary/30 p-3 text-[11px] text-muted-foreground">
+              Sem contato vinculado — notas indisponíveis.
+            </div>
+          )
         )}
       </div>
 
-      {/* Zona de perigo DISCRETA — link pequeno, não botão largo */}
+      {/* Zona de perigo DISCRETA */}
       {canDelete && (
         <div className="shrink-0 border-t border-border/50 px-4 py-2.5">
           <button

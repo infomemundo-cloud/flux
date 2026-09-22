@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useRef, useState } from "react";
 import { getDemanda, updateDemanda, addComment, deleteDemanda } from "@/lib/demandas/demandas.functions";
+import { updateContact, type ContactTag } from "@/lib/contacts.functions";
 import { sendWhatsAppMessage, sendMediaMessage } from "@/lib/whatsapp.functions";
 import { getOrgBySlug, listOperators } from "@/lib/orgs.functions";
 import { toast } from "sonner";
@@ -55,6 +56,7 @@ function DemandaDetail() {
   const updateFn = useServerFn(updateDemanda);
   const commentFn = useServerFn(addComment);
   const deleteFn = useServerFn(deleteDemanda);
+  const updateContactFn = useServerFn(updateContact);
   const orgFn = useServerFn(getOrgBySlug);
   const qc = useQueryClient();
   const waFn = useServerFn(sendWhatsAppMessage);
@@ -92,6 +94,22 @@ function DemandaDetail() {
       qc.invalidateQueries({ queryKey: ["demanda", id] });
       qc.invalidateQueries({ queryKey: ["demandas"] });
       toast.success("Atualizado");
+    },
+    onError: (e) => toast.error(friendlyError(e)),
+  });
+
+  // CRM leve do contato (Fase 2): notas permanentes + etiquetas coloridas.
+  // O contactId vem da demanda carregada; sem contato, a mutation erroa com
+  // mensagem clara (o trilho já esconde os controles nesse caso).
+  const saveContact = useMutation({
+    mutationFn: (patch: { notes?: string | null; tags?: ContactTag[]; company?: string | null }) => {
+      const cid = (data?.demanda as any)?.contact_id;
+      if (!cid) throw new Error("Demanda sem contato vinculado.");
+      return updateContactFn({ data: { contactId: cid, ...patch } });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["demanda", id] });
+      toast.success("Contato atualizado");
     },
     onError: (e) => toast.error(friendlyError(e)),
   });
@@ -228,7 +246,6 @@ function DemandaDetail() {
     if (attachment?.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
     setAttachment(null);
   };
-
   const filaCollapsed = filaSidebar?.collapsed ?? false;
   const handleToggleFila = () => filaSidebar?.setCollapsed(!filaCollapsed);
 
@@ -288,6 +305,11 @@ function DemandaDetail() {
           canDelete={canDelete}
           onDelete={() => remove.mutate()}
           deletePending={remove.isPending}
+          onSaveContact={(patch) => saveContact.mutate(patch)}
+          contactSaving={saveContact.isPending}
+          onOpenDemanda={(did) =>
+            navigate({ to: "/app/o/$slug/fila/demandas/$id", params: { slug, id: did } })
+          }
         />
       )}
     </div>
