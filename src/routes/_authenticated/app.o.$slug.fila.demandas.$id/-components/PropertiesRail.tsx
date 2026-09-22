@@ -252,11 +252,12 @@ type PropertiesRailProps = {
 
 /**
  * Trilho de propriedades com abas (Demanda / Contato / Notas).
- * Aba Contato (CRM): topo com avatar real + nome + telefone copiável;
- * e-mail (leitura) e empresa (edição inline no blur/Enter); combobox de
- * etiquetas com sugestões da org + sementes padrão + criação inline;
- * badges coloridos com X discreto. Salvamento via updateContact com
- * feedback sutil (salvando… / salvo).
+ * SUPERFÍCIE PRÓPRIA: fundo tintado (bg-muted/40 dark:bg-surface/60) separa
+ * visualmente o trilho da área do chat nos 3 temas.
+ * Abas com estado ativo elevado (pill branca/sombra + texto primary),
+ * estilo das abas da fila.
+ * Zona de perigo: SOMENTE na aba Demanda E somente pra papéis elevados
+ * (canDelete = owner/admin/gerente, vindo do route; servidor valida igual).
  */
 export function PropertiesRail({
   demanda,
@@ -401,7 +402,7 @@ export function PropertiesRail({
   ) : null;
 
   return (
-    <aside className="hidden lg:flex w-[320px] 2xl:w-[340px] shrink-0 flex-col border-l border-border/60 bg-surface/70">
+    <aside className="hidden lg:flex w-[320px] 2xl:w-[340px] shrink-0 flex-col border-l border-border/60 bg-muted/40 dark:bg-surface/60">
       {/* Header FIXO h-12 (mesma altura do header do chat) */}
       <header className="h-12 shrink-0 border-b border-border/50 px-4 flex items-center justify-between">
         <h2 className="text-sm font-bold text-foreground">Propriedades</h2>
@@ -416,24 +417,25 @@ export function PropertiesRail({
         </button>
       </header>
 
-      {/* Tabs */}
-      <div className="shrink-0 border-b border-border/50 px-2">
-        <div className="flex gap-1 py-2">
+      {/* Tabs — ativa elevada (pill clara + sombra + texto primary), estilo fila */}
+      <div className="shrink-0 border-b border-border/50 px-3 py-2.5">
+        <div className="flex gap-1 rounded-xl bg-secondary/70 p-1">
           {[
             { key: "demanda", label: "Demanda", icon: FileText },
             { key: "contato", label: "Contato", icon: User },
             { key: "notas", label: "Notas", icon: Tag },
           ].map((tab) => {
             const Icon = tab.icon;
+            const active = activeTab === tab.key;
             return (
               <button
                 key={tab.key}
                 type="button"
                 onClick={() => setActiveTab(tab.key as any)}
-                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                  activeTab === tab.key
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs transition ${
+                  active
+                    ? "bg-card dark:bg-secondary font-medium text-primary shadow-[var(--shadow-card)] ring-1 ring-border/40"
+                    : "font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/60"
                 }`}
               >
                 <Icon className="h-3 w-3" />
@@ -866,8 +868,8 @@ export function PropertiesRail({
         )}
       </div>
 
-      {/* Zona de perigo DISCRETA */}
-      {canDelete && (
+      {/* Zona de perigo: SOMENTE aba Demanda + papel elevado (canDelete) */}
+      {canDelete && activeTab === "demanda" && (
         <div className="shrink-0 border-t border-border/50 px-4 py-2.5">
           <button
             type="button"

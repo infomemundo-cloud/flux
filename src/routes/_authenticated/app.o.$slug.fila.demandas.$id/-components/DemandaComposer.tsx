@@ -1,15 +1,28 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import {
   Lock,
   MessageCircle,
   Mic,
   Paperclip,
+  Plus,
+  Search,
   Send,
   Slash,
+  Square,
   Trash2,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { friendlyError } from "@/lib/friendly-error";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  createQuickReply,
+  deleteQuickReply,
+  listQuickReplies,
+  type QuickReply,
+} from "@/lib/quick-replies.functions";
 
 export type PendingAttachment = {
   file: File;
@@ -27,7 +40,7 @@ function fmtRec(total: number): string {
  * Preferência de container de gravação: o WhatsApp ACEITA audio/mp4 e
  * audio/ogg como mensagem de áudio, mas DESCARTA audio/webm na entrega
  * (o envio "dava certo" no Flux e nunca chegava no contato). Chrome/Safari
- * modernos gravam mp4; Firefox grava ogg; webm fica só como fallback legado.
+ * modernos gravam mp4; Firefox grava ogg; webm só como fallback legado.
  */
 const RECORDER_MIME_PREFS = [
   "audio/mp4;codecs=mp4a.20",
@@ -44,6 +57,7 @@ function extForMime(mime: string): string {
 }
 
 type DemandaComposerProps = {
+  orgId: string | null;
   hasWhatsapp: boolean;
   viaWhatsapp: boolean;
   onViaWhatsappChange: (v: boolean) => void;
@@ -62,19 +76,18 @@ type DemandaComposerProps = {
 
 /**
  * Área 3 do detalhe: toggle WhatsApp/Interno, banner de citação, textarea
- * que cresce, anexo funcional e GRAVAÇÃO DE ÁUDIO real (MediaRecorder).
+ * que cresce, anexo funcional, gravação de áudio (MediaRecorder) e MACROS.
  *
- * Gravador (spec travada):
- * - Mic substitui o textarea pelo painel: dot vermelho pulsante + cronômetro
- *   dinâmico + Cancelar (lixeira) + Concluir (avião);
- * - Concluir → blob vira File e entra como ANEXO preview (player simples +
- *   duração + KB + X), despachado junto com a legenda pelo botão principal;
- * - Permissão negada / navegador sem suporte → toast discreto, composer
- *   intacto no modo texto (nunca crasha).
- * O áudio gravado reusa 100% do pipeline de anexo existente (sendMediaMessage
- * → Evolution → Storage → evento message_out) — zero caminho novo de envio.
+ * Gravador (spec travada + stop explícito):
+ * - Mic substitui o textarea pelo painel: dot vermelho pulsante + cronômetro;
+ * - STOP (ícone quadrado) = interrompe a gravação e GERA O PREVIEW (player +
+ *   duração + KB) antes do envio — não envia nada sozinho;
+ * - Lixeira = descarta sem anexar;
+ * - Permissão negada ou navegador sem suporte → toast discreto, composer
+ *   intacto no modo texto.
  */
 export function DemandaComposer({
+  orgId,
   hasWhatsapp,
   viaWhatsapp,
   onViaWhatsappChange,
@@ -90,6 +103,85 @@ export function DemandaComposer({
   isUploading,
   textareaRef,
 }: DemandaComposerProps) {
+  // ── Macros / respostas rápidas ──────────────────────────────────
+  const qc = useQueryClient();
+  const listMacrosFn = useServerFn(listQuickReplies);
+  const createMacroFn = useServerFn(createQuickReply);
+  const deleteMacroFn = useServerFn(deleteQuickReply);
+  const [macroOpen, setMacroOpen] = useState(false);
+  const [macroQuery, setMacroQuery] = useState("");
+  const [macroCreating, setMacroCreating] = useState(false);
+  const [macroLabel, setMacroLabel] = useState("");
+  const [macroContent, setMacroContent] = useState("");
+
+  const { data: macros } = useQuery({
+    queryKey: ["quick-replies", orgId],
+    queryFn: () => listMacrosFn({ data: { orgId: orgId! } }),
+    enabled: !!orgId,
+  });
+
+  const createMacro = useMutation({
+    mutationFn: (vars: { label: string; content: string }) =>
+      createMacroFn({ data: { orgId: orgId!, ...vars } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["quick-replies", orgId] });
+      toast.success("Resposta rápida criada");
+      setMacroCreating(false);
+      setMacroLabel("");
+      setMacroContent("");
+    },
+    onError: (e) => toast.error(friendlyError(e)),
+  });
+
+  const deleteMacro = useMutation({
+    mutationFn: (id: string) => deleteMacroFn({ data: { id } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["quick-replies", orgId] });
+      toast.success("Resposta rápida excluída");
+    },
+    onError: (e) => toast.error(friendlyError(e)),
+  });
+
+  const filteredMacros = useMemo(() => {
+    const q = macroQuery.trim().toLowerCase();
+    const list = macros ?? [];
+    return q
+      ? list.filter(
+          (m) => m.label.toLowerCase().includes(q) || m.content.toLowerCase().includes(q),
+        )
+      : list;
+  }, [macros, macroQuery]);
+
+  /** Insere texto na posição do caret (fallback: fim do texto). */
+  const insertAtCursor = (text: string) => {
+    const el = textareaRef.current;
+    if (!el) {
+      onCommentChange(comment ? `${comment} ${text}` : text);
+      return;
+    }
+    const start = el.selectionStart ?? comment.length;
+    const end = el.selectionEnd ?? comment.length;
+    const next = comment.slice(0, start) + text + comment.slice(end);
+    onCommentChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + text.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const pickMacro = (m: QuickReply) => {
+    insertAtCursor(m.content);
+    setMacroOpen(false);
+    setMacroQuery("");
+  };
+
+  const openCreate = () => {
+    setMacroCreating(true);
+    setMacroLabel(macroQuery.trim());
+    setMacroContent("");
+  };
+
   // ── Gravador ────────────────────────────────────────────────────
   const [recState, setRecState] = useState<"idle" | "recording">("idle");
   const [recSeconds, setRecSeconds] = useState(0);
@@ -172,9 +264,7 @@ export function DemandaComposer({
         setAudioDur(elapsed);
         onAttach(file);
         if (ext === "webm") {
-          toast.info(
-            "Seu navegador grava em WebM: o áudio será enviado como arquivo anexado.",
-          );
+          toast.info("Seu navegador grava em WebM: o áudio será enviado como arquivo anexado.");
         } else {
           toast.success("Áudio anexado — revise e envie quando quiser.");
         }
@@ -207,6 +297,7 @@ export function DemandaComposer({
     }
   };
 
+  /** STOP explícito: interrompe a gravação e gera o preview (não envia). */
   const finishRecording = () => {
     const rec = mediaRecRef.current;
     if (rec && rec.state === "recording") rec.stop();
@@ -222,10 +313,6 @@ export function DemandaComposer({
       if (file) onAttach(file);
     };
     input.click();
-  };
-
-  const handleMacro = () => {
-    toast.info("Macros/respostas rápidas entram na próxima sub-fase.");
   };
 
   return (
@@ -316,14 +403,14 @@ export function DemandaComposer({
             {fmtRec(recSeconds)}
           </span>
           <span className="hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block">
-            Gravando… conclua pra anexar ou cancele pra descartar.
+            Gravando… pare pra revisar o preview ou cancele pra descartar.
           </span>
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <button
               type="button"
               onClick={cancelRecording}
-              title="Cancelar gravação"
-              aria-label="Cancelar gravação"
+              title="Cancelar e descartar gravação"
+              aria-label="Cancelar e descartar gravação"
               className="grid h-9 w-9 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
             >
               <Trash2 className="h-4 w-4" />
@@ -331,11 +418,11 @@ export function DemandaComposer({
             <button
               type="button"
               onClick={finishRecording}
-              title="Concluir gravação"
-              aria-label="Concluir gravação"
-              className="grid h-9 w-9 place-items-center rounded-lg bg-primary text-primary-foreground transition hover:brightness-110"
+              title="Parar e gerar preview"
+              aria-label="Parar e gerar preview"
+              className="grid h-9 w-9 place-items-center rounded-lg bg-destructive text-destructive-foreground transition hover:brightness-110"
             >
-              <Send className="h-4 w-4" />
+              <Square className="h-4 w-4" fill="currentColor" />
             </button>
           </div>
         </div>
@@ -383,28 +470,159 @@ export function DemandaComposer({
                   t.style.height = `${Math.min(t.scrollHeight, 160)}px`;
                 }}
                 onKeyDown={(e) => {
+                  // Gatilho de macros: "/" com textarea vazio abre o picker
+                  // SEM inserir a barra no texto.
+                  if (e.key === "/" && comment === "") {
+                    e.preventDefault();
+                    setMacroOpen(true);
+                    return;
+                  }
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
                     onSend();
                   }
                 }}
                 placeholder={
-                  viaWhatsapp ? "Digite uma mensagem..." : "Adicione uma nota interna..."
+                  viaWhatsapp ? "Digite uma mensagem...  ( / abre macros )" : "Adicione uma nota interna..."
                 }
                 rows={1}
                 className="w-full resize-none rounded-xl border border-border/60 bg-background px-4 py-2.5 text-sm outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
               />
             </div>
             <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={handleMacro}
-                title="Respostas rápidas (/)"
-                aria-label="Respostas rápidas"
-                className="grid h-10 w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+              {/* Macros / respostas rápidas */}
+              <Popover
+                open={macroOpen}
+                onOpenChange={(o) => {
+                  setMacroOpen(o);
+                  if (!o) {
+                    setMacroQuery("");
+                    setMacroCreating(false);
+                  }
+                }}
               >
-                <Slash className="h-4 w-4" />
-              </button>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    title="Respostas rápidas (/)"
+                    aria-label="Respostas rápidas"
+                    className="grid h-10 w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                  >
+                    <Slash className="h-4 w-4" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-72 rounded-xl p-1.5">
+                  {macroCreating ? (
+                    <div className="space-y-1.5">
+                      <input
+                        autoFocus
+                        value={macroLabel}
+                        onChange={(e) => setMacroLabel(e.target.value)}
+                        placeholder="Nome da macro (ex.: boas-vindas)"
+                        maxLength={60}
+                        className="h-8 w-full rounded-md border border-border/60 bg-background px-2 text-[11px] outline-none transition focus:border-primary/50"
+                      />
+                      <textarea
+                        value={macroContent}
+                        onChange={(e) => setMacroContent(e.target.value)}
+                        placeholder="Texto que será inserido no composer..."
+                        rows={3}
+                        maxLength={4000}
+                        className="w-full resize-none rounded-md border border-border/60 bg-background p-2 text-[11px] outline-none transition focus:border-primary/50"
+                      />
+                      <div className="flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => setMacroCreating(false)}
+                          className="text-[10px] text-muted-foreground transition hover:text-foreground"
+                        >
+                          Voltar
+                        </button>
+                        <button
+                          type="button"
+                          disabled={
+                            !macroLabel.trim() || !macroContent.trim() || createMacro.isPending
+                          }
+                          onClick={() =>
+                            createMacro.mutate({
+                              label: macroLabel.trim(),
+                              content: macroContent.trim(),
+                            })
+                          }
+                          className="h-7 rounded-md bg-primary px-2.5 text-[10px] font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-50"
+                        >
+                          {createMacro.isPending ? "Salvando..." : "Salvar macro"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="relative mb-1">
+                        <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+                        <input
+                          autoFocus
+                          value={macroQuery}
+                          onChange={(e) => setMacroQuery(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && filteredMacros[0]) {
+                              e.preventDefault();
+                              pickMacro(filteredMacros[0]);
+                            }
+                          }}
+                          placeholder="Buscar macro..."
+                          className="h-8 w-full rounded-md border border-border/60 bg-background pl-7 pr-2 text-[11px] outline-none transition focus:border-primary/50"
+                        />
+                      </div>
+                      <div className="max-h-48 overflow-y-auto scrollbar-thin">
+                        {filteredMacros.map((m) => (
+                          <div
+                            key={m.id}
+                            className="group/macro flex items-start gap-2 rounded-md px-2 py-1.5 transition hover:bg-secondary"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => pickMacro(m)}
+                              className="min-w-0 flex-1 text-left"
+                            >
+                              <div className="truncate text-[11px] font-semibold text-foreground">
+                                {m.label}
+                              </div>
+                              <div className="line-clamp-2 text-[10px] text-muted-foreground">
+                                {m.content}
+                              </div>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteMacro.mutate(m.id)}
+                              title="Excluir macro"
+                              aria-label="Excluir macro"
+                              className="mt-0.5 hidden h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground/70 transition hover:bg-destructive/10 hover:text-destructive group-hover/macro:grid"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                        {filteredMacros.length === 0 && (
+                          <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+                            Nenhuma macro encontrada.
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-1 border-t border-border/50 pt-1">
+                        <button
+                          type="button"
+                          onClick={openCreate}
+                          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] font-medium text-primary transition hover:bg-secondary"
+                        >
+                          <Plus className="h-3 w-3 shrink-0" />
+                          Criar resposta rápida
+                          {macroQuery.trim() ? ` “${macroQuery.trim()}”` : ""}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </PopoverContent>
+              </Popover>
               <button
                 type="button"
                 onClick={handleAttach}

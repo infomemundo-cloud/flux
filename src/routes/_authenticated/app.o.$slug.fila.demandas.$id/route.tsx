@@ -98,7 +98,7 @@ function DemandaDetail() {
     onError: (e) => toast.error(friendlyError(e)),
   });
 
-  // CRM leve do contato (Fase 2): notas permanentes + etiquetas coloridas.
+  // CRM leve do contato (Fase 2): notas permanentes + etiquetas + empresa.
   // O contactId vem da demanda carregada; sem contato, a mutation erroa com
   // mensagem clara (o trilho já esconde os controles nesse caso).
   const saveContact = useMutation({
@@ -277,6 +277,7 @@ function DemandaDetail() {
           onRetryMedia={() => qc.invalidateQueries({ queryKey: ["demanda", id] })}
         />
         <DemandaComposer
+          orgId={org?.id ?? null}
           hasWhatsapp={!!d.whatsapp_jid}
           viaWhatsapp={viaWhatsapp}
           onViaWhatsappChange={setViaWhatsapp}
