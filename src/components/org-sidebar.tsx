@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { ThemeCycleButton, UserMenu } from "@/components/user-menu";
+import { useSlaAlertCount } from "@/lib/demandas/use-sla-alert-count";
 
 // Fonte única da navegação da org — usada aqui e no OrgMobileNav.
 // Adicionar uma rota nova (ex: módulo financeiro) é mexer só nesta lista.
@@ -47,6 +48,9 @@ type OrgSidebarProps = {
  * arredondados generosos (rounded-xl), hover/active em transparência suave
  * sobre a sidebar aveludada, badges em pílula e ícones com micro-scaling
  * no hover. Sem bordas duras: a separação vem do fundo e das sombras.
+ * Badges operacionais: Fila (novas mensagens, primary) e Alertas SLA
+ * (demandas paradas, destructive) — pill quando expandido, dot quando
+ * recolhido; zero = não renderiza (interface limpa).
  */
 export function OrgSidebar({
   slug,
@@ -59,6 +63,7 @@ export function OrgSidebar({
   isOwnerOrAdmin,
   onSignOut,
 }: OrgSidebarProps) {
+  const slaCount = useSlaAlertCount(slug);
   const visibleItems = ORG_NAV_ITEMS.filter((n) => !n.adminOnly || isOwnerOrAdmin);
   return (
     <aside className="hidden sm:flex h-screen flex-col justify-between overflow-hidden sticky top-0 left-0 bg-sidebar text-sidebar-foreground border-r border-sidebar-border/40">
@@ -74,12 +79,18 @@ export function OrgSidebar({
           const to = `/app/o/${slug}/${n.segment}`;
           const active = activePath.startsWith(to);
           const Icon = n.icon;
+          const isFila = n.segment === "fila";
+          const isAlertas = n.segment === "alertas";
           return (
             <Link
               key={n.segment}
               to={to}
               preload="intent"
-              title={n.label}
+              title={
+                isAlertas && slaCount > 0
+                  ? `${n.label} (${slaCount} parada${slaCount > 1 ? "s" : ""})`
+                  : n.label
+              }
               className={`group relative flex items-center gap-3 rounded-xl py-2.5 text-[13px] font-medium transition-all duration-150 ${
                 collapsed ? "justify-center px-2" : "px-3"
               } ${
@@ -100,13 +111,29 @@ export function OrgSidebar({
                 strokeWidth={1.9}
               />
               {!collapsed && <span className="truncate">{n.label}</span>}
-              {n.label === "Fila" && newCount > 0 && !collapsed && (
+              {/* Badge da Fila: mensagens novas (primary) */}
+              {isFila && newCount > 0 && !collapsed && (
                 <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-sidebar-primary px-2 py-0.5 text-[10px] font-bold tabular-nums text-sidebar-primary-foreground">
                   <Bell className="h-3 w-3" /> {newCount}
                 </span>
               )}
-              {n.label === "Fila" && newCount > 0 && collapsed && (
+              {isFila && newCount > 0 && collapsed && (
                 <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-sidebar-primary" />
+              )}
+              {/* Badge de Alertas SLA: demandas paradas (destructive) */}
+              {isAlertas && slaCount > 0 && !collapsed && (
+                <span
+                  aria-label={`${slaCount} demandas paradas`}
+                  className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-bold tabular-nums text-destructive-foreground shadow-sm transition-colors"
+                >
+                  {slaCount}
+                </span>
+              )}
+              {isAlertas && slaCount > 0 && collapsed && (
+                <span
+                  aria-label={`${slaCount} demandas paradas`}
+                  className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-destructive"
+                />
               )}
             </Link>
           );

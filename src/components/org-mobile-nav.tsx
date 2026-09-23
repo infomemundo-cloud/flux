@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { UserMenu } from "@/components/user-menu";
 import { ORG_NAV_ITEMS } from "@/components/org-sidebar";
+import { useSlaAlertCount } from "@/lib/demandas/use-sla-alert-count";
 
 type OrgMobileNavProps = {
   slug: string;
@@ -11,7 +12,15 @@ type OrgMobileNavProps = {
   onSignOut: () => void;
 };
 
-export function OrgMobileNav({ slug, activePath, user, roleLabel, isOwnerOrAdmin, onSignOut }: OrgMobileNavProps) {
+export function OrgMobileNav({
+  slug,
+  activePath,
+  user,
+  roleLabel,
+  isOwnerOrAdmin,
+  onSignOut,
+}: OrgMobileNavProps) {
+  const slaCount = useSlaAlertCount(slug);
   const visibleItems = ORG_NAV_ITEMS.filter((n) => !n.adminOnly || isOwnerOrAdmin);
   // 5 itens + menu do usuário = 6 colunas (owner/admin); 4 itens + menu = 5 (demais).
   // Classes estáticas pra o Tailwind gerar as duas variantes.
@@ -24,6 +33,7 @@ export function OrgMobileNav({ slug, activePath, user, roleLabel, isOwnerOrAdmin
         const to = `/app/o/${slug}/${n.segment}`;
         const active = activePath.startsWith(to);
         const Icon = n.icon;
+        const isAlertas = n.segment === "alertas";
         return (
           <Link
             key={n.segment}
@@ -33,7 +43,17 @@ export function OrgMobileNav({ slug, activePath, user, roleLabel, isOwnerOrAdmin
               active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/60"
             }`}
           >
-            <Icon className="h-[18px] w-[18px]" strokeWidth={1.9} />
+            <span className="relative">
+              <Icon className="h-[18px] w-[18px]" strokeWidth={1.9} />
+              {isAlertas && slaCount > 0 && (
+                <span
+                  aria-label={`${slaCount} demandas paradas`}
+                  className="absolute -right-2 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold tabular-nums text-destructive-foreground shadow-sm"
+                >
+                  {slaCount}
+                </span>
+              )}
+            </span>
             <span className="truncate max-w-full px-1">{n.label}</span>
           </Link>
         );
