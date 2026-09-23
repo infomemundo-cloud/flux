@@ -219,7 +219,9 @@ async function handleContactsUpdate(
         patch.avatar_url = item.profilePicUrl.trim();
       }
     }
-    if (hasName) {
+    const isGroup = item.remoteJid.endsWith("@g.us");
+
+    if (hasName && !isGroup) {
       patch.name = item.pushName!.trim();
     }
 
@@ -405,12 +407,13 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               savedIsGeneric &&
               b.evolution_server_url &&
               b.evolution_apikey &&
+              b.whatsapp_jid &&
               b.instance_name
             ) {
               const subject = await fetchGroupSubject(
                 b.evolution_server_url,
                 b.evolution_apikey,
-                b.whatsapp_jid as string,
+                b.whatsapp_jid,
                 b.instance_name,
               );
               if (subject) b.contact.name = subject;
@@ -418,13 +421,20 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           }
           if (found) {
             contactId = found.id;
-            const incomingNameIsGeneric = !b.contact.name || b.contact.name === "Contato WhatsApp";
-            const savedNameIsGeneric = !found.name || found.name === "Contato WhatsApp";
-            if (
-              b.contact.name &&
+            const incomingNameIsGeneric =
+              !b.contact.name || b.contact.name === "Contato WhatsApp" || b.contact.name === "Grupo";
+            const savedNameIsGeneric =
+              !found.name || found.name === "Contato WhatsApp" || found.name === "Grupo";
+            const isGroup = !!b.whatsapp_jid?.endsWith("@g.us");
+            const shouldUpdateGroup =
+              isGroup && !incomingNameIsGeneric && savedNameIsGeneric;
+            const shouldUpdateIndividual =
+              !isGroup &&
+              !!b.contact.name &&
               b.contact.name !== found.name &&
-              (!incomingNameIsGeneric || savedNameIsGeneric)
-            ) {
+              (!incomingNameIsGeneric || savedNameIsGeneric);
+
+            if (shouldUpdateGroup || shouldUpdateIndividual) {
               const { error: updateErr } = await supabaseAdmin
                 .from("contacts")
                 .update({ name: b.contact.name } as never)
