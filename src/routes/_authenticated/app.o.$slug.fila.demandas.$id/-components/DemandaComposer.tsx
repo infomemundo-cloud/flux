@@ -23,6 +23,7 @@ import {
   listQuickReplies,
   type QuickReply,
 } from "@/lib/quick-replies.functions";
+import { EmojiPicker } from "./EmojiPicker";
 
 export type PendingAttachment = {
   file: File;
@@ -76,7 +77,12 @@ type DemandaComposerProps = {
 
 /**
  * Área 3 do detalhe: toggle WhatsApp/Interno, banner de citação, textarea
- * que cresce, anexo funcional, gravação de áudio (MediaRecorder) e MACROS.
+ * que cresce, EMOJIS (picker próprio, inserção no caret com foco restaurado
+ * e popover persistente pra inserção múltipla), macros (respostas rápidas
+ * da org), anexo funcional, gravação de áudio (MediaRecorder).
+ *
+ * Ordem da barra de ações: [😊 emoji] → [/ macros] → [📎 anexo] →
+ * [🎤 gravador] → [➤ enviar].
  *
  * Gravador (spec travada + stop explícito):
  * - Mic substitui o textarea pelo painel: dot vermelho pulsante + cronômetro;
@@ -152,7 +158,11 @@ export function DemandaComposer({
       : list;
   }, [macros, macroQuery]);
 
-  /** Insere texto na posição do caret (fallback: fim do texto). */
+  /**
+   * Insere texto (emoji ou macro) NA POSIÇÃO DO CARET e restaura foco +
+   * caret logo após o trecho inserido. O rAF garante que o DOM já tenha o
+   * value novo antes de reposicionar o cursor.
+   */
   const insertAtCursor = (text: string) => {
     const el = textareaRef.current;
     if (!el) {
@@ -490,6 +500,11 @@ export function DemandaComposer({
               />
             </div>
             <div className="flex items-center gap-1">
+              {/* Emoji: picker próprio, inserção no caret, popover persistente */}
+              <EmojiPicker
+                onPick={insertAtCursor}
+                triggerClass="grid h-10 w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+              />
               {/* Macros / respostas rápidas */}
               <Popover
                 open={macroOpen}
