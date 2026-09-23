@@ -66,6 +66,37 @@ export const createQuickReply = createServerFn({ method: "POST" })
     return row as QuickReply;
   });
 
+export const updateQuickReply = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        label: z.string().trim().min(1).max(60),
+        content: z.string().trim().min(1).max(4000),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: row, error: fetchErr } = await supabaseAdmin
+      .from("quick_replies")
+      .select("org_id")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (fetchErr) throw new Error(fetchErr.message);
+    if (!row) throw new Error("Macro não encontrada");
+    const role = await assertMember(context.supabase, row.org_id, context.userId);
+    if (!HUMAN_OP_ROLES.includes(role as (typeof HUMAN_OP_ROLES)[number]))
+      throw new Error("Sem permissão para editar macros");
+    const { error } = await supabaseAdmin
+      .from("quick_replies")
+      .update({ label: data.label, content: data.content })
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 export const deleteQuickReply = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
