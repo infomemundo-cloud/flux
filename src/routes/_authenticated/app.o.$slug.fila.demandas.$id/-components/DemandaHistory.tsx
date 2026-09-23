@@ -91,6 +91,8 @@ function systemLineFor(
  *   contato/grupo em eventos antigos;
  * - 1:1 e demais kinds: regra anterior intacta (nameOf com fallback
  *   contactName/Sistema) — zero mudança de comportamento fora de grupos.
+ * O nome do grupo CONTINUA onde deve: fila, header e aba Contato
+ * (contactName = subject) — aqui só muda o author das bolhas.
  */
 export function DemandaHistory({
   events,
