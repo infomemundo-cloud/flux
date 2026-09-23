@@ -183,13 +183,20 @@ async function fetchGroupSubject(
   return null;
 }
 
-// Trata eventos contacts.update da Evolution: atualiza o avatar e o nome do contato no banco.
+/**
+ * Trata eventos contacts.update da Evolution: atualiza o avatar e o nome
+ * do contato no banco. GRUPOS (@g.us) NUNCA recebem patch.name aqui —
+ * a Evolution manda o pushName do ÚLTIMO participante como pushName do
+ * remoteJid do grupo, o que corrompia o nome do grupo a cada mensagem.
+ * Avatar continua atualizando pra qualquer jid.
+ */
 async function handleContactsUpdate(
   orgId: string,
   payload: z.infer<typeof ContactsUpdatePayload>,
 ): Promise<void> {
   const items = Array.isArray(payload.data) ? payload.data : [payload.data];
   for (const item of items) {
+    const isGroup = item.remoteJid.endsWith("@g.us");
     const hasPhoto = typeof item.profilePicUrl === "string" || item.profilePicUrl === null;
     const hasName = typeof item.pushName === "string" && item.pushName.trim().length > 0;
     if (!hasPhoto && !hasName) continue;
@@ -219,11 +226,14 @@ async function handleContactsUpdate(
         patch.avatar_url = item.profilePicUrl.trim();
       }
     }
-    const isGroup = item.remoteJid.endsWith("@g.us");
-
+    // GRUPO: nunca aplicar pushName como nome (é o nome do último
+    // participante). Nome de grupo só via fetchGroupSubject ou edição manual.
     if (hasName && !isGroup) {
       patch.name = item.pushName!.trim();
     }
+
+    // Se não sobrou nada no patch (grupo só com pushName), pula o update.
+    if (Object.keys(patch).length === 0) continue;
 
     const { error: updErr } = await (
       await import("@/integrations/supabase/client.server")
@@ -396,24 +406,29 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               error: findErr,
             });
           }
+          const isGroup = !!b.whatsapp_jid?.endsWith("@g.us");
           if (b.contact) {
-            const isGroup = !!b.whatsapp_jid?.endsWith("@g.us");
             const savedName = found?.name ?? null;
-            const savedIsGeneric = !savedName || savedName === "Grupo" || savedName === "Contato WhatsApp";
+            const savedIsGeneric =
+              !savedName || savedName === "Grupo" || savedName === "Contato WhatsApp";
             if (isGroup && !savedIsGeneric) {
+              // Grupo com nome REAL salvo: preserva o nome do contato e não
+              // tenta fetch de novo (o fetch só roda quando o salvo é genérico).
               b.contact.name = savedName;
             } else if (
               isGroup &&
               savedIsGeneric &&
               b.evolution_server_url &&
               b.evolution_apikey &&
-              b.whatsapp_jid &&
               b.instance_name
             ) {
+              // AUTO-HEAL: grupo com nome genérico dispara o fetch do subject
+              // real. Falha silenciosa → segue "Grupo" (será re-tentado na
+              // próxima mensagem do grupo).
               const subject = await fetchGroupSubject(
                 b.evolution_server_url,
                 b.evolution_apikey,
-                b.whatsapp_jid,
+                b.whatsapp_jid as string,
                 b.instance_name,
               );
               if (subject) b.contact.name = subject;
@@ -422,18 +437,23 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           if (found) {
             contactId = found.id;
             const incomingNameIsGeneric =
-              !b.contact.name || b.contact.name === "Contato WhatsApp" || b.contact.name === "Grupo";
+              !b.contact.name ||
+              b.contact.name === "Contato WhatsApp" ||
+              b.contact.name === "Grupo";
             const savedNameIsGeneric =
               !found.name || found.name === "Contato WhatsApp" || found.name === "Grupo";
-            const isGroup = !!b.whatsapp_jid?.endsWith("@g.us");
-            const shouldUpdateGroup =
-              isGroup && !incomingNameIsGeneric && savedNameIsGeneric;
+            // Regras separadas:
+            // - Grupo: só atualiza se o incoming é REAL (não-genérico) E o
+            //   salvo é genérico — protege contra sobrescrever subject real
+            //   por "Grupo" ou "Contato WhatsApp".
+            // - Individual: atualiza quando o nome muda e (incoming é real
+            //   OU o salvo é genérico) — protege o pushName real.
+            const shouldUpdateGroup = isGroup && !incomingNameIsGeneric && savedNameIsGeneric;
             const shouldUpdateIndividual =
               !isGroup &&
-              !!b.contact.name &&
+              b.contact.name &&
               b.contact.name !== found.name &&
               (!incomingNameIsGeneric || savedNameIsGeneric);
-
             if (shouldUpdateGroup || shouldUpdateIndividual) {
               const { error: updateErr } = await supabaseAdmin
                 .from("contacts")
@@ -654,7 +674,8 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             org: (tok as any).organizations?.name ?? null,
             media: mediaUrl ? { stored: true } : mediaFailed ? { stored: false, reason: mediaFailed } : undefined,
           }),
-          { status: 200, headers: { "content-type": "application/json" } },
+          { status: 200, headers: { "content-type": "application/json" },
+          },
         );
       },
     },
