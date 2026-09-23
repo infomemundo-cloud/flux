@@ -54,6 +54,7 @@ type Normalized = z.infer<typeof Body> & {
   instance_name?: string | null;
   message_id?: string | null;
   participant_name?: string | null;
+  participant_jid?: string | null;
   evolution_server_url?: string | null;
   evolution_apikey?: string | null;
   media?: {
@@ -157,6 +158,13 @@ function redactForLog(payload: unknown): string {
   );
 }
 
+/**
+ * Busca o SUBJECT (nome real) do grupo na Evolution.
+ * Rotas candidatas cobrem Evolution v2 (`/group/info` nas duas ordens),
+ * v1 (`/group/findGroupInfos/{instance}?groupJid=...`) e v2 sem instance.
+ * O log de falha agora lista o status de cada tentativa — dá pra ver no
+ * Vercel qual rota a sua versão da Evolution atende.
+ */
 async function fetchGroupSubject(
   serverUrl: string,
   apikey: string,
@@ -164,22 +172,36 @@ async function fetchGroupSubject(
   instance: string,
 ): Promise<string | null> {
   const base = serverUrl.replace(/\/+$/, "");
-  const candidates = [
-    `${base}/group/info/${encodeURIComponent(groupJid)}/${encodeURIComponent(instance)}`,
-    `${base}/group/info/${encodeURIComponent(instance)}/${encodeURIComponent(groupJid)}`,
+  const jid = encodeURIComponent(groupJid);
+  const inst = encodeURIComponent(instance);
+  const candidates: { url: string; kind: string }[] = [
+    { url: `${base}/group/info/${jid}/${inst}`, kind: "v2-jid-instance" },
+    { url: `${base}/group/info/${inst}/${jid}`, kind: "v2-instance-jid" },
+    { url: `${base}/group/findGroupInfos/${inst}?groupJid=${jid}`, kind: "v1-findGroupInfos" },
+    { url: `${base}/group/info/${jid}`, kind: "v2-jid-only" },
   ];
-  for (const url of candidates) {
+  const tried: string[] = [];
+  for (const c of candidates) {
     try {
-      const res = await fetch(url, { headers: { apikey } });
-      if (!res.ok) continue;
+      const res = await fetch(c.url, { headers: { apikey } });
+      if (!res.ok) {
+        tried.push(`${c.kind}:${res.status}`);
+        continue;
+      }
       const json: any = await res.json();
-      const subject = json?.subject ?? json?.data?.subject;
+      const subject =
+        json?.subject ??
+        json?.data?.subject ??
+        json?.response?.subject ??
+        (Array.isArray(json?.data) ? json.data[0]?.subject : null) ??
+        (Array.isArray(json) ? json[0]?.subject : null);
       if (typeof subject === "string" && subject.trim()) return subject.trim();
+      tried.push(`${c.kind}:sem-subject`);
     } catch {
-      // segue pro próximo candidato
+      tried.push(`${c.kind}:erro`);
     }
   }
-  console.error("[ingest] não consegui buscar o assunto do grupo", { groupJid, instance });
+  console.error("[ingest] não consegui buscar o assunto do grupo", { groupJid, instance, tried });
   return null;
 }
 
@@ -231,7 +253,6 @@ async function handleContactsUpdate(
     if (hasName && !isGroup) {
       patch.name = item.pushName!.trim();
     }
-
     // Se não sobrou nada no patch (grupo só com pushName), pula o update.
     if (Object.keys(patch).length === 0) continue;
 
@@ -283,7 +304,14 @@ function normalize(payload: unknown):
       ? undefined
       : jid.replace(/@s.whatsapp.net$/i, "").replace(/@c.us$/i, "");
     const contactName = isGroup ? "Grupo" : d.pushName?.trim() || "Contato WhatsApp";
-    const participantName = isGroup ? d.pushName?.trim() || null : null;
+    // AUTORIA EM GRUPOS: cadeia defensiva pro pushName do participante
+    // (data.pushName é o padrão; os demais níveis cobrem variações de
+    // payload da Evolution). participant_jid vai junto pro metadata —
+    // habilita citação nativa em grupos no futuro.
+    const participantName = isGroup
+      ? d.pushName?.trim() || raw?.pushName?.trim() || raw?.data?.pushName?.trim() || null
+      : null;
+    const participantJid = isGroup ? (d.key.participant ?? null) : null;
     return {
       ok: true,
       value: {
@@ -296,6 +324,7 @@ function normalize(payload: unknown):
         message_id: d.key.id ?? null,
         external_ref: d.key.id ?? undefined,
         participant_name: participantName,
+        participant_jid: participantJid,
         evolution_server_url: typeof raw.server_url === "string" ? raw.server_url : null,
         evolution_apikey: typeof raw.apikey === "string" ? raw.apikey : null,
         media: mediaFound
@@ -378,6 +407,15 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
         if (!norm.ok) return json(norm.body, norm.status);
         const b = norm.value;
 
+        // Diagnóstico de autoria em grupo: se o messages.upsert vier sem
+        // pushName, avisamos UMA vez por mensagem pra calibrar o parser.
+        if (b.whatsapp_jid?.endsWith("@g.us") && !b.participant_name) {
+          console.warn("[ingest] mensagem de grupo SEM pushName no payload", {
+            message_id: b.message_id,
+            participant_jid: b.participant_jid,
+          });
+        }
+
         // 1. Busca ou cria o contato associado
         let contactId: string | null = null;
         if (b.contact?.external_id || b.contact?.phone) {
@@ -423,8 +461,8 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               b.instance_name
             ) {
               // AUTO-HEAL: grupo com nome genérico dispara o fetch do subject
-              // real. Falha silenciosa → segue "Grupo" (será re-tentado na
-              // próxima mensagem do grupo).
+              // real (4 rotas candidatas). Falha → segue "Grupo" e re-tenta
+              // na próxima mensagem do grupo.
               const subject = await fetchGroupSubject(
                 b.evolution_server_url,
                 b.evolution_apikey,
@@ -655,6 +693,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             instance_name: b.instance_name ?? null,
             message_id: b.message_id ?? null,
             participant_name: b.participant_name ?? null,
+            participant_jid: b.participant_jid ?? null,
             media_kind: b.media?.kind ?? null,
             media_failed: mediaFailed,
             media_seconds: mediaSeconds,
@@ -674,8 +713,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             org: (tok as any).organizations?.name ?? null,
             media: mediaUrl ? { stored: true } : mediaFailed ? { stored: false, reason: mediaFailed } : undefined,
           }),
-          { status: 200, headers: { "content-type": "application/json" },
-          },
+          { status: 200, headers: { "content-type": "application/json" } },
         );
       },
     },

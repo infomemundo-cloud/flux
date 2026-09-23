@@ -84,11 +84,20 @@ function systemLineFor(
   }
 }
 
+/**
+ * Histórico da conversa com auto-scroll e autoria correta:
+ * - GRUPOS: cada bolha message_in mostra QUEM mandou
+ *   (metadata.participant_name gravado no ingest), com fallback pro nome do
+ *   contato/grupo em eventos antigos;
+ * - 1:1 e demais kinds: regra anterior intacta (nameOf com fallback
+ *   contactName/Sistema) — zero mudança de comportamento fora de grupos.
+ */
 export function DemandaHistory({
   events,
   description,
   contactName,
   contactAvatarUrl,
+  isGroupChat,
   nameOf,
   roleOf,
   isAIOf,
@@ -109,6 +118,17 @@ export function DemandaHistory({
   const avatarFor = (uid?: string | null, isClient?: boolean): ReactNode => {
     if (isClient) return <ContactAvatar url={contactAvatarUrl} name={contactName} size="sm" tone="client" />;
     return <TeamAvatar name={nameOf(uid)} isAI={isAIOf(uid)} />;
+  };
+
+  // Autoria em grupos: bolha message_in usa o participant_name do metadata
+  // (quem realmente falou); fallback pro nome do contato em eventos antigos
+  // (sem participant_name). Fora de grupo, expressão IDÊNTICA à anterior.
+  const authorFor = (e: any): string => {
+    if (e.kind === "message_in" && isGroupChat) {
+      return (e.metadata?.participant_name as string | null) ?? contactName;
+    }
+    const isClient = e.kind === "message_in";
+    return nameOf(e.actor_id, isClient ? contactName : "Sistema");
   };
 
   return (
@@ -136,12 +156,11 @@ export function DemandaHistory({
                 thumbUrl: e.media_thumb_signed ?? null,
               }
             : null;
-
           return (
             <MessageBubble
               key={e.id}
               avatar={avatarFor(e.actor_id, isClient)}
-              author={nameOf(e.actor_id, isClient ? contactName : "Sistema")}
+              author={authorFor(e)}
               authorRole={roleOf(e.actor_id)}
               rolePillClass={isAIOf(e.actor_id) ? "pill-violet" : isClient ? "pill-green" : "pill-brand"}
               isClient={isClient}
@@ -154,7 +173,7 @@ export function DemandaHistory({
               onReply={() =>
                 onReply({
                   event_id: e.id,
-                  author: nameOf(e.actor_id, isClient ? contactName : "Sistema"),
+                  author: authorFor(e),
                   content: e.content ?? "[mídia]",
                   kind: e.kind,
                   message_id: e.metadata?.message_id,
