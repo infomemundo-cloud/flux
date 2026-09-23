@@ -102,16 +102,36 @@ export function ProtocolChip({ protocol, id }: { protocol?: string | null; id: s
   );
 }
 
-/** Contato com ícone do canal (WhatsApp quando aplicável). */
+/**
+ * Mesma cascata do resolve-contact-name: nome → phone → número do
+ * whatsapp_jid → "Sem contato". Antes o ContactLine parava no phone e
+ * mostrava "Sem contato" pra contatos que só têm jid (grupos, legados).
+ */
+function contactFallbackName(
+  name?: string | null,
+  phone?: string | null,
+  jid?: string | null,
+): string {
+  if (name?.trim()) return name.trim();
+  if (phone?.trim()) return phone.trim();
+  if (jid) {
+    const m = jid.match(/^(\d+)@/);
+    if (m?.[1]) return m[1];
+  }
+  return "Sem contato";
+}
+
 export function ContactLine({
   contact,
   channel,
+  whatsappJid,
 }: {
   contact?: { name?: string | null; phone?: string | null } | null;
   channel?: { kind?: string | null } | null;
+  whatsappJid?: string | null;
 }) {
   const isWhats = (channel?.kind ?? "").toLowerCase().includes("whats");
-  const name = contact?.name || contact?.phone || "Sem contato";
+  const name = contactFallbackName(contact?.name, contact?.phone, whatsappJid);
   return (
     <span className="inline-flex items-center gap-1.5 min-w-0 text-xs text-muted-foreground">
       {isWhats ? (

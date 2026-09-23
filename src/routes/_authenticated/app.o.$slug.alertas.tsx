@@ -151,7 +151,7 @@ function AlertasPage() {
                 </div>
                 <div className="mt-2 font-semibold text-[15px] leading-snug truncate group-hover:text-primary transition-colors">{d.title}</div>
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <ContactLine contact={d.contacts} channel={d.channels} />
+                  <ContactLine contact={d.contacts} channel={d.channels} whatsappJid={d.whatsapp_jid} />
                   <span className={`inline-flex items-center gap-1 text-xs font-medium ${sev.cls}`}>
                     <Clock className="h-3.5 w-3.5" strokeWidth={2.2} /> sem atualização {formatRelative(d.last_activity_at)}
                   </span>

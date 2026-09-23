@@ -375,12 +375,17 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           ]
             .filter(Boolean)
             .join(",");
-          const { data: found, error: findErr } = await supabaseAdmin
+          // limit(1) em vez de maybeSingle: .or() casando 2+ contatos (dups por
+          // external_id × phone) fazia o maybeSingle ERRAR e a demanda nascer
+          // órfã (contact_id null). Pega o mais antigo deterministicamente.
+          const { data: foundRows, error: findErr } = await supabaseAdmin
             .from("contacts")
             .select("id, name")
             .eq("org_id", tok.org_id)
             .or(orParts)
-            .maybeSingle();
+            .order("created_at", { ascending: true })
+            .limit(1);
+          const found = foundRows?.[0] ?? null;
           if (findErr) {
             console.error("[ingest] falha ao buscar contato", {
               org_id: tok.org_id,
