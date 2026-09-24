@@ -162,7 +162,7 @@ function redactForLog(payload: unknown): string {
  * Busca o SUBJECT (nome real) do grupo na Evolution.
  * Rotas candidatas cobrem Evolution v2 (`/group/info` nas duas ordens),
  * v1 (`/group/findGroupInfos/{instance}?groupJid=...`) e v2 sem instance.
- * O log de falha agora lista o status de cada tentativa — dá pra ver no
+ * O log de falha lista o status de cada tentativa — dá pra ver no
  * Vercel qual rota a sua versão da Evolution atende.
  */
 async function fetchGroupSubject(
@@ -406,6 +406,25 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
         const norm = normalize(payload);
         if (!norm.ok) return json(norm.body, norm.status);
         const b = norm.value;
+
+        // REGRA DE NEGÓCIO DA ORG: ingestão de grupos pode estar desligada.
+        // Descarta ANTES de qualquer fetch de mídia/contato: payload de grupo
+        // com flag off vira 200 silencioso pra Evolution, sem gravar nada.
+        // (Cobre Evolution E simulações manuais com jid de grupo.)
+        const groupJid = b.whatsapp_jid ?? b.contact?.external_id ?? null;
+        if (groupJid?.endsWith("@g.us")) {
+          const { data: orgRow } = await supabaseAdmin
+            .from("organizations")
+            .select("allow_group_ingest")
+            .eq("id", tok.org_id)
+            .maybeSingle();
+          if (orgRow && orgRow.allow_group_ingest === false) {
+            return new Response(
+              JSON.stringify({ ok: true, ignored: "group_ingest_disabled" }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            );
+          }
+        }
 
         // Diagnóstico de autoria em grupo: se o messages.upsert vier sem
         // pushName, avisamos UMA vez por mensagem pra calibrar o parser.

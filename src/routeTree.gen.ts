@@ -20,7 +20,7 @@ import { Route as AuthenticatedAppOSlugRouteImport } from './routes/_authenticat
 import { Route as ApiPublicIngestTokenRouteImport } from './routes/api/public/ingest.$token'
 import { Route as ApiPublicStatusTokenRouteImport } from './routes/api/public/status.$token'
 import { Route as AuthenticatedAppOSlugAlertasRouteImport } from './routes/_authenticated/app.o.$slug.alertas'
-import { Route as AuthenticatedAppOSlugConfiguracoesRouteImport } from './routes/_authenticated/app.o.$slug.configuracoes'
+import { Route as AuthenticatedAppOSlugConfiguracoesRouteRouteImport } from './routes/_authenticated/app.o.$slug.configuracoes/route'
 import { Route as AuthenticatedAppOSlugDashboardRouteImport } from './routes/_authenticated/app.o.$slug.dashboard'
 import { Route as AuthenticatedAppOSlugEquipeRouteImport } from './routes/_authenticated/app.o.$slug.equipe'
 import { Route as AuthenticatedAppOSlugFilaRouteImport } from './routes/_authenticated/app.o.$slug.fila'
@@ -81,8 +81,8 @@ const AuthenticatedAppOSlugAlertasRoute =
     path: '/alertas',
     getParentRoute: () => AuthenticatedAppOSlugRoute,
   } as any)
-const AuthenticatedAppOSlugConfiguracoesRoute =
-  AuthenticatedAppOSlugConfiguracoesRouteImport.update({
+const AuthenticatedAppOSlugConfiguracoesRouteRoute =
+  AuthenticatedAppOSlugConfiguracoesRouteRouteImport.update({
     id: '/configuracoes',
     path: '/configuracoes',
     getParentRoute: () => AuthenticatedAppOSlugRoute,
@@ -122,8 +122,8 @@ export interface FileRoutesByFullPath {
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
   '/api/public/status/$token': typeof ApiPublicStatusTokenRoute
+  '/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRouteRoute
   '/app/o/$slug/alertas': typeof AuthenticatedAppOSlugAlertasRoute
-  '/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRoute
   '/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
   '/app/o/$slug/equipe': typeof AuthenticatedAppOSlugEquipeRoute
   '/app/o/$slug/fila': typeof AuthenticatedAppOSlugFilaRouteWithChildren
@@ -139,8 +139,8 @@ export interface FileRoutesByTo {
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
   '/api/public/status/$token': typeof ApiPublicStatusTokenRoute
+  '/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRouteRoute
   '/app/o/$slug/alertas': typeof AuthenticatedAppOSlugAlertasRoute
-  '/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRoute
   '/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
   '/app/o/$slug/equipe': typeof AuthenticatedAppOSlugEquipeRoute
   '/app/o/$slug/fila': typeof AuthenticatedAppOSlugFilaRouteWithChildren
@@ -158,8 +158,8 @@ export interface FileRoutesById {
   '/_authenticated/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
   '/api/public/status/$token': typeof ApiPublicStatusTokenRoute
+  '/_authenticated/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRouteRoute
   '/_authenticated/app/o/$slug/alertas': typeof AuthenticatedAppOSlugAlertasRoute
-  '/_authenticated/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRoute
   '/_authenticated/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
   '/_authenticated/app/o/$slug/equipe': typeof AuthenticatedAppOSlugEquipeRoute
   '/_authenticated/app/o/$slug/fila': typeof AuthenticatedAppOSlugFilaRouteWithChildren
@@ -177,8 +177,8 @@ export interface FileRouteTypes {
     | '/app/o/$slug'
     | '/api/public/ingest/$token'
     | '/api/public/status/$token'
-    | '/app/o/$slug/alertas'
     | '/app/o/$slug/configuracoes'
+    | '/app/o/$slug/alertas'
     | '/app/o/$slug/dashboard'
     | '/app/o/$slug/equipe'
     | '/app/o/$slug/fila'
@@ -194,8 +194,8 @@ export interface FileRouteTypes {
     | '/app/o/$slug'
     | '/api/public/ingest/$token'
     | '/api/public/status/$token'
-    | '/app/o/$slug/alertas'
     | '/app/o/$slug/configuracoes'
+    | '/app/o/$slug/alertas'
     | '/app/o/$slug/dashboard'
     | '/app/o/$slug/equipe'
     | '/app/o/$slug/fila'
@@ -212,8 +212,8 @@ export interface FileRouteTypes {
     | '/_authenticated/app/o/$slug'
     | '/api/public/ingest/$token'
     | '/api/public/status/$token'
-    | '/_authenticated/app/o/$slug/alertas'
     | '/_authenticated/app/o/$slug/configuracoes'
+    | '/_authenticated/app/o/$slug/alertas'
     | '/_authenticated/app/o/$slug/dashboard'
     | '/_authenticated/app/o/$slug/equipe'
     | '/_authenticated/app/o/$slug/fila'
@@ -314,7 +314,7 @@ declare module '@tanstack/react-router' {
       id: '/_authenticated/app/o/$slug/configuracoes'
       path: '/configuracoes'
       fullPath: '/app/o/$slug/configuracoes'
-      preLoaderRoute: typeof AuthenticatedAppOSlugConfiguracoesRouteImport
+      preLoaderRoute: typeof AuthenticatedAppOSlugConfiguracoesRouteRouteImport
       parentRoute: typeof AuthenticatedAppOSlugRoute
     }
     '/_authenticated/app/o/$slug/dashboard': {
@@ -364,17 +364,17 @@ const AuthenticatedAppOSlugFilaRouteWithChildren =
   )
 
 interface AuthenticatedAppOSlugRouteChildren {
+  AuthenticatedAppOSlugConfiguracoesRouteRoute: typeof AuthenticatedAppOSlugConfiguracoesRouteRoute
   AuthenticatedAppOSlugAlertasRoute: typeof AuthenticatedAppOSlugAlertasRoute
-  AuthenticatedAppOSlugConfiguracoesRoute: typeof AuthenticatedAppOSlugConfiguracoesRoute
   AuthenticatedAppOSlugDashboardRoute: typeof AuthenticatedAppOSlugDashboardRoute
   AuthenticatedAppOSlugEquipeRoute: typeof AuthenticatedAppOSlugEquipeRoute
   AuthenticatedAppOSlugFilaRoute: typeof AuthenticatedAppOSlugFilaRouteWithChildren
 }
 
 const AuthenticatedAppOSlugRouteChildren: AuthenticatedAppOSlugRouteChildren = {
+  AuthenticatedAppOSlugConfiguracoesRouteRoute:
+    AuthenticatedAppOSlugConfiguracoesRouteRoute,
   AuthenticatedAppOSlugAlertasRoute: AuthenticatedAppOSlugAlertasRoute,
-  AuthenticatedAppOSlugConfiguracoesRoute:
-    AuthenticatedAppOSlugConfiguracoesRoute,
   AuthenticatedAppOSlugDashboardRoute: AuthenticatedAppOSlugDashboardRoute,
   AuthenticatedAppOSlugEquipeRoute: AuthenticatedAppOSlugEquipeRoute,
   AuthenticatedAppOSlugFilaRoute: AuthenticatedAppOSlugFilaRouteWithChildren,

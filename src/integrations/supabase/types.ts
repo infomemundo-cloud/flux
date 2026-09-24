@@ -463,25 +463,31 @@ export type Database = {
       }
       organizations: {
         Row: {
+          allow_group_ingest: boolean
           created_at: string
           created_by: string
           id: string
+          logo_url: string | null
           name: string
           slug: string
           updated_at: string
         }
         Insert: {
+          allow_group_ingest?: boolean
           created_at?: string
           created_by: string
           id?: string
+          logo_url?: string | null
           name: string
           slug: string
           updated_at?: string
         }
         Update: {
+          allow_group_ingest?: boolean
           created_at?: string
           created_by?: string
           id?: string
+          logo_url?: string | null
           name?: string
           slug?: string
           updated_at?: string
@@ -626,6 +632,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      delete_organization_cascade: {
+        Args: { p_org_id: string }
+        Returns: undefined
+      }
       gen_demanda_protocol: { Args: never; Returns: string }
     }
     Enums: {
