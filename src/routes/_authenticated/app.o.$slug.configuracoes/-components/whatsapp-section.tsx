@@ -189,9 +189,12 @@ export function WhatsappSection({ orgId }: { orgId: string }) {
                 </div>
               )}
             </div>
-            {pairCode && (
+            {pairCode && pairCode.length <= 16 && (
               <div className="mt-3 text-center text-xs text-muted-foreground">
-                Ou use o código: <code className="font-bold text-foreground">{pairCode}</code>
+                Ou use o código:{" "}
+                <code className="break-all font-bold tracking-widest text-foreground">
+                  {pairCode}
+                </code>
               </div>
             )}
             <button
