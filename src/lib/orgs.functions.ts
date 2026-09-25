@@ -11,7 +11,9 @@ import { z } from "zod";
  * - Exclusão: owner-only com confirmação re-validada no servidor (RPC atômica).
  * - Ingestão de grupos: setAllowGroupIngest (owner/admin).
  * - SLA de inatividade: updateSlaSettings (owner/admin) — regra consumida
- *   pela query slaAlerts, badge da sidebar e página de Alertas (Passo 2).
+ *   pela query slaAlerts, badge da sidebar e página de Alertas.
+ * - Distribuição automática: updateAutoAssignSettings (owner/admin) — regra
+ *   consumida pelo serviço em src/lib/demandas/assignment.ts, chamado pelo ingest.
  */
 
 export const listMyOrgs = createServerFn({ method: "GET" })
@@ -71,7 +73,7 @@ export const getOrgBySlug = createServerFn({ method: "GET" })
     const { data: org, error } = await context.supabase
       .from("organizations")
       .select(
-        "id, name, slug, logo_url, allow_group_ingest, sla_enabled, sla_max_inactivity_hours",
+        "id, name, slug, logo_url, allow_group_ingest, sla_enabled, sla_max_inactivity_hours, auto_assign_enabled, auto_assign_mode, last_assigned_user_id",
       )
       .eq("slug", data.slug)
       .maybeSingle();
@@ -97,7 +99,6 @@ export const listMembers = createServerFn({ method: "GET" })
       .eq("org_id", data.orgId)
       .order("created_at");
     if (error) throw new Error(error.message);
-    // Enrich with email via admin
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const enriched = await Promise.all(
       (rows ?? []).map(async (r) => {
@@ -139,11 +140,6 @@ export const listOperators = createServerFn({ method: "GET" })
 // Identidade da organização: nome + logotipo (slug é IMUTÁVEL por decisão)
 // ============================================================================
 
-/**
- * Guard de papel owner/admin (defesa em profundidade: a escrita usa
- * supabaseAdmin, então a autorização é garantida aqui mesmo que a RLS
- * de organizations não cubra update de membros).
- */
 async function assertOrgAdmin(
   supabase: any,
   orgId: string,
@@ -167,11 +163,6 @@ const LOGO_EXT: Record<string, string> = {
   "image/webp": "webp",
 };
 
-/**
- * Upload do logotipo pro bucket público org-assets (service role).
- * NÃO grava no banco: retorna a URL pública; o UPDATE de logo_url
- * acontece no updateOrganization (um único UPDATE name+logo_url).
- */
 export const uploadOrgLogo = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
@@ -203,12 +194,6 @@ export const uploadOrgLogo = createServerFn({ method: "POST" })
     return { ok: true, url: urlData.publicUrl };
   });
 
-/**
- * UPDATE organizations SET name = :name, logo_url = :logo_url WHERE id = :orgId.
- * Slug NÃO é aceito aqui (imutável por decisão de produto — URL nunca quebra).
- * Guard owner/admin + limpeza best-effort do objeto órfão no bucket quando
- * o logo é trocado ou removido.
- */
 export const updateOrganization = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
@@ -236,7 +221,6 @@ export const updateOrganization = createServerFn({ method: "POST" })
       .eq("id", data.orgId);
     if (error) throw new Error(error.message);
 
-    // Órfão: logo anterior trocado/removido → remove o objeto do bucket.
     const oldUrl = before?.logo_url ?? null;
     if (oldUrl && oldUrl !== data.logoUrl) {
       const path = oldUrl.split("/org-assets/")[1];
@@ -247,12 +231,6 @@ export const updateOrganization = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-/**
- * Exclusão de organização — SOMENTE owner, com confirmação por nome/slug
- * re-validada no servidor. O DELETE é atômico via RPC
- * delete_organization_cascade (migration 20260924140000): netos → filhos →
- * org em UMA transação, sem depender do estado das FKs.
- */
 export const deleteOrganization = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
@@ -266,7 +244,6 @@ export const deleteOrganization = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    // 1) Guard: SOMENTE owner (admin/gerente/operador/IA → erro)
     const { data: mem } = await context.supabase
       .from("memberships")
       .select("role")
@@ -277,7 +254,6 @@ export const deleteOrganization = createServerFn({ method: "POST" })
       throw new Error("Sem permissão: apenas o owner pode excluir a organização");
     }
 
-    // 2) Re-valida a confirmação no servidor (nome OU slug, exatos)
     const { data: org } = await supabaseAdmin
       .from("organizations")
       .select("name, slug")
@@ -288,7 +264,6 @@ export const deleteOrganization = createServerFn({ method: "POST" })
       throw new Error("Confirmação não confere com o nome ou slug da organização");
     }
 
-    // 3) DELETE atômico em cascata (RPC transacional, service role)
     const { error } = await supabaseAdmin.rpc("delete_organization_cascade", {
       p_org_id: data.orgId,
     });
@@ -301,11 +276,6 @@ export const deleteOrganization = createServerFn({ method: "POST" })
 // Regras de ingestão: atendimento em grupos (@g.us)
 // ============================================================================
 
-/**
- * Toggle de ingestão de mensagens de grupos da org — owner/admin.
- * O ingest consulta organizations.allow_group_ingest a cada payload @g.us
- * e descarta com HTTP 200 silencioso (sem gravar nada) quando desligado.
- */
 export const setAllowGroupIngest = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
@@ -333,16 +303,8 @@ export const setAllowGroupIngest = createServerFn({ method: "POST" })
 // Regras de atendimento: SLA de inatividade (autosave por campo)
 // ============================================================================
 
-/** Valores aceitos de SLA (mesma lista do sla-options.ts do front). */
 const SLA_HOURS = [1, 4, 8, 24, 48, 168] as const;
 
-/**
- * Autosave das regras de SLA da org — owner/admin.
- * Patch parcial: toggle e select salvam independentemente (padrão de
- * mercado: Linear/Notion/Intercom), com revert no front em caso de erro.
- * A regra é consumida pela query slaAlerts, badge da sidebar e página de
- * Alertas (Passo 2) — fonte única no banco.
- */
 export const updateSlaSettings = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
@@ -350,8 +312,6 @@ export const updateSlaSettings = createServerFn({ method: "POST" })
       .object({
         orgId: z.string().uuid(),
         enabled: z.boolean().optional(),
-        // FIX 1: z.enum SÓ aceita strings — pra números, refine contra a
-        // lista canônica (mesma do sla-options.ts do front).
         maxInactivityHours: z
           .number()
           .int()
@@ -369,11 +329,47 @@ export const updateSlaSettings = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await assertOrgAdmin(context.supabase, data.orgId, context.userId);
 
-    // FIX 2: patch TIPADO — o client do Supabase rejeita Record<string, unknown>.
     const patch: { sla_enabled?: boolean; sla_max_inactivity_hours?: number } = {};
     if (data.enabled !== undefined) patch.sla_enabled = data.enabled;
     if (data.maxInactivityHours !== undefined)
       patch.sla_max_inactivity_hours = data.maxInactivityHours;
+
+    const { error } = await supabaseAdmin
+      .from("organizations")
+      .update(patch)
+      .eq("id", data.orgId);
+    if (error) throw new Error(error.message);
+
+    return { ok: true };
+  });
+
+// ============================================================================
+// Regras de atendimento: Distribuição automática (Plano Pro — gating futuro)
+// ============================================================================
+
+const ASSIGNMENT_MODES = ["round_robin", "least_busy"] as const;
+
+export const updateAutoAssignSettings = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        orgId: z.string().uuid(),
+        enabled: z.boolean().optional(),
+        mode: z.enum(ASSIGNMENT_MODES).optional(),
+      })
+      .refine((v) => v.enabled !== undefined || v.mode !== undefined, {
+        message: "Nada para atualizar",
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await assertOrgAdmin(context.supabase, data.orgId, context.userId);
+
+    const patch: { auto_assign_enabled?: boolean; auto_assign_mode?: string } = {};
+    if (data.enabled !== undefined) patch.auto_assign_enabled = data.enabled;
+    if (data.mode !== undefined) patch.auto_assign_mode = data.mode;
 
     const { error } = await supabaseAdmin
       .from("organizations")

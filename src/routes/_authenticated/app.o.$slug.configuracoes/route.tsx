@@ -89,6 +89,8 @@ function Config() {
             orgSlug={org.slug}
             slaEnabled={org.sla_enabled ?? true}
             slaMaxInactivityHours={org.sla_max_inactivity_hours ?? 24}
+            autoAssignEnabled={org.auto_assign_enabled ?? false}
+            autoAssignMode={(org.auto_assign_mode ?? "round_robin") as "round_robin" | "least_busy"}
           />
         </TabsContent>
         <TabsContent value="macros" className="mt-5">

@@ -464,9 +464,12 @@ export type Database = {
       organizations: {
         Row: {
           allow_group_ingest: boolean
+          auto_assign_enabled: boolean
+          auto_assign_mode: string
           created_at: string
           created_by: string
           id: string
+          last_assigned_user_id: string | null
           logo_url: string | null
           name: string
           sla_enabled: boolean
@@ -476,9 +479,12 @@ export type Database = {
         }
         Insert: {
           allow_group_ingest?: boolean
+          auto_assign_enabled?: boolean
+          auto_assign_mode?: string
           created_at?: string
           created_by: string
           id?: string
+          last_assigned_user_id?: string | null
           logo_url?: string | null
           name: string
           sla_enabled?: boolean
@@ -488,9 +494,12 @@ export type Database = {
         }
         Update: {
           allow_group_ingest?: boolean
+          auto_assign_enabled?: boolean
+          auto_assign_mode?: string
           created_at?: string
           created_by?: string
           id?: string
+          last_assigned_user_id?: string | null
           logo_url?: string | null
           name?: string
           sla_enabled?: boolean

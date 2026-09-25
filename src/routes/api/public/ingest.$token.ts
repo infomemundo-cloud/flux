@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { fetchMediaFromEvolution, uploadMediaToStorage, uploadThumbToStorage, bufferFromByteMap } from "@/lib/demandas/media-storage";
+import { resolveAutoAssignment } from "@/lib/demandas/assignment";
 
 const Body = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -595,6 +596,18 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           }
           demandaId = dem.id;
           protocol = dem.protocol as string | null;
+          try {
+            await resolveAutoAssignment(supabaseAdmin, {
+              orgId: tok.org_id,
+              demandaId,
+            });
+          } catch (err: any) {
+            console.error("[ingest] auto-assign falhou — demanda segue órfã", {
+              demanda_id: demandaId,
+              org_id: tok.org_id,
+              error: err?.message,
+            });
+          }
         } else {
           const patch: Record<string, unknown> = {
             last_message_id: b.message_id ?? null,
