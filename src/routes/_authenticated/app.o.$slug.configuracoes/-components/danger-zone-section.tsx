@@ -7,13 +7,13 @@ import { toast } from "sonner";
 import { deleteOrganization } from "@/lib/orgs.functions";
 import { friendlyError } from "@/lib/friendly-error";
 import { Input } from "@/components/ui/input";
+import { InfoTip } from "@/components/info-tip";
 
 /**
- * Zona de Perigo [owner]: exclusão permanente da organização.
- * Renderizada SOMENTE quando role === 'owner' (gate no geral-tab) e com
- * guard de owner no servidor (defesa em profundidade). Confirmação por
- * digitação (nome OU slug exatos), mesmo padrão da exclusão de demanda.
- * Sucesso → toast + limpeza das queries da org + redirect pra /app.
+ * Zona de Perigo [owner] enxuta: uma linha (título + (i) + botão), com as
+ * consequências explicadas no tooltip em vez de parágrafo longo. A
+ * confirmação por digitação (nome OU slug exatos) segue no modal, mesmo
+ * padrão da exclusão de demanda. Sucesso → toast + limpeza de cache + /app.
  */
 export function DangerZoneSection({
   orgId,
@@ -38,7 +38,6 @@ export function DangerZoneSection({
     mutationFn: () => deleteFn({ data: { orgId, confirm: typed } }),
     onSuccess: () => {
       toast.success("Organização excluída com sucesso.");
-      // Limpa o cache da org antes de sair (evita tela órfã no /app)
       qc.removeQueries({ queryKey: ["org", orgSlug] });
       qc.removeQueries({ queryKey: ["members", orgId] });
       qc.removeQueries({ queryKey: ["tokens", orgId] });
@@ -51,30 +50,24 @@ export function DangerZoneSection({
 
   return (
     <>
-      <div className="rounded-2xl border border-destructive/40 bg-destructive/5 p-4 sm:p-6">
-        <div className="flex items-start gap-3">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-destructive/10 text-destructive">
-            <AlertTriangle className="h-5 w-5" strokeWidth={2.2} />
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-destructive/40 bg-destructive/5 p-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-destructive/10 text-destructive">
+            <AlertTriangle className="h-4 w-4" strokeWidth={2.2} />
           </span>
-          <div className="min-w-0 flex-1">
-            <h3 className="text-base font-semibold text-destructive">Zona de Perigo</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              A exclusão de uma organização é permanente e irreversível. Todos os
-              contatos, demandas, mensagens e configurações associadas serão
-              apagados para sempre.
-            </p>
-          </div>
+          <div className="text-sm font-semibold text-destructive">Zona de Perigo</div>
         </div>
-        <div className="mt-4 flex justify-end">
+        <div className="flex items-center gap-2">
+          <InfoTip text="A exclusão de uma organização é permanente e irreversível. Todos os contatos, demandas, mensagens e configurações associadas serão apagados para sempre." />
           <button
             type="button"
             onClick={() => {
               setConfirmText("");
               setOpen(true);
             }}
-            className="inline-flex h-10 items-center gap-2 rounded-lg bg-destructive px-4 text-sm font-semibold text-destructive-foreground transition hover:brightness-110"
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-destructive px-3 text-xs font-semibold text-destructive-foreground transition hover:brightness-110"
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 className="h-3.5 w-3.5" />
             Excluir Organização
           </button>
         </div>

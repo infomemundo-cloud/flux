@@ -1,13 +1,15 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Copy, Eye, EyeOff, KeyRound, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  listWebhookTokens,
   createWebhookToken,
   deleteWebhookToken,
+  listWebhookTokens,
 } from "@/lib/demandas/webhook-tokens.functions";
+import { InfoTip } from "@/components/info-tip";
+import { Input } from "@/components/ui/input";
 
 const EXAMPLE_BODY = `{ "message": "Cliente pediu segunda via da fatura", "contact": { "name": "Maria", "phone": "+5511999999999" }, "channel_kind": "whatsapp", "priority": "media" }`;
 
@@ -17,7 +19,11 @@ function maskToken(token: string) {
   return `${token.slice(0, 7)}${"•".repeat(10)}${token.slice(-4)}`;
 }
 
-/** Endpoint público de ingestão + CRUD de tokens (guard assertOrgAdmin no servidor). */
+/**
+ * Card 3 (coluna direita): Webhooks & APIs denso — título + 1 linha de
+ * descrição (endpoint + body de exemplo vivem no tooltip do (i)), form
+ * inline e lista de tokens em linha única com ações em ícone.
+ */
 export function WebhooksSection({ orgId, origin }: { orgId: string; origin: string }) {
   const tokensFn = useServerFn(listWebhookTokens);
   const createTok = useServerFn(createWebhookToken);
@@ -57,14 +63,17 @@ export function WebhooksSection({ orgId, origin }: { orgId: string; origin: stri
   });
 
   return (
-    <div className="space-y-4">
-      <div className="card-elevated space-y-2 p-4 font-mono text-xs">
-        <div>
-          <span className="text-muted-foreground">POST</span> {origin}/api/public/ingest/<b>{"{token}"}</b>
+    <div className="card-elevated space-y-3 p-4">
+      <div className="space-y-0.5">
+        <div className="flex items-center gap-1.5 text-sm font-semibold">
+          Webhooks & APIs
+          <InfoTip text={`Endpoint: POST ${origin}/api/public/ingest/{token} · Body exemplo: ${EXAMPLE_BODY}`} />
         </div>
-        <div className="text-muted-foreground">Body:</div>
-        <pre className="overflow-x-auto rounded-md bg-secondary/60 p-3">{EXAMPLE_BODY}</pre>
+        <p className="text-[11px] text-muted-foreground">
+          Aponte a Evolution (ou qualquer sistema) pra cá; cada mensagem vira demanda.
+        </p>
       </div>
+
       <form
         className="flex gap-2"
         onSubmit={(e) => {
@@ -72,30 +81,35 @@ export function WebhooksSection({ orgId, origin }: { orgId: string; origin: stri
           if (tokName.trim()) createM.mutate();
         }}
       >
-        <input
+        <Input
           value={tokName}
           onChange={(e) => setTokName(e.target.value)}
-          placeholder="Nome do token (ex: Evolution WhatsApp)"
-          className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-card px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          placeholder="Nome do token"
+          className="h-9 min-w-0 flex-1 text-sm"
         />
-        <button className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:opacity-90">
-          <Plus className="h-4 w-4" /> Gerar token
+        <button
+          type="submit"
+          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:opacity-90"
+        >
+          <Plus className="h-3.5 w-3.5" /> Gerar Token
         </button>
       </form>
-      <div className="card-elevated overflow-hidden">
+
+      <div className="overflow-hidden rounded-lg border border-border">
         {tokens?.length === 0 && (
-          <div className="p-4 text-sm text-muted-foreground">Nenhum token gerado ainda.</div>
+          <div className="p-3 text-xs text-muted-foreground">Nenhum token gerado ainda.</div>
         )}
         {tokens?.map((t: any) => {
           const revealed = revealedTokens.has(t.id);
           return (
-            <div key={t.id} className="row-zebra flex flex-wrap items-center gap-3 border-b border-border p-3 last:border-0">
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg pill-green">
-                <KeyRound className="h-4 w-4" strokeWidth={2.2} />
-              </span>
+            <div
+              key={t.id}
+              className="row-zebra flex items-center gap-2 border-b border-border px-3 py-2 last:border-0"
+            >
+              <KeyRound className="h-3.5 w-3.5 shrink-0 text-[var(--pill-green-fg)]" />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold">{t.name}</div>
-                <code className="break-all text-xs text-muted-foreground">
+                <div className="truncate text-xs font-semibold">{t.name}</div>
+                <code className="block truncate text-[10px] text-muted-foreground">
                   {revealed ? t.token : maskToken(t.token)}
                 </code>
               </div>
@@ -103,9 +117,9 @@ export function WebhooksSection({ orgId, origin }: { orgId: string; origin: stri
                 title={revealed ? "Ocultar token" : "Revelar token"}
                 aria-label={revealed ? "Ocultar token" : "Revelar token"}
                 onClick={() => toggleReveal(t.id)}
-                className="shrink-0 rounded-md p-2 hover:bg-secondary"
+                className="shrink-0 rounded-md p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
               >
-                {revealed ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
               </button>
               <button
                 title="Copiar"
@@ -114,34 +128,34 @@ export function WebhooksSection({ orgId, origin }: { orgId: string; origin: stri
                   navigator.clipboard.writeText(t.token);
                   toast.success("Copiado");
                 }}
-                className="shrink-0 rounded-md p-2 hover:bg-secondary"
+                className="shrink-0 rounded-md p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
               >
-                <Copy className="h-4 w-4" />
+                <Copy className="h-3.5 w-3.5" />
               </button>
               {confirmDeleteTokenId === t.id ? (
-                <div className="flex shrink-0 items-center gap-1.5">
+                <span className="flex shrink-0 items-center gap-1">
                   <button
                     onClick={() => deleteM.mutate(t.id)}
                     disabled={deleteM.isPending}
-                    className="h-8 rounded-md bg-destructive px-2.5 text-xs font-semibold text-destructive-foreground disabled:opacity-60"
+                    className="h-7 rounded-md bg-destructive px-2 text-[10px] font-semibold text-destructive-foreground disabled:opacity-60"
                   >
                     {deleteM.isPending ? "..." : "Confirmar"}
                   </button>
                   <button
                     onClick={() => setConfirmDeleteTokenId(null)}
-                    className="h-8 rounded-md border border-border px-2.5 text-xs hover:bg-secondary"
+                    className="h-7 rounded-md border border-border px-2 text-[10px] hover:bg-secondary"
                   >
                     Cancelar
                   </button>
-                </div>
+                </span>
               ) : (
                 <button
                   title="Remover"
                   aria-label="Remover token"
                   onClick={() => setConfirmDeleteTokenId(t.id)}
-                  className="shrink-0 rounded-md p-2 text-destructive hover:bg-destructive/10"
+                  className="shrink-0 rounded-md p-1.5 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 className="h-3.5 w-3.5" />
                 </button>
               )}
             </div>
