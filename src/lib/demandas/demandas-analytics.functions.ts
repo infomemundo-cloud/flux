@@ -106,19 +106,42 @@ export const orgDashboard = createServerFn({ method: "GET" })
     };
   });
 
+/**
+ * Demandas paradas (Alertas de SLA).
+ *
+ * Janela em DIAS (aceita fração: 4h = 4/24). `staleDays` é OPCIONAL de
+ * propósito — balanceamento front/back:
+ * - SEM staleDays: o servidor aplica a REGRA DA ORG
+ *   (organizations.sla_max_inactivity_hours ÷ 24; sla_enabled=false → []).
+ *   Badge da sidebar/nav e futuros consumidores (notificações) herdam a
+ *   regra sem precisar conhecê-la;
+ * - COM staleDays: vira override de exploração (página Alertas, select em
+ *   dias inteiros).
+ */
 export const slaAlerts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
     z
       .object({
         orgId: z.string().uuid(),
-        staleDays: z.number().int().min(1).max(30).default(2),
+        staleDays: z.number().min(1 / 24).max(30).optional(),
       })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertMember(context.supabase, data.orgId, context.userId);
-    const cutoff = new Date(Date.now() - data.staleDays * 86400000).toISOString();
+
+    let days = data.staleDays;
+    if (days === undefined) {
+      const { data: orgRow } = await context.supabase
+        .from("organizations")
+        .select("sla_enabled, sla_max_inactivity_hours")
+        .eq("id", data.orgId)
+        .maybeSingle();
+      if (orgRow?.sla_enabled === false) return [];
+      days = (orgRow?.sla_max_inactivity_hours ?? 24) / 24;
+    }
+    const cutoff = new Date(Date.now() - days * 86400000).toISOString();
     // Open (pending) demandas: not resolvido/fechado
     const { data: rows, error } = await context.supabase
       .from("demandas")

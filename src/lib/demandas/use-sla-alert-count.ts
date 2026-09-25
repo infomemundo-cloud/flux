@@ -5,17 +5,17 @@ import { slaAlerts } from "@/lib/demandas/demandas-analytics.functions";
 
 /**
  * Contagem de demandas paradas (Alertas SLA) pro badge da sidebar e do nav
- * mobile. Reusa a MESMA server fn da página /alertas com a janela default
- * (staleDays = 2): badge e página nunca divergem na REGRA; se o usuário
- * mudar o seletor de dias dentro da página, o badge permanece na janela
- * default (comportamento documentado — badge é sinal fixo, não espelho do
- * seletor).
+ * mobile.
  *
- * Duas queries, ambas dedupadas por cache:
- * - org pela key ["org", slug] (mesma key do layout/rotas → zero request extra);
- * - alertas pela key ["sla-alerts", orgId] com staleTime 60s e SEM
- *   refetchInterval: é sinal operacional, não ticker — sidebar e mobile nav
- *   chamam o mesmo hook e compartilham o mesmo cache (1 request só).
+ * A REGRA mora no banco e é aplicada pelo SERVIDOR: chamamos slaAlerts SEM
+ * staleDays, então o cutoff vem de organizations.sla_max_inactivity_hours —
+ * badge e regra nunca divergem, e o front não duplica lógica.
+ *
+ * Decisão de produto: sla_enabled = false → monitoramento desligado =
+ * badge some E nenhuma query é disparada (enabled: false), zero custo.
+ *
+ * Cache ["sla-alerts", orgId] com staleTime 60s: sidebar e mobile nav
+ * compartilham a mesma entrada (1 request só).
  */
 export function useSlaAlertCount(slug: string | undefined): number {
   const orgFn = useServerFn(getOrgBySlug);
@@ -27,12 +27,14 @@ export function useSlaAlertCount(slug: string | undefined): number {
     enabled: !!slug,
   });
 
+  const slaOn = org?.sla_enabled ?? true;
+
   const { data: alerts } = useQuery({
     queryKey: ["sla-alerts", org?.id],
     queryFn: () => alertsFn({ data: { orgId: org!.id } }),
-    enabled: !!org?.id,
+    enabled: !!org?.id && slaOn,
     staleTime: 60_000,
   });
 
-  return alerts?.length ?? 0;
+  return slaOn ? (alerts?.length ?? 0) : 0;
 }

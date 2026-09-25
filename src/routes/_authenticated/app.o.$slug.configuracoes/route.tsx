@@ -84,7 +84,12 @@ function Config() {
           />
         </TabsContent>
         <TabsContent value="atendimento" className="mt-5 space-y-6">
-          <AtendimentoTab orgId={org.id} />
+          <AtendimentoTab
+            orgId={org.id}
+            orgSlug={org.slug}
+            slaEnabled={org.sla_enabled ?? true}
+            slaMaxInactivityHours={org.sla_max_inactivity_hours ?? 24}
+          />
         </TabsContent>
         <TabsContent value="macros" className="mt-5">
           <MacrosTab orgId={org.id} />

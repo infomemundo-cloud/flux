@@ -4,10 +4,25 @@ import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { slaAlerts } from "@/lib/demandas/demandas-analytics.functions";
 import { getOrgBySlug } from "@/lib/orgs.functions";
-import { PriorityBadge, STATE_LABEL, formatRelative, ProtocolChip, ContactLine, DueChip, UrgentTag } from "@/components/demandas-ui";
+import { slaHoursLabel } from "@/lib/demandas/sla-options";
+import {
+  PriorityBadge,
+  STATE_LABEL,
+  formatRelative,
+  ProtocolChip,
+  ContactLine,
+  DueChip,
+  UrgentTag,
+} from "@/components/demandas-ui";
 import { STATE_COLOR } from "@/lib/demandas/state-colors";
 import { resolveContactName } from "@/lib/demandas/resolve-contact-name";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { AlertTriangle, Clock, ChevronRight, ShieldCheck } from "lucide-react";
 import { ListSkeleton } from "@/components/skeletons";
 import { ContactAvatar } from "@/components/contact-avatar";
@@ -21,21 +36,46 @@ function severity(iso: string) {
   const days = (Date.now() - new Date(iso).getTime()) / 86400000;
   if (days >= 5)
     return {
-      label: "Crítico", cls: "text-destructive", bar: "bg-destructive", blink: true,
+      label: "Crítico",
+      cls: "text-destructive",
+      bar: "bg-destructive",
+      blink: true,
       ring: "border-destructive/40 bg-destructive/[0.04] hover:border-destructive/70",
       pill: "bg-destructive/10 text-destructive",
     };
   if (days >= 3)
     return {
-      label: "Alto", cls: "text-[oklch(0.52_0.17_42)]", bar: "bg-[oklch(0.66_0.17_42)]", blink: false,
+      label: "Alto",
+      cls: "text-[oklch(0.52_0.17_42)]",
+      bar: "bg-[oklch(0.66_0.17_42)]",
+      blink: false,
       ring: "border-[oklch(0.66_0.17_42/0.35)] bg-[oklch(0.66_0.17_42/0.04)] hover:border-[oklch(0.66_0.17_42/0.6)]",
       pill: "bg-[oklch(0.66_0.17_42/0.12)] text-[oklch(0.5_0.17_40)]",
     };
   return {
-    label: "Atenção", cls: "text-[oklch(0.5_0.14_78)]", bar: "bg-[oklch(0.7_0.15_78)]", blink: false,
+    label: "Atenção",
+    cls: "text-[oklch(0.5_0.14_78)]",
+    bar: "bg-[oklch(0.7_0.15_78)]",
+    blink: false,
     ring: "border-[oklch(0.7_0.15_78/0.35)] bg-[oklch(0.7_0.15_78/0.04)] hover:border-[oklch(0.7_0.15_78/0.6)]",
     pill: "bg-[oklch(0.7_0.15_78/0.14)] text-[oklch(0.47_0.13_75)]",
   };
+}
+
+/**
+ * Opções do seletor (exploração em DIAS, decisão de produto). A regra da
+ * organização entra como PRIMEIRA opção com o rótulo dela própria
+ * ("4 horas", "24 horas (1 dia)"...) — assim o default da página é
+ * exatamente a regra configurada, sem divergir do badge.
+ */
+function windowOptions(ruleDays: number, ruleLabel: string) {
+  const opts: { value: number; label: string }[] = [{ value: ruleDays, label: ruleLabel }];
+  for (const d of [1, 2, 3, 5, 7, 14]) {
+    if (Math.abs(d - ruleDays) > 1e-9) {
+      opts.push({ value: d, label: `${d} ${d === 1 ? "dia" : "dias"}` });
+    }
+  }
+  return opts;
 }
 
 function AlertasPage() {
@@ -44,32 +84,51 @@ function AlertasPage() {
   const orgFn = useServerFn(getOrgBySlug);
   const orgQ = useQuery({ queryKey: ["org", slug], queryFn: () => orgFn({ data: { slug } }) });
   const orgId = orgQ.data?.id;
-  const [staleDays, setStaleDays] = useState(2);
+
+  // Regra da org (fonte única no banco): horas → dias (fração ok).
+  const ruleHours = orgQ.data?.sla_max_inactivity_hours ?? 24;
+  const ruleDays = ruleHours / 24;
+  const ruleLabel = slaHoursLabel(ruleHours);
+
+  // null = seguindo a regra da org; número = override manual de exploração.
+  const [manualDays, setManualDays] = useState<number | null>(null);
+  const windowDays = manualDays ?? ruleDays;
+  const isManual = manualDays !== null && Math.abs(manualDays - ruleDays) > 1e-9;
+
   const { data, isLoading } = useQuery({
-    queryKey: ["sla-alerts", orgId, staleDays],
+    queryKey: ["sla-alerts", orgId, windowDays],
     enabled: !!orgId,
-    queryFn: () => fn({ data: { orgId: orgId!, staleDays } }),
+    queryFn: () => fn({ data: { orgId: orgId!, staleDays: windowDays } }),
     refetchInterval: 60000,
   });
+
   const PAGE_SIZE = 20;
   const [visible, setVisible] = useState(PAGE_SIZE);
   const total = data?.length ?? 0;
   const items = useMemo(() => (data ?? []).slice(0, visible), [data, visible]);
   const hasMore = visible < total;
-  useEffect(() => { setVisible(PAGE_SIZE); }, [total]);
+  useEffect(() => {
+    setVisible(PAGE_SIZE);
+  }, [total]);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!hasMore) return;
     const el = sentinelRef.current;
     if (!el) return;
-    const io = new IntersectionObserver((entries) => {
-      if (entries[0]?.isIntersecting) {
-        setVisible((v) => Math.min(v + PAGE_SIZE, total));
-      }
-    }, { rootMargin: "200px" });
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisible((v) => Math.min(v + PAGE_SIZE, total));
+        }
+      },
+      { rootMargin: "200px" },
+    );
     io.observe(el);
     return () => io.disconnect();
   }, [hasMore, total]);
+
+  const windowLabel =
+    windowDays < 1 ? ruleLabel : `${windowDays} ${windowDays === 1 ? "dia" : "dias"}`;
 
   return (
     <div className="p-4 sm:p-8 pb-24 sm:pb-10 max-w-6xl mx-auto">
@@ -78,28 +137,39 @@ function AlertasPage() {
           <span className="grid place-items-center h-9 w-9 rounded-xl bg-destructive/10 text-destructive shrink-0">
             <AlertTriangle className="h-[18px] w-[18px]" strokeWidth={2.2} />
           </span>
-          <h1 className="text-[22px] sm:text-[28px] font-extrabold tracking-tight truncate">Alertas de SLA</h1>
+          <h1 className="text-[22px] sm:text-[28px] font-extrabold tracking-tight truncate">
+            Alertas de SLA
+          </h1>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <span className="text-xs text-muted-foreground hidden sm:inline">Alertar após</span>
-          <Select value={String(staleDays)} onValueChange={(v) => setStaleDays(Number(v))}>
-            <SelectTrigger className="h-9 w-[104px] text-xs">
+          <Select value={String(windowDays)} onValueChange={(v) => setManualDays(Number(v))}>
+            <SelectTrigger className="h-9 w-[132px] text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {[1, 2, 3, 5, 7, 14].map((n) => (
-                <SelectItem key={n} value={String(n)} className="text-xs">
-                  {n} {n === 1 ? "dia" : "dias"}
+              {windowOptions(ruleDays, ruleLabel).map((o) => (
+                <SelectItem key={o.value} value={String(o.value)} className="text-xs">
+                  {o.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
       </div>
-      <div className="flex items-center gap-2 mb-5 sm:mb-6">
+      <div className="flex items-center gap-2 mb-5 sm:mb-6 flex-wrap">
         <p className="text-[13px] text-muted-foreground">
-          Demandas paradas sem nenhuma atualização há {staleDays} {staleDays === 1 ? "dia" : "dias"} ou mais.
+          Demandas paradas sem nenhuma atualização há {windowLabel} ou mais.
         </p>
+        {isManual && (
+          <button
+            type="button"
+            onClick={() => setManualDays(null)}
+            className="text-[11px] font-medium text-primary underline underline-offset-2 transition hover:opacity-80"
+          >
+            Exibição manual — voltar à regra da organização ({ruleLabel})
+          </button>
+        )}
         {total > 0 && (
           <span className="inline-flex items-center rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-semibold text-destructive shrink-0">
             {items.length} de {total}
@@ -113,7 +183,9 @@ function AlertasPage() {
             <ShieldCheck className="h-5 w-5" strokeWidth={2.2} />
           </span>
           <div className="mt-3 text-sm font-semibold">Nenhuma demanda parada</div>
-          <p className="mt-1 text-[13px] text-muted-foreground">Todo o time está dentro do SLA. Tudo em dia!</p>
+          <p className="mt-1 text-[13px] text-muted-foreground">
+            Todo o time está dentro do SLA. Tudo em dia!
+          </p>
         </div>
       )}
       <div className="space-y-2 scrollbar-thin">
@@ -149,7 +221,9 @@ function AlertasPage() {
                   {urgent && <UrgentTag />}
                   {!urgent && <PriorityBadge priority={d.priority} />}
                 </div>
-                <div className="mt-2 font-semibold text-[15px] leading-snug truncate group-hover:text-primary transition-colors">{d.title}</div>
+                <div className="mt-2 font-semibold text-[15px] leading-snug truncate group-hover:text-primary transition-colors">
+                  {d.title}
+                </div>
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
                   <ContactLine contact={d.contacts} channel={d.channels} whatsappJid={d.whatsapp_jid} />
                   <span className={`inline-flex items-center gap-1 text-xs font-medium ${sev.cls}`}>

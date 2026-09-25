@@ -469,6 +469,8 @@ export type Database = {
           id: string
           logo_url: string | null
           name: string
+          sla_enabled: boolean
+          sla_max_inactivity_hours: number
           slug: string
           updated_at: string
         }
@@ -479,6 +481,8 @@ export type Database = {
           id?: string
           logo_url?: string | null
           name: string
+          sla_enabled?: boolean
+          sla_max_inactivity_hours?: number
           slug: string
           updated_at?: string
         }
@@ -489,6 +493,8 @@ export type Database = {
           id?: string
           logo_url?: string | null
           name?: string
+          sla_enabled?: boolean
+          sla_max_inactivity_hours?: number
           slug?: string
           updated_at?: string
         }

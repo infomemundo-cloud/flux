@@ -9,8 +9,9 @@ import { z } from "zod";
  * - Identidade (nome/logo): supabaseAdmin + guard explícito owner/admin
  *   (defesa em profundidade; slug é IMUTÁVEL por decisão de produto).
  * - Exclusão: owner-only com confirmação re-validada no servidor (RPC atômica).
- * - Ingestão de grupos: setAllowGroupIngest (owner/admin) — o ingest consulta
- *   o flag a cada payload @g.us e descarta com 200 silencioso quando off.
+ * - Ingestão de grupos: setAllowGroupIngest (owner/admin).
+ * - SLA de inatividade: updateSlaSettings (owner/admin) — regra consumida
+ *   pela query slaAlerts, badge da sidebar e página de Alertas (Passo 2).
  */
 
 export const listMyOrgs = createServerFn({ method: "GET" })
@@ -69,7 +70,9 @@ export const getOrgBySlug = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const { data: org, error } = await context.supabase
       .from("organizations")
-      .select("id, name, slug, logo_url, allow_group_ingest")
+      .select(
+        "id, name, slug, logo_url, allow_group_ingest, sla_enabled, sla_max_inactivity_hours",
+      )
       .eq("slug", data.slug)
       .maybeSingle();
     if (error) throw new Error(error.message);
@@ -168,10 +171,6 @@ const LOGO_EXT: Record<string, string> = {
  * Upload do logotipo pro bucket público org-assets (service role).
  * NÃO grava no banco: retorna a URL pública; o UPDATE de logo_url
  * acontece no updateOrganization (um único UPDATE name+logo_url).
- * Nota de segurança: SVG é aceito por spec; como o bucket é público,
- * uma URL de SVG aberta DIRETO no navegador pode executar script embutido
- * no origin do storage. Em <img> (nosso uso) é inofensivo. Se um dia
- * preocupar, restrinja LOGO_EXT ou sirva via URL assinada.
  */
 export const uploadOrgLogo = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -306,7 +305,6 @@ export const deleteOrganization = createServerFn({ method: "POST" })
  * Toggle de ingestão de mensagens de grupos da org — owner/admin.
  * O ingest consulta organizations.allow_group_ingest a cada payload @g.us
  * e descarta com HTTP 200 silencioso (sem gravar nada) quando desligado.
- * Default true preserva o comportamento atual de todas as orgs.
  */
 export const setAllowGroupIngest = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -325,6 +323,61 @@ export const setAllowGroupIngest = createServerFn({ method: "POST" })
     const { error } = await supabaseAdmin
       .from("organizations")
       .update({ allow_group_ingest: data.enabled })
+      .eq("id", data.orgId);
+    if (error) throw new Error(error.message);
+
+    return { ok: true };
+  });
+
+// ============================================================================
+// Regras de atendimento: SLA de inatividade (autosave por campo)
+// ============================================================================
+
+/** Valores aceitos de SLA (mesma lista do sla-options.ts do front). */
+const SLA_HOURS = [1, 4, 8, 24, 48, 168] as const;
+
+/**
+ * Autosave das regras de SLA da org — owner/admin.
+ * Patch parcial: toggle e select salvam independentemente (padrão de
+ * mercado: Linear/Notion/Intercom), com revert no front em caso de erro.
+ * A regra é consumida pela query slaAlerts, badge da sidebar e página de
+ * Alertas (Passo 2) — fonte única no banco.
+ */
+export const updateSlaSettings = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        orgId: z.string().uuid(),
+        enabled: z.boolean().optional(),
+        // FIX 1: z.enum SÓ aceita strings — pra números, refine contra a
+        // lista canônica (mesma do sla-options.ts do front).
+        maxInactivityHours: z
+          .number()
+          .int()
+          .refine((h) => (SLA_HOURS as readonly number[]).includes(h), {
+            message: "Valor de SLA inválido (use 1, 4, 8, 24, 48 ou 168 horas)",
+          })
+          .optional(),
+      })
+      .refine((v) => v.enabled !== undefined || v.maxInactivityHours !== undefined, {
+        message: "Nada para atualizar",
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await assertOrgAdmin(context.supabase, data.orgId, context.userId);
+
+    // FIX 2: patch TIPADO — o client do Supabase rejeita Record<string, unknown>.
+    const patch: { sla_enabled?: boolean; sla_max_inactivity_hours?: number } = {};
+    if (data.enabled !== undefined) patch.sla_enabled = data.enabled;
+    if (data.maxInactivityHours !== undefined)
+      patch.sla_max_inactivity_hours = data.maxInactivityHours;
+
+    const { error } = await supabaseAdmin
+      .from("organizations")
+      .update(patch)
       .eq("id", data.orgId);
     if (error) throw new Error(error.message);
 
