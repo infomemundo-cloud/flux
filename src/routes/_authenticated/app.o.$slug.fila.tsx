@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { ListSkeleton } from "@/components/skeletons";
 import { listDemandas, createDemanda, markAllDemandasRead } from "@/lib/demandas/demandas.functions";
 import { getOrgBySlug } from "@/lib/orgs.functions";
+import { getWhatsappConnection } from "@/lib/whatsapp.functions";
 import { toast } from "sonner";
 import { friendlyError } from "@/lib/friendly-error";
 import {
@@ -19,6 +20,8 @@ import {
   MoreHorizontal,
   CheckCheck,
   CheckCircle2,
+  QrCode,
+  Smartphone,
 } from "lucide-react";
 import { formatRelative } from "@/components/demandas-ui";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -110,10 +113,10 @@ function leftBorderColor(d: any): string {
  * Card da fila — hierarquia por "contraste passivo" (estilo e-mail moderno),
  * válida nos 3 temas SEM hardcoded de paleta:
  * NÃO LIDO: superfície elevada (bg-card; no dark sobe pra bg-popover) +
- * ring visível + sombra profunda no dark + nome bold + prévia medium +
- * dot primário no avatar.
+ *   ring visível + sombra profunda no dark + nome bold + prévia medium +
+ *   dot primário no avatar.
  * LIDO: superfície afundada (bg-muted/40; no dark black/20) + ring
- * transparente + sem sombra + pesos normais + sem dot.
+ *   transparente + sem sombra + pesos normais + sem dot.
  */
 function FilaCard({ d, slug }: { d: any; slug: string }) {
   const unread = !!d.unread;
@@ -181,15 +184,107 @@ function FilaCard({ d, slug }: { d: any; slug: string }) {
   );
 }
 
+/**
+ * Vazio da aba Fila SEMPRE contextualizado pra quem chega pela primeira vez:
+ * - com filtro/busca ativos → mensagem de filtro (comportamento antigo);
+ * - WhatsApp não conectado → onboarding com CTA pra Configurações (owner/admin);
+ *   demais papéis veem aviso neutro ("assim que um gestor conectar...");
+ * - conectado e vazio → "aguardando a primeira mensagem" (conforto, não dúvida).
+ */
+function FilaEmptyState({
+  hasFilters,
+  waStatus,
+  canConfigure,
+  slug,
+}: {
+  hasFilters: boolean;
+  waStatus: string;
+  canConfigure: boolean;
+  slug: string;
+}) {
+  if (hasFilters) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+        <div className="relative">
+          <div className="absolute inset-0 -z-10 translate-y-2 scale-90 rounded-3xl bg-primary/10 blur-2xl" />
+          <div className="grid h-16 w-16 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
+            <Inbox className="h-7 w-7 text-primary" strokeWidth={1.6} />
+          </div>
+        </div>
+        <div>
+          <div className="text-xs font-semibold text-foreground">Nenhuma demanda encontrada</div>
+          <p className="mt-1 text-[11px] text-muted-foreground">Tente alterar os filtros de busca.</p>
+        </div>
+      </div>
+    );
+  }
+  if (waStatus !== "connected") {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+        <div className="relative">
+          <div className="absolute inset-0 -z-10 translate-y-2 scale-90 rounded-3xl bg-primary/10 blur-2xl" />
+          <div className="grid h-16 w-16 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
+            <Smartphone className="h-7 w-7 text-primary" strokeWidth={1.6} />
+          </div>
+        </div>
+        <div>
+          <div className="text-xs font-semibold text-foreground">Sua fila está pronta pra começar</div>
+          <p className="mx-auto mt-1 max-w-[240px] text-[11px] text-muted-foreground">
+            {canConfigure
+              ? "Conecte o WhatsApp da empresa pra receber os primeiros chamados aqui na fila."
+              : "Assim que um gestor conectar o WhatsApp da empresa, os chamados aparecem aqui."}
+          </p>
+        </div>
+        {canConfigure && (
+          <Link
+            to="/app/o/$slug/configuracoes"
+            params={{ slug }}
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-sm transition hover:brightness-110"
+          >
+            <QrCode className="h-3.5 w-3.5" />
+            Conectar WhatsApp
+          </Link>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+      <div className="relative">
+        <div className="absolute inset-0 -z-10 translate-y-2 scale-90 rounded-3xl bg-[var(--pill-green-bg)] blur-2xl" />
+        <div className="grid h-16 w-16 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
+          <MessageCircle className="h-7 w-7 text-[var(--pill-green-fg)]" strokeWidth={1.6} />
+        </div>
+      </div>
+      <div>
+        <div className="text-xs font-semibold text-foreground">Tudo certo por aqui</div>
+        <p className="mx-auto mt-1 max-w-[240px] text-[11px] text-muted-foreground">
+          O WhatsApp está conectado. Assim que um cliente mandar a primeira mensagem, a demanda aparece nesta fila.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function FilaPage() {
   const { slug } = useParams({ from: "/_authenticated/app/o/$slug/fila" });
   const location = useLocation();
   const orgFn = useServerFn(getOrgBySlug);
   const { data: org } = useQuery({ queryKey: ["org", slug], queryFn: () => orgFn({ data: { slug } }) });
+
+  // Status da conexão WhatsApp pra mensagem de vazio correta (onboarding vs. espera).
+  const connFn = useServerFn(getWhatsappConnection);
+  const { data: conn } = useQuery({
+    queryKey: ["whatsapp-connection", org?.id],
+    enabled: !!org?.id,
+    retry: false,
+    queryFn: () => connFn({ data: { orgId: org!.id } }),
+  });
+  const waStatus = conn?.status ?? "disconnected";
+
   const hasSelection = location.pathname.includes("/fila/demandas/");
   const [collapsed, setCollapsed] = useState(false);
   const orgSidebar = useOrgSidebar();
-
   // Estado 2 (foco no atendimento): abrir uma demanda recolhe a sidebar
   // principal (ícones) e a fila junto. Estado 3 (retorno): fechar restaura as duas.
   useEffect(() => {
@@ -201,6 +296,7 @@ function FilaPage() {
   const listFn = useServerFn(listDemandas);
   const markAllFn = useServerFn(markAllDemandasRead);
   const qc = useQueryClient();
+
   // Abas: "fila" = tudo em ordem de atividade; "atrasadas" = só SLA estourado.
   const [tab, setTab] = useState<"fila" | "atrasadas">("fila");
   const [state, setState] = useState<string | undefined>();
@@ -222,7 +318,7 @@ function FilaPage() {
     setLimit(PAGE_SIZE);
   }, [tab, state, debouncedSearch, org?.id]);
 
-  const { data: result, isFetching } = useQuery({
+  const { data: result, isFetching, isLoading } = useQuery({
     queryKey: ["demandas", org?.id, tab, state, debouncedSearch, limit],
     queryFn: () =>
       listFn({
@@ -253,7 +349,11 @@ function FilaPage() {
   const scopeTotal = result?.scopeTotal ?? 0;     // badge da aba Fila (escopo)
   const overdueTotal = result?.overdueTotal ?? 0; // badge da aba Atrasadas
   const hasMore = data.length < total;
-  const loadingFirstPage = isFetching && data.length === 0;
+
+  // Skeleton SÓ no primeiro load (isLoading = ainda nunca houve resposta).
+  // Refetch em background (poll/invalidação) não pisca mais a lista vazia —
+  // era isso que fazia a fila "recarregar" visualmente a cada ~30s em org vazia.
+  const loadingFirstPage = isLoading;
 
   return (
     <FilaSidebarContext.Provider value={{ collapsed, setCollapsed }}>
@@ -269,7 +369,6 @@ function FilaPage() {
             <PanelLeftOpen className="h-4 w-4" />
           </button>
         )}
-
         {/* Coluna da Fila — largura ampliada pra caber abas + toolbar sem apertar */}
         {!collapsed && (
           <div
@@ -314,7 +413,6 @@ function FilaPage() {
                       </span>
                     </button>
                   </div>
-
                   {/* Toolbar de ações + ação primária */}
                   <div className="flex items-center gap-1 shrink-0">
                     <div className="flex items-center gap-0.5 rounded-xl bg-muted/70 p-1">
@@ -391,7 +489,7 @@ function FilaPage() {
                             <MoreHorizontal className="h-3.5 w-3.5" />
                           </button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-56 rounded-xl">
+                        <DropdownMenuContent align="end" className="w-196 rounded-xl">
                           <DropdownMenuItem
                             onClick={() => markAll.mutate()}
                             disabled={markAll.isPending || !org}
@@ -415,27 +513,18 @@ function FilaPage() {
                   </div>
                 </div>
               </div>
-
               {/* Lista Rolável de Demandas */}
               <div className="flex-1 overflow-y-auto scrollbar-thin p-2.5 pt-1 space-y-2">
                 {loadingFirstPage && <ListSkeleton rows={6} />}
-
-                {/* Vazio da aba Fila */}
+                {/* Vazio da aba Fila — contextualizado pra primeira viagem */}
                 {!loadingFirstPage && tab === "fila" && data.length === 0 && (
-                  <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
-                    <div className="relative">
-                      <div className="absolute inset-0 -z-10 translate-y-2 scale-90 rounded-3xl bg-primary/10 blur-2xl" />
-                      <div className="grid h-16 w-16 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
-                        <Inbox className="h-7 w-7 text-primary" strokeWidth={1.6} />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold text-foreground">Nenhuma demanda encontrada</div>
-                      <p className="mt-1 text-[11px] text-muted-foreground">Tente alterar os filtros de busca.</p>
-                    </div>
-                  </div>
+                  <FilaEmptyState
+                    hasFilters={!!state || !!debouncedSearch}
+                    waStatus={waStatus}
+                    canConfigure={org?.role === "owner" || org?.role === "admin"}
+                    slug={slug}
+                  />
                 )}
-
                 {/* Vazio da aba Atrasadas */}
                 {!loadingFirstPage && tab === "atrasadas" && data.length === 0 && (
                   <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
@@ -455,12 +544,10 @@ function FilaPage() {
                     </div>
                   </div>
                 )}
-
                 {/* Cards da aba atual — ordem de atividade vinda do servidor */}
                 {data.map((d: any) => (
                   <FilaCard key={d.id} d={d} slug={slug} />
                 ))}
-
                 {hasMore && !loadingFirstPage && (
                   <div className="py-2 flex justify-center">
                     <button
@@ -476,7 +563,6 @@ function FilaPage() {
             </div>
           </div>
         )}
-
         {/* Área Principal de Detalhes da Demanda */}
         <div className={`${hasSelection ? "block" : "hidden sm:block"} flex-1 min-w-0 bg-card/20 overflow-hidden scrollbar-thin`}>
           {hasSelection ? (
@@ -500,7 +586,6 @@ function FilaPage() {
             </div>
           )}
         </div>
-
         {showNew && org && <NewDemandaModal orgId={org.id} onClose={() => setShowNew(false)} />}
       </div>
     </FilaSidebarContext.Provider>
@@ -516,7 +601,6 @@ function NewDemandaModal({ orgId, onClose }: { orgId: string; onClose: () => voi
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [dueAt, setDueAt] = useState("");
-
   const m = useMutation({
     mutationFn: () =>
       create({
@@ -537,7 +621,6 @@ function NewDemandaModal({ orgId, onClose }: { orgId: string; onClose: () => voi
     },
     onError: (e) => toast.error(friendlyError(e)),
   });
-
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div
