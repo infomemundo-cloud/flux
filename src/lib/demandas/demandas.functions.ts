@@ -24,6 +24,10 @@ export const listDemandas = createServerFn({ method: "GET" })
         state: StateEnum.optional(),
         assignedToMe: z.boolean().optional(),
         assigneeId: z.string().uuid().nullable().optional(),
+        // Escopo das abas da Fila (padrão Intercom): all = visão do papel,
+        // mine = só minhas, orphan = só sem responsável. Operador no "all"
+        // é forçado server-side pra mine+orphan (regra de produto, sem bypass).
+        scope: z.enum(["all", "mine", "orphan"]).optional(),
         search: z.string().optional(),
         // Aba "Atrasadas": filtra só demandas com SLA estourado ANTES de
         // ordenar/paginar. A aba "Fila" lista tudo em ordem de atividade
@@ -36,7 +40,12 @@ export const listDemandas = createServerFn({ method: "GET" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertMember(context.supabase, data.orgId, context.userId);
+    const role = await assertMember(context.supabase, data.orgId, context.userId);
+    // Escopo efetivo: operador na aba Fila (all) vê só SUAS + ÓRFÃS.
+    const effectiveScope =
+      role === "operador" && (data.scope ?? "all") === "all"
+        ? "mine_or_orphan"
+        : (data.scope ?? "all");
     // 1. Monta a query com os filtros, mas SEM o .range() ainda
     let q = context.supabase
       .from("demandas")
@@ -49,19 +58,50 @@ export const listDemandas = createServerFn({ method: "GET" })
     if (data.assignedToMe) q = q.eq("assignee_id", context.userId);
     if (data.assigneeId === null) q = q.is("assignee_id", null);
     else if (typeof data.assigneeId === "string") q = q.eq("assignee_id", data.assigneeId);
+    if (effectiveScope === "mine") q = q.eq("assignee_id", context.userId);
+    else if (effectiveScope === "orphan") q = q.is("assignee_id", null);
+    else if (effectiveScope === "mine_or_orphan")
+      q = q.or(`assignee_id.eq.${context.userId},assignee_id.is.null`);
     if (data.search) q = q.ilike("title", `%${data.search}%`);
-    const { data: rows, count, error } = await q;
+    const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
     const now = Date.now();
-    // 2. Contagens do escopo (independentes da paginação e da aba):
-    //    scopeTotal = tudo que passou nos filtros (badge da aba Fila);
-    //    overdueTotal = SLA estourado dentro desse mesmo escopo (badge da
-    //    aba Atrasadas — mesma regra do card, então badge e lista batem).
+    // 2. Contagens das 4 abas via head counts (independentes da paginação e
+    // do escopo atual): os badges nunca mentem ao trocar de aba.
     const isOverdue = (r: any) =>
       !!r.due_at && new Date(r.due_at).getTime() < now && r.state !== "concluido";
-    const scopeTotal = count ?? 0;
+    const baseCount = () => {
+      let c = context.supabase
+        .from("demandas")
+        .select("id", { count: "exact", head: true })
+        .eq("org_id", data.orgId);
+      if (data.state) c = c.eq("state", data.state);
+      if (data.search) c = c.ilike("title", `%${data.search}%`);
+      return c;
+    };
+    // Tipado pelo retorno de baseCount: preserva a cadeia do builder e o
+    // contexto de tipo dos .then() (sem isso, noImplicitAny acusa TS7006).
+    const withRoleScope = (c: ReturnType<typeof baseCount>) =>
+      role === "operador"
+        ? c.or(`assignee_id.eq.${context.userId},assignee_id.is.null`)
+        : c;
+    const nowIso = new Date(now).toISOString();
+    const [filaCount, mineCount, orphanCount, overdueCount] = await Promise.all([
+      withRoleScope(baseCount()).then((r) => r.count ?? 0),
+      baseCount().eq("assignee_id", context.userId).then((r) => r.count ?? 0),
+      baseCount().is("assignee_id", null).then((r) => r.count ?? 0),
+      withRoleScope(baseCount())
+        .lt("due_at", nowIso)
+        .neq("state", "concluido")
+        .then((r) => r.count ?? 0),
+    ]);
+    const counts = {
+      fila: filaCount,
+      mine: mineCount,
+      orphan: orphanCount,
+      overdue: overdueCount,
+    };
     const overdueAll = (rows ?? []).filter(isOverdue);
-    const overdueTotal = overdueAll.length;
     // 3. Conjunto de trabalho da aba atual + ordenação por ÚLTIMA ATIVIDADE
     //    = max(last_message_at, updated_at) — mesma chave que o card exibe
     //    (activityIso), então posição e data visível nunca discordam.
@@ -130,11 +170,10 @@ export const listDemandas = createServerFn({ method: "GET" })
     return {
       rows: paginatedRows,
       assignees,
-      // total = tamanho da ABA atual (paginação); scopeTotal/overdueTotal =
-      // badges das abas, sempre do escopo completo filtrado.
-      total: data.overdueOnly ? overdueTotal : scopeTotal,
-      scopeTotal,
-      overdueTotal,
+      // total = tamanho da ABA atual (paginação); counts = badges das 4
+      // abas (fila/mine/orphan/overdue), sempre do escopo completo filtrado.
+      total: working.length,
+      counts,
       offset: data.offset,
       limit: data.limit,
     };

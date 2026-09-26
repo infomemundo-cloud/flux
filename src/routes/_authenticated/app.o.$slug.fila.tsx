@@ -22,6 +22,9 @@ import {
   CheckCircle2,
   QrCode,
   Smartphone,
+  UserRound,
+  CircleDashed,
+  AlertTriangle,
 } from "lucide-react";
 import { formatRelative } from "@/components/demandas-ui";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -112,10 +115,10 @@ function leftBorderColor(d: any): string {
 /**
  * Card da fila — hierarquia por "contraste passivo" (estilo e-mail moderno),
  * válida nos 3 temas SEM hardcoded de paleta:
- * NÃO LIDO: superfície elevada (bg-card; no dark sobe pra bg-popover) +
+ * - NÃO LIDO: superfície elevada (bg-card; no dark sobe pra bg-popover) +
  *   ring visível + sombra profunda no dark + nome bold + prévia medium +
  *   dot primário no avatar.
- * LIDO: superfície afundada (bg-muted/40; no dark black/20) + ring
+ * - LIDO: superfície afundada (bg-muted/40; no dark black/20) + ring
  *   transparente + sem sombra + pesos normais + sem dot.
  */
 function FilaCard({ d, slug }: { d: any; slug: string }) {
@@ -186,10 +189,10 @@ function FilaCard({ d, slug }: { d: any; slug: string }) {
 
 /**
  * Vazio da aba Fila SEMPRE contextualizado pra quem chega pela primeira vez:
- * - com filtro/busca ativos → mensagem de filtro (comportamento antigo);
- * - WhatsApp não conectado → onboarding com CTA pra Configurações (owner/admin);
- *   demais papéis veem aviso neutro ("assim que um gestor conectar...");
- * - conectado e vazio → "aguardando a primeira mensagem" (conforto, não dúvida).
+ * com filtro/busca ativos → mensagem de filtro (comportamento antigo);
+ * WhatsApp não conectado → onboarding com CTA pra Configurações (owner/admin);
+ * demais papéis veem aviso neutro ("assim que um gestor conectar...");
+ * conectado e vazio → "aguardando a primeira mensagem" (conforto, não dúvida).
  */
 function FilaEmptyState({
   hasFilters,
@@ -266,6 +269,9 @@ function FilaEmptyState({
   );
 }
 
+/** Abas da fila: escopo (Fila/Minhas/Órfãs) + corte de SLA (Atrasadas). */
+type FilaTab = "fila" | "minhas" | "orfas" | "atrasadas";
+
 function FilaPage() {
   const { slug } = useParams({ from: "/_authenticated/app/o/$slug/fila" });
   const location = useLocation();
@@ -285,6 +291,7 @@ function FilaPage() {
   const hasSelection = location.pathname.includes("/fila/demandas/");
   const [collapsed, setCollapsed] = useState(false);
   const orgSidebar = useOrgSidebar();
+
   // Estado 2 (foco no atendimento): abrir uma demanda recolhe a sidebar
   // principal (ícones) e a fila junto. Estado 3 (retorno): fechar restaura as duas.
   useEffect(() => {
@@ -297,11 +304,13 @@ function FilaPage() {
   const markAllFn = useServerFn(markAllDemandasRead);
   const qc = useQueryClient();
 
-  // Abas: "fila" = tudo em ordem de atividade; "atrasadas" = só SLA estourado.
-  const [tab, setTab] = useState<"fila" | "atrasadas">("fila");
+  // Abas: "fila" = escopo do papel (gestor: tudo; operador: suas+órfãs);
+  // "minhas"/"orfas" = recortes de responsável; "atrasadas" = SLA estourado.
+  const [tab, setTab] = useState<FilaTab>("fila");
   const [state, setState] = useState<string | undefined>();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+
   // Paginação por LIMIT crescente (não por páginas cacheadas): cada clique em
   // "Mais demandas" refaz UMA query com limit = carregados + 20, devolvendo a
   // lista inteira de um único snapshot do servidor.
@@ -328,6 +337,7 @@ function FilaPage() {
           search: debouncedSearch || undefined,
           offset: 0,
           limit,
+          scope: tab === "minhas" ? "mine" : tab === "orfas" ? "orphan" : "all",
           overdueOnly: tab === "atrasadas",
         },
       }),
@@ -345,9 +355,8 @@ function FilaPage() {
 
   // Ordem 100% autoritativa do servidor (atividade recente) — um snapshot só.
   const data = result?.rows ?? [];
-  const total = result?.total ?? 0;               // tamanho da aba atual (paginação)
-  const scopeTotal = result?.scopeTotal ?? 0;     // badge da aba Fila (escopo)
-  const overdueTotal = result?.overdueTotal ?? 0; // badge da aba Atrasadas
+  const total = result?.total ?? 0; // tamanho da aba atual (paginação)
+  const counts = result?.counts ?? { fila: 0, mine: 0, orphan: 0, overdue: 0 };
   const hasMore = data.length < total;
 
   // Skeleton SÓ no primeiro load (isLoading = ainda nunca houve resposta).
@@ -369,48 +378,99 @@ function FilaPage() {
             <PanelLeftOpen className="h-4 w-4" />
           </button>
         )}
-        {/* Coluna da Fila — largura ampliada pra caber abas + toolbar sem apertar */}
+        {/* Coluna da Fila — lg ampliada pra caber as 4 abas + toolbar numa
+            linha só (sem segunda linha); sm mantém 330 e a strip rola. */}
         {!collapsed && (
           <div
-            className={`${hasSelection ? "hidden sm:flex" : "flex"} flex-col w-full sm:shrink-0 sm:w-[330px] lg:w-[360px] border-r border-border/50 bg-background`}
+            className={`${hasSelection ? "hidden sm:flex" : "flex"} flex-col w-full sm:shrink-0 sm:w-[330px] lg:w-[400px] border-r border-border/50 bg-background`}
           >
             <div className="flex flex-col h-full">
               {/* Header: abas com contagens + toolbar de ações + nova demanda */}
               <div className="p-2.5 pb-2 shrink-0">
                 <div className="flex items-center justify-between gap-1.5">
-                  {/* Abas Fila / Atrasadas */}
-                  <div className="flex items-center gap-0.5 rounded-xl bg-muted/70 p-1 min-w-0">
+                  {/* Abas Fila / Minhas / Órfãs / Atrasadas — strip única,
+                      scroll horizontal só quando não cabe (mobile). */}
+                  <div className="flex items-center gap-0.5 rounded-xl bg-muted/70 p-1 min-w-0 overflow-x-auto scrollbar-thin">
                     <button
                       onClick={() => setTab("fila")}
-                      className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                      className={`flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-semibold transition-all ${
                         tab === "fila"
                           ? "bg-card text-foreground shadow-[var(--shadow-card)]"
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
                       Fila
-                      <span className="rounded-full bg-primary/10 px-1.5 py-px text-[10px] font-bold tabular-nums text-primary">
-                        {scopeTotal}
+                      <span className="rounded-full bg-primary/10 px-1 py-px text-[10px] font-bold tabular-nums text-primary">
+                        {counts.fila}
                       </span>
                     </button>
                     <button
+                      onClick={() => setTab("minhas")}
+                      title="Minhas demandas"
+                      aria-label="Minhas demandas"
+                      className={`flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-semibold transition-all ${
+                        tab === "minhas"
+                          ? "bg-card text-foreground shadow-[var(--shadow-card)]"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <UserRound className="h-3.5 w-3.5" />
+                      {counts.mine > 0 && (
+                        <span
+                          className={`rounded-full px-1 py-px text-[10px] font-bold tabular-nums ${
+                            tab === "minhas"
+                              ? "bg-primary/10 text-primary"
+                              : "bg-secondary text-foreground"
+                          }`}
+                        >
+                          {counts.mine}
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => setTab("orfas")}
+                      title="Sem responsável (órfãs)"
+                      aria-label="Sem responsável (órfãs)"
+                      className={`flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-semibold transition-all ${
+                        tab === "orfas"
+                          ? "bg-card text-foreground shadow-[var(--shadow-card)]"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <CircleDashed className="h-3.5 w-3.5" />
+                      {counts.orphan > 0 && (
+                        <span
+                          className={`rounded-full px-1 py-px text-[10px] font-bold tabular-nums ${
+                            tab === "orfas"
+                              ? "bg-primary/10 text-primary"
+                              : "bg-secondary text-foreground"
+                          }`}
+                        >
+                          {counts.orphan}
+                        </span>
+                      )}
+                    </button>
+                    <button
                       onClick={() => setTab("atrasadas")}
-                      className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                      title="Atrasadas (SLA estourado)"
+                      aria-label="Atrasadas (SLA estourado)"
+                      className={`flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-semibold transition-all ${
                         tab === "atrasadas"
                           ? "bg-card text-foreground shadow-[var(--shadow-card)]"
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
-                      Atrasadas
-                      <span
-                        className={`rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums ${
-                          overdueTotal > 0
-                            ? "bg-[var(--pill-red-bg)] text-[var(--pill-red-fg)]"
-                            : "bg-secondary text-muted-foreground"
+                      <AlertTriangle
+                        className={`h-3.5 w-3.5 ${
+                          counts.overdue > 0 ? "text-[var(--pill-red-fg)]" : ""
                         }`}
-                      >
-                        {overdueTotal}
-                      </span>
+                        strokeWidth={2.2}
+                      />
+                      {counts.overdue > 0 && (
+                        <span className="rounded-full bg-[var(--pill-red-bg)] px-1 py-px text-[10px] font-bold tabular-nums text-[var(--pill-red-fg)]">
+                          {counts.overdue}
+                        </span>
+                      )}
                     </button>
                   </div>
                   {/* Toolbar de ações + ação primária */}
@@ -506,9 +566,9 @@ function FilaPage() {
                       onClick={() => setShowNew(true)}
                       title="Nova demanda"
                       aria-label="Nova demanda"
-                      className="grid place-items-center h-8 w-8 rounded-lg bg-primary text-primary-foreground shadow-sm transition hover:brightness-110 hover:shadow-md active:scale-[0.96]"
+                      className="grid place-items-center h-7 w-7 rounded-lg bg-primary text-primary-foreground shadow-sm transition hover:brightness-110 hover:shadow-md active:scale-[0.96]"
                     >
-                      <Plus className="h-4 w-4" strokeWidth={2.5} />
+                      <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
                     </button>
                   </div>
                 </div>
@@ -524,6 +584,40 @@ function FilaPage() {
                     canConfigure={org?.role === "owner" || org?.role === "admin"}
                     slug={slug}
                   />
+                )}
+                {/* Vazio da aba Minhas */}
+                {!loadingFirstPage && tab === "minhas" && data.length === 0 && (
+                  <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+                    <div className="relative">
+                      <div className="absolute inset-0 -z-10 translate-y-2 scale-90 rounded-3xl bg-primary/10 blur-2xl" />
+                      <div className="grid h-16 w-16 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
+                        <UserRound className="h-7 w-7 text-primary" strokeWidth={1.6} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-foreground">Nenhuma demanda sua</div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Quando uma demanda for atribuída a você — ou você puxar uma da aba órfãs —, ela aparece aqui.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {/* Vazio da aba Órfãs */}
+                {!loadingFirstPage && tab === "orfas" && data.length === 0 && (
+                  <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+                    <div className="relative">
+                      <div className="absolute inset-0 -z-10 translate-y-2 scale-90 rounded-3xl bg-[var(--pill-green-bg)] blur-2xl" />
+                      <div className="grid h-16 w-16 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
+                        <CheckCircle2 className="h-7 w-7 text-[var(--pill-green-fg)]" strokeWidth={1.6} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-foreground">Nenhuma demanda órfã</div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Toda demanda aberta tem um responsável. Bom trabalho de distribuição!
+                      </p>
+                    </div>
+                  </div>
                 )}
                 {/* Vazio da aba Atrasadas */}
                 {!loadingFirstPage && tab === "atrasadas" && data.length === 0 && (

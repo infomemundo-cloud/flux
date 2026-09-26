@@ -104,22 +104,12 @@ export async function resolveAutoAssignment(
     return null;
   }
 
-  // 9) Evento de sistema — org_id OBRIGATÓRIO (tabela multi-tenant;
-  //    ingest e addComment sempre mandam; sem ele o insert falhava e o
-  //    histórico nunca mostrava a atribuição automática).
-  const { error: eventError } = await admin.from("demanda_events").insert({
-    org_id: orgId,
-    demanda_id: demandaId,
-    kind: "assigned",
-    actor_id: null,
-    to_value: selectedUserId,
-    metadata: { auto: true },
-  });
-
-  if (eventError) {
-    console.error(`[assignment] Erro ao inserir evento de atribuição: ${eventError.message}`);
-  }
-
+  // 9) Evento de histórico: NÃO inserimos aqui. O trigger
+  //    log_demanda_changes já registra a mudança de assignee_id (mesma
+  //    fonte das atribuições manuais — fonte única). Um insert extra
+  //    gerava linha DUPLICADA "Atribuída a X" no histórico. A assinatura
+  //    de atribuição automática é o actor_id NULL do evento do trigger
+  //    (service role não tem auth.uid()); manual carrega o actor_id.
   return selectedUserId;
 }
 
