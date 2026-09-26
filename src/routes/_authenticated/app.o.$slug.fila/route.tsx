@@ -9,30 +9,21 @@ import { getWhatsappConnection } from "@/lib/whatsapp.functions";
 import { toast } from "sonner";
 import { friendlyError } from "@/lib/friendly-error";
 import {
-  Plus,
-  Search,
   X,
   PanelLeftOpen,
   Inbox,
-  Filter,
   MessageCircle,
   Users,
-  MoreHorizontal,
-  CheckCheck,
-  CheckCircle2,
   QrCode,
   Smartphone,
-  UserRound,
-  CircleDashed,
-  AlertTriangle,
+  CheckCircle2,
 } from "lucide-react";
 import { formatRelative } from "@/components/demandas-ui";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FilaSidebarContext } from "@/lib/demandas/fila-sidebar-context";
 import { useOrgSidebar } from "@/lib/org-sidebar-context";
 import { resolveContactName } from "@/lib/demandas/resolve-contact-name";
 import { ContactAvatar } from "@/components/contact-avatar";
+import { FilaHeaderToolbar, type FilaTab } from "./-components/fila-header-toolbar";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/fila")({
   head: () => ({ meta: [{ title: "Fila — Fluxo" }] }),
@@ -40,15 +31,6 @@ export const Route = createFileRoute("/_authenticated/app/o/$slug/fila")({
 });
 
 const PAGE_SIZE = 20;
-
-const STATES = [
-  { v: undefined, label: "Todas" },
-  { v: "novo", label: "Novo" },
-  { v: "em_analise", label: "Em análise" },
-  { v: "aguardando_cliente", label: "Aguardando cliente" },
-  { v: "aguardando_revisao_humana", label: "Aguardando revisão" },
-  { v: "concluido", label: "Concluído" },
-] as const;
 
 function isOverdueDemanda(d: any) {
   return (
@@ -69,24 +51,6 @@ function activityIso(d: any): string {
   const lm = typeof d.last_message_at === "string" ? d.last_message_at : "";
   const up = typeof d.updated_at === "string" ? d.updated_at : "";
   return lm > up ? lm : up;
-}
-
-/** Cor do dot de estado no menu de filtro (mesmos tokens da borda do card). */
-function stateDotColor(v: string | undefined): string {
-  switch (v) {
-    case "novo":
-      return "bg-[var(--state-novo)]";
-    case "em_analise":
-      return "bg-[var(--state-analise)]";
-    case "aguardando_cliente":
-      return "bg-[var(--state-aguardando)]";
-    case "aguardando_revisao_humana":
-      return "bg-[var(--pill-violet-fg)]";
-    case "concluido":
-      return "bg-[var(--state-resolvido)]";
-    default:
-      return "bg-muted-foreground/30";
-  }
 }
 
 /**
@@ -159,7 +123,7 @@ function FilaCard({ d, slug }: { d: any; slug: string }) {
           </span>
           {/* Canal + horário: sutis, sem roubar o protagonismo da prévia */}
           <span
-            className={`flex shrink-0 items-center gap-1 text-[10px] tabular-nums ${
+            className={`flex shrink-0 items-center gap-0.5 text-[10px] tabular-nums ${
               unread ? "text-muted-foreground" : "text-muted-foreground/70"
             }`}
           >
@@ -269,9 +233,6 @@ function FilaEmptyState({
   );
 }
 
-/** Abas da fila: escopo (Fila/Minhas/Órfãs) + corte de SLA (Atrasadas). */
-type FilaTab = "fila" | "minhas" | "orfas" | "atrasadas";
-
 function FilaPage() {
   const { slug } = useParams({ from: "/_authenticated/app/o/$slug/fila" });
   const location = useLocation();
@@ -378,200 +339,28 @@ function FilaPage() {
             <PanelLeftOpen className="h-4 w-4" />
           </button>
         )}
-        {/* Coluna da Fila — lg ampliada pra caber as 4 abas + toolbar numa
-            linha só (sem segunda linha); sm mantém 330 e a strip rola. */}
+        {/* Coluna da Fila — 360px no lg (toolbar extraída + cluster compacto
+            cabem em linha única); sm mantém 330 e a strip rola se preciso. */}
         {!collapsed && (
           <div
-            className={`${hasSelection ? "hidden sm:flex" : "flex"} flex-col w-full sm:shrink-0 sm:w-[330px] lg:w-[400px] border-r border-border/50 bg-background`}
+            className={`${hasSelection ? "hidden sm:flex" : "flex"} flex-col w-full sm:shrink-0 sm:w-[330px] lg:w-[360px] border-r border-border/50 bg-background`}
           >
             <div className="flex flex-col h-full">
-              {/* Header: abas com contagens + toolbar de ações + nova demanda */}
+              {/* Header: barra de ferramentas isolada (abas + ações) */}
               <div className="p-2.5 pb-2 shrink-0">
-                <div className="flex items-center justify-between gap-1.5">
-                  {/* Abas Fila / Minhas / Órfãs / Atrasadas — strip única,
-                      scroll horizontal só quando não cabe (mobile). */}
-                  <div className="flex items-center gap-0.5 rounded-xl bg-muted/70 p-1 min-w-0 overflow-x-auto scrollbar-thin">
-                    <button
-                      onClick={() => setTab("fila")}
-                      className={`flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-semibold transition-all ${
-                        tab === "fila"
-                          ? "bg-card text-foreground shadow-[var(--shadow-card)]"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      Fila
-                      <span className="rounded-full bg-primary/10 px-1 py-px text-[10px] font-bold tabular-nums text-primary">
-                        {counts.fila}
-                      </span>
-                    </button>
-                    <button
-                      onClick={() => setTab("minhas")}
-                      title="Minhas demandas"
-                      aria-label="Minhas demandas"
-                      className={`flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-semibold transition-all ${
-                        tab === "minhas"
-                          ? "bg-card text-foreground shadow-[var(--shadow-card)]"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      <UserRound className="h-3.5 w-3.5" />
-                      {counts.mine > 0 && (
-                        <span
-                          className={`rounded-full px-1 py-px text-[10px] font-bold tabular-nums ${
-                            tab === "minhas"
-                              ? "bg-primary/10 text-primary"
-                              : "bg-secondary text-foreground"
-                          }`}
-                        >
-                          {counts.mine}
-                        </span>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => setTab("orfas")}
-                      title="Sem responsável (órfãs)"
-                      aria-label="Sem responsável (órfãs)"
-                      className={`flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-semibold transition-all ${
-                        tab === "orfas"
-                          ? "bg-card text-foreground shadow-[var(--shadow-card)]"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      <CircleDashed className="h-3.5 w-3.5" />
-                      {counts.orphan > 0 && (
-                        <span
-                          className={`rounded-full px-1 py-px text-[10px] font-bold tabular-nums ${
-                            tab === "orfas"
-                              ? "bg-primary/10 text-primary"
-                              : "bg-secondary text-foreground"
-                          }`}
-                        >
-                          {counts.orphan}
-                        </span>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => setTab("atrasadas")}
-                      title="Atrasadas (SLA estourado)"
-                      aria-label="Atrasadas (SLA estourado)"
-                      className={`flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-semibold transition-all ${
-                        tab === "atrasadas"
-                          ? "bg-card text-foreground shadow-[var(--shadow-card)]"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      <AlertTriangle
-                        className={`h-3.5 w-3.5 ${
-                          counts.overdue > 0 ? "text-[var(--pill-red-fg)]" : ""
-                        }`}
-                        strokeWidth={2.2}
-                      />
-                      {counts.overdue > 0 && (
-                        <span className="rounded-full bg-[var(--pill-red-bg)] px-1 py-px text-[10px] font-bold tabular-nums text-[var(--pill-red-fg)]">
-                          {counts.overdue}
-                        </span>
-                      )}
-                    </button>
-                  </div>
-                  {/* Toolbar de ações + ação primária */}
-                  <div className="flex items-center gap-1 shrink-0">
-                    <div className="flex items-center gap-0.5 rounded-xl bg-muted/70 p-1">
-                      {/* Busca — ícone abre um popover com o campo, some quando fecha */}
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <button
-                            title="Buscar"
-                            aria-label="Buscar"
-                            className="relative grid place-items-center h-7 w-7 rounded-lg text-muted-foreground transition hover:bg-card hover:text-foreground hover:shadow-sm"
-                          >
-                            <Search className="h-3.5 w-3.5" />
-                            {search && (
-                              <span className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-primary" />
-                            )}
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent align="end" className="w-64 p-2">
-                          <div className="relative">
-                            <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                            <input
-                              autoFocus
-                              value={search}
-                              onChange={(e) => setSearch(e.target.value)}
-                              placeholder="Buscar demanda ou contato..."
-                              className="h-9 pl-8 pr-7 rounded-xl border border-border/60 bg-background text-xs w-full outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
-                            />
-                            {search && (
-                              <button
-                                onClick={() => setSearch("")}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                            )}
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-                      {/* Filtro de status — ícone abre menu, fecha sozinho ao escolher */}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            title="Filtrar por status"
-                            aria-label="Filtrar por status"
-                            className="relative grid place-items-center h-7 w-7 rounded-lg text-muted-foreground transition hover:bg-card hover:text-foreground hover:shadow-sm"
-                          >
-                            <Filter className="h-3.5 w-3.5" />
-                            {state && (
-                              <span className={`absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full ${stateDotColor(state)}`} />
-                            )}
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-52 rounded-xl">
-                          {STATES.map((s) => (
-                            <DropdownMenuItem
-                              key={s.label}
-                              onClick={() => setState(s.v)}
-                              className={`gap-2 text-xs cursor-pointer rounded-lg ${state === s.v ? "font-semibold text-primary" : ""}`}
-                            >
-                              <span className={`h-2 w-2 rounded-full shrink-0 ${stateDotColor(s.v)}`} />
-                              {s.label}
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      {/* Mais opções — ações secundárias (a primária é o + ao lado) */}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            title="Mais opções"
-                            aria-label="Mais opções"
-                            className="grid place-items-center h-7 w-7 rounded-lg text-muted-foreground transition hover:bg-card hover:text-foreground hover:shadow-sm"
-                          >
-                            <MoreHorizontal className="h-3.5 w-3.5" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-196 rounded-xl">
-                          <DropdownMenuItem
-                            onClick={() => markAll.mutate()}
-                            disabled={markAll.isPending || !org}
-                            className="gap-2 text-xs cursor-pointer rounded-lg"
-                          >
-                            <CheckCheck className="h-3.5 w-3.5" />
-                            {markAll.isPending ? "Marcando..." : "Marcar todas como lidas"}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                    {/* Ação primária: nova demanda (visível, nunca escondida) */}
-                    <button
-                      onClick={() => setShowNew(true)}
-                      title="Nova demanda"
-                      aria-label="Nova demanda"
-                      className="grid place-items-center h-7 w-7 rounded-lg bg-primary text-primary-foreground shadow-sm transition hover:brightness-110 hover:shadow-md active:scale-[0.96]"
-                    >
-                      <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
-                    </button>
-                  </div>
-                </div>
+                <FilaHeaderToolbar
+                  tab={tab}
+                  onTabChange={setTab}
+                  counts={counts}
+                  search={search}
+                  onSearchChange={setSearch}
+                  state={state}
+                  onStateChange={setState}
+                  canMarkAll={!!org}
+                  markingAll={markAll.isPending}
+                  onMarkAllRead={() => markAll.mutate()}
+                  onNewDemanda={() => setShowNew(true)}
+                />
               </div>
               {/* Lista Rolável de Demandas */}
               <div className="flex-1 overflow-y-auto scrollbar-thin p-2.5 pt-1 space-y-2">
@@ -591,7 +380,7 @@ function FilaPage() {
                     <div className="relative">
                       <div className="absolute inset-0 -z-10 translate-y-2 scale-90 rounded-3xl bg-primary/10 blur-2xl" />
                       <div className="grid h-16 w-16 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
-                        <UserRound className="h-7 w-7 text-primary" strokeWidth={1.6} />
+                        <CheckCircle2 className="h-7 w-7 text-primary" strokeWidth={1.6} />
                       </div>
                     </div>
                     <div>
