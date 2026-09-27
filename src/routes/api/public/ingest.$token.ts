@@ -30,6 +30,7 @@ const MEDIA_KINDS = [
   "documentMessage",
   "stickerMessage",
 ] as const;
+
 type MediaKind = (typeof MEDIA_KINDS)[number];
 
 const MEDIA_LABEL: Record<MediaKind, string> = {
@@ -151,6 +152,7 @@ const BINARY_LOG_FIELDS = new Set([
   "thumbnailSha256",
   "thumbnailEncSha256",
 ]);
+
 function redactForLog(payload: unknown): string {
   return JSON.stringify(
     payload,
@@ -232,6 +234,7 @@ async function handleContactsUpdate(
       .eq("org_id", orgId)
       .eq("external_id", item.remoteJid)
       .maybeSingle();
+
     if (findErr) {
       console.error("[ingest] falha ao buscar contato para atualização", {
         org_id: orgId,
@@ -371,6 +374,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             status,
             headers: { "content-type": "application/json" },
           });
+
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const { data: tok, error: te } = await supabaseAdmin
           .from("webhook_tokens")
@@ -445,6 +449,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           ]
             .filter(Boolean)
             .join(",");
+
           // limit(1) em vez de maybeSingle: .or() casando 2+ contatos (dups por
           // external_id × phone) fazia o maybeSingle ERRAR e a demanda nascer
           // órfã (contact_id null). Pega o mais antigo deterministicamente.
@@ -456,6 +461,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             .order("created_at", { ascending: true })
             .limit(1);
           const found = foundRows?.[0] ?? null;
+
           if (findErr) {
             console.error("[ingest] falha ao buscar contato", {
               org_id: tok.org_id,
@@ -464,6 +470,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               error: findErr,
             });
           }
+
           const isGroup = !!b.whatsapp_jid?.endsWith("@g.us");
           if (b.contact) {
             const savedName = found?.name ?? null;
@@ -492,6 +499,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               if (subject) b.contact.name = subject;
             }
           }
+
           if (found) {
             contactId = found.id;
             const incomingNameIsGeneric =
@@ -549,29 +557,21 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           }
         }
 
-        // 2. Tenta encontrar uma demanda aberta para este contato
-        let demandaId: string | null = null;
-        let protocol: string | null = null;
-        if (contactId && b.reopen_if_open !== false) {
-          const { data: open } = await supabaseAdmin
-            .from("demandas")
-            .select("id")
-            .eq("org_id", tok.org_id)
-            .eq("contact_id", contactId)
-            .neq("state", "concluido")
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          if (open) demandaId = open.id;
-        }
-
-        // Preview da última mensagem (texto/legenda ou rótulo de mídia)
+        // 2+3. REUSA ABERTA OU CRIA — ATÔMICO via RPC ingest_upsert_demand
+        // (advisory lock por org+contato em UMA transação): dois webhooks
+        // paralelos do MESMO contato (rajada/encaminhada — caso Diana, 171ms
+        // de janela) não criam mais duas demandas; o segundo espera o lock
+        // e cai no ramo de reuso (created=false).
+        // Exceção: reopen_if_open=false é pedido EXPLÍCITO do integrador por
+        // demanda nova por mensagem — insert inline intencional, sem race bug.
         const preview = previewFor(b);
         const messageAt = new Date().toISOString();
+        const title = b.title ?? (b.message.trim() ? b.message.slice(0, 80) : mediaTitleFor(b));
+        let demandaId: string | null = null;
+        let protocol: string | null = null;
+        let createdNow = false;
 
-        // 3. Cria uma nova demanda se necessário
-        if (!demandaId) {
-          const title = b.title ?? (b.message.trim() ? b.message.slice(0, 80) : mediaTitleFor(b));
+        if (b.reopen_if_open === false) {
           const { data: dem, error: de } = await supabaseAdmin
             .from("demandas")
             .insert({
@@ -596,11 +596,46 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           }
           demandaId = dem.id;
           protocol = dem.protocol as string | null;
+          createdNow = true;
+        } else {
+          // Cast `as any` cirúrgico: os tipos gerados do Supabase
+          // (supabase gen types) inferem os parâmetros da RPC como `string`
+          // (não nullable), mas a função aceita NULL nos campos text.
+          // Gap conhecido do gerador — a função está correta no banco.
+          const { data: up, error: upErr } = await supabaseAdmin.rpc(
+            "ingest_upsert_demand",
+            {
+              p_org_id: tok.org_id,
+              p_contact_id: contactId,
+              p_title: title,
+              p_description: b.message || null,
+              p_priority: b.priority ?? "media",
+              p_channel_id: tok.channel_id,
+              p_channel_type: b.channel_type,
+              p_whatsapp_jid: b.whatsapp_jid ?? null,
+              p_instance_name: b.instance_name ?? null,
+              p_preview: preview,
+              p_message_id: b.message_id ?? null,
+              p_message_at: messageAt,
+            } as any,
+          );
+          const row = Array.isArray(up)
+            ? up[0]
+            : (up as { demanda_id: string; protocol: string | null; created: boolean } | null);
+          if (upErr || !row) {
+            console.error("[ingest] ingest_upsert_demand falhou", upErr);
+            return json({ error: "internal_error" }, 500);
+          }
+          demandaId = row.demanda_id;
+          protocol = row.protocol;
+          createdNow = row.created;
+        }
+
+        // Auto-assign só em criação (round-robin/least-busy); falha nunca
+        // derruba o ingest — demanda nasce órfã e gerente atribui depois.
+        if (createdNow && demandaId) {
           try {
-            await resolveAutoAssignment(supabaseAdmin, {
-              orgId: tok.org_id,
-              demandaId,
-            });
+            await resolveAutoAssignment(supabaseAdmin, { orgId: tok.org_id, demandaId });
           } catch (err: any) {
             console.error("[ingest] auto-assign falhou — demanda segue órfã", {
               demanda_id: demandaId,
@@ -608,28 +643,6 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               error: err?.message,
             });
           }
-        } else {
-          const patch: Record<string, unknown> = {
-            last_message_id: b.message_id ?? null,
-            last_message_preview: preview,
-            last_message_at: messageAt,
-            updated_at: messageAt,
-          };
-          if (b.whatsapp_jid) {
-            patch["whatsapp_jid"] = b.whatsapp_jid;
-            patch["channel_type"] = b.channel_type;
-            if (b.instance_name) patch["instance_name"] = b.instance_name;
-          }
-          await supabaseAdmin.from("demandas").update(patch as never).eq("id", demandaId);
-        }
-
-        if (!protocol && demandaId) {
-          const { data: p } = await supabaseAdmin
-            .from("demandas")
-            .select("protocol")
-            .eq("id", demandaId)
-            .maybeSingle();
-          protocol = (p?.protocol as string | null) ?? null;
         }
 
         // 4. Registra evento de mensagem e trata idempotência
@@ -733,10 +746,12 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             media_thumb: mediaThumb,
           },
         });
+
         await supabaseAdmin
           .from("webhook_tokens")
           .update({ last_used_at: new Date().toISOString() })
           .eq("id", tok.id);
+
         return new Response(
           JSON.stringify({
             ok: true,

@@ -652,6 +652,27 @@ export type Database = {
         Returns: undefined
       }
       gen_demanda_protocol: { Args: never; Returns: string }
+      ingest_upsert_demand: {
+        Args: {
+          p_channel_id: string
+          p_channel_type: Database["public"]["Enums"]["demanda_channel_type"]
+          p_contact_id: string
+          p_description: string
+          p_instance_name: string
+          p_message_at: string
+          p_message_id: string
+          p_org_id: string
+          p_preview: string
+          p_priority: Database["public"]["Enums"]["demanda_priority"]
+          p_title: string
+          p_whatsapp_jid: string
+        }
+        Returns: {
+          created: boolean
+          demanda_id: string
+          protocol: string
+        }[]
+      }
     }
     Enums: {
       app_role: "owner" | "admin" | "agent" | "viewer"
