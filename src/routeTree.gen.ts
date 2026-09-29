@@ -15,6 +15,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as ConviteTokenRouteImport } from './routes/convite.$token'
 import { Route as AuthenticatedAppOSlugRouteImport } from './routes/_authenticated/app.o.$slug'
+import { Route as AuthenticatedAppOnboardingSlugRouteRouteImport } from './routes/_authenticated/app.onboarding.$slug/route'
 import { Route as ApiPublicIngestTokenRouteImport } from './routes/api/public/ingest.$token'
 import { Route as AuthenticatedAppOSlugAlertasRouteImport } from './routes/_authenticated/app.o.$slug.alertas'
 import { Route as AuthenticatedAppOSlugConfiguracoesRouteRouteImport } from './routes/_authenticated/app.o.$slug.configuracoes/route'
@@ -52,6 +53,12 @@ const AuthenticatedAppOSlugRoute = AuthenticatedAppOSlugRouteImport.update({
   path: '/o/$slug',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
+const AuthenticatedAppOnboardingSlugRouteRoute =
+  AuthenticatedAppOnboardingSlugRouteRouteImport.update({
+    id: '/onboarding/$slug',
+    path: '/onboarding/$slug',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
 const ApiPublicIngestTokenRoute = ApiPublicIngestTokenRouteImport.update({
   id: '/api/public/ingest/$token',
   path: '/api/public/ingest/$token',
@@ -99,6 +106,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/convite/$token': typeof ConviteTokenRoute
+  '/app/onboarding/$slug': typeof AuthenticatedAppOnboardingSlugRouteRoute
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
   '/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRouteRoute
@@ -113,6 +121,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/convite/$token': typeof ConviteTokenRoute
+  '/app/onboarding/$slug': typeof AuthenticatedAppOnboardingSlugRouteRoute
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
   '/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRouteRoute
@@ -129,6 +138,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
   '/convite/$token': typeof ConviteTokenRoute
+  '/_authenticated/app/onboarding/$slug': typeof AuthenticatedAppOnboardingSlugRouteRoute
   '/_authenticated/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
   '/_authenticated/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRouteRoute
@@ -145,6 +155,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/app'
     | '/convite/$token'
+    | '/app/onboarding/$slug'
     | '/app/o/$slug'
     | '/api/public/ingest/$token'
     | '/app/o/$slug/configuracoes'
@@ -159,6 +170,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/app'
     | '/convite/$token'
+    | '/app/onboarding/$slug'
     | '/app/o/$slug'
     | '/api/public/ingest/$token'
     | '/app/o/$slug/configuracoes'
@@ -174,6 +186,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/_authenticated/app'
     | '/convite/$token'
+    | '/_authenticated/app/onboarding/$slug'
     | '/_authenticated/app/o/$slug'
     | '/api/public/ingest/$token'
     | '/_authenticated/app/o/$slug/configuracoes'
@@ -234,6 +247,13 @@ declare module '@tanstack/react-router' {
       path: '/o/$slug'
       fullPath: '/app/o/$slug'
       preLoaderRoute: typeof AuthenticatedAppOSlugRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/onboarding/$slug': {
+      id: '/_authenticated/app/onboarding/$slug'
+      path: '/onboarding/$slug'
+      fullPath: '/app/onboarding/$slug'
+      preLoaderRoute: typeof AuthenticatedAppOnboardingSlugRouteRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
     '/api/public/ingest/$token': {
@@ -327,10 +347,13 @@ const AuthenticatedAppOSlugRouteWithChildren =
   )
 
 interface AuthenticatedAppRouteChildren {
+  AuthenticatedAppOnboardingSlugRouteRoute: typeof AuthenticatedAppOnboardingSlugRouteRoute
   AuthenticatedAppOSlugRoute: typeof AuthenticatedAppOSlugRouteWithChildren
 }
 
 const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
+  AuthenticatedAppOnboardingSlugRouteRoute:
+    AuthenticatedAppOnboardingSlugRouteRoute,
   AuthenticatedAppOSlugRoute: AuthenticatedAppOSlugRouteWithChildren,
 }
 
