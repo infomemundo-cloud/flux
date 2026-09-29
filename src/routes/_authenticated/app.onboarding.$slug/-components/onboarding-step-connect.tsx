@@ -12,13 +12,9 @@ interface OnboardingStepConnectProps {
 }
 
 /**
- * Step 2/2 do wizard: header com escape lateral ("Conectar depois" no canto
- * direito, não centralizado embaixo) + painel compartilhado em 2 colunas.
- * Diretriz §34: nada de card 100% empilhado em desktop.
- *
- * goToFila sincroniza o cache de onboarding ANTES de navegar: o layout da
- * org lê a MESMA key pra decidir o auto-open; cache stale (connected=false)
- * era o yank de volta pro wizard logo após o scan (bug do E2E 2026-09-30).
+ * Step 2/2 do wizard: Conectar WhatsApp
+ * Alinhado visualmente ao padrão Dark/Slate do Hub e do Step de Perfil.
+ * Mantém o escape lateral ("Conectar depois") no topo à direita.
  */
 export function OnboardingStepConnect({ orgId, orgSlug }: OnboardingStepConnectProps) {
   const navigate = useNavigate();
@@ -51,24 +47,30 @@ export function OnboardingStepConnect({ orgId, orgSlug }: OnboardingStepConnectP
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      {/* Cabeçalho do Passo + Botão "Conectar depois" no canto superior direito */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold tracking-tight">Conecte seu WhatsApp</h1>
-          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-            Assim que o QR for escaneado, as mensagens dos clientes viram demandas
-            automaticamente na sua fila.
+          <h1 className="text-xl font-semibold tracking-tight text-slate-100">
+            Conecte seu WhatsApp
+          </h1>
+          <p className="mt-1 text-xs text-slate-400 max-w-xl">
+            Assim que o QR for escaneado, as mensagens dos clientes virão como demandas
+            automáticas para a fila.
           </p>
         </div>
+
         <button
           type="button"
           onClick={() => void handleLater()}
-          className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs font-medium text-slate-400 transition hover:border-slate-700 hover:bg-slate-900 hover:text-slate-200"
         >
-          <CalendarClock className="h-3.5 w-3.5" /> Conectar depois
+          <CalendarClock className="h-3.5 w-3.5 text-slate-500" />
+          Conectar depois
         </button>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-5 sm:p-6">
+      {/* Painel de Conexão com bordas e fundos no padrão Dark/Slate */}
+      <div className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-4 sm:p-6">
         <WhatsappConnectPanel orgId={orgId} onConnected={goToFila} />
       </div>
     </div>
