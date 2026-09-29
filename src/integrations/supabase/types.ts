@@ -472,6 +472,7 @@ export type Database = {
           last_assigned_user_id: string | null
           logo_url: string | null
           name: string
+          onboarding_dismissed_at: string | null
           sla_enabled: boolean
           sla_max_inactivity_hours: number
           slug: string
@@ -487,6 +488,7 @@ export type Database = {
           last_assigned_user_id?: string | null
           logo_url?: string | null
           name: string
+          onboarding_dismissed_at?: string | null
           sla_enabled?: boolean
           sla_max_inactivity_hours?: number
           slug: string
@@ -502,6 +504,7 @@ export type Database = {
           last_assigned_user_id?: string | null
           logo_url?: string | null
           name?: string
+          onboarding_dismissed_at?: string | null
           sla_enabled?: boolean
           sla_max_inactivity_hours?: number
           slug?: string

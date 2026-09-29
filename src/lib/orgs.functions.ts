@@ -4,16 +4,19 @@ import { z } from "zod";
 
 /**
  * Server functions de organização (tenant).
- * - Leitura/lista: client de usuário (context.supabase), baseado em membership.
- * - Criação: supabaseAdmin (onboarding) com unicidade de slug.
- * - Identidade (nome/logo): supabaseAdmin + guard explícito owner/admin
- *   (defesa em profundidade; slug é IMUTÁVEL por decisão de produto).
- * - Exclusão: owner-only com confirmação re-validada no servidor (RPC atômica).
- * - Ingestão de grupos: setAllowGroupIngest (owner/admin).
- * - SLA de inatividade: updateSlaSettings (owner/admin) — regra consumida
- *   pela query slaAlerts, badge da sidebar e página de Alertas.
- * - Distribuição automática: updateAutoAssignSettings (owner/admin) — regra
- *   consumida pelo serviço em src/lib/demandas/assignment.ts, chamado pelo ingest.
+ * Leitura/lista: client de usuário (context.supabase), baseado em membership.
+ * Criação: supabaseAdmin (onboarding) com unicidade de slug.
+ * Identidade (nome/logo): supabaseAdmin + guard explícito owner/admin
+ * (defesa em profundidade; slug é IMUTÁVEL por decisão de produto).
+ * Exclusão: owner-only com confirmação re-validada no servidor (RPC atômica).
+ * Ingestão de grupos: setAllowGroupIngest (owner/admin).
+ * SLA de inatividade: updateSlaSettings (owner/admin) — regra consumida
+ * pela query slaAlerts, badge da sidebar e página de Alertas.
+ * Distribuição automática: updateAutoAssignSettings (owner/admin) — regra
+ * consumida pelo serviço em src/lib/demandas/assignment.ts, chamado pelo ingest.
+ * Onboarding: getOnboardingState (estado derivado pra wizard/card) e
+ * dismissOnboarding (owner/admin; controla só o auto-abrir do wizard —
+ * a orientação persistente na fila nunca some até conectar).
  */
 
 export const listMyOrgs = createServerFn({ method: "GET" })
@@ -177,19 +180,16 @@ export const uploadOrgLogo = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await assertOrgAdmin(context.supabase, data.orgId, context.userId);
-
     const base64 = data.fileBase64.replace(/^data:[^;]+;base64,/, "");
     const buffer = Buffer.from(base64, "base64");
     if (buffer.length > 2 * 1024 * 1024) {
       throw new Error("Arquivo excede o limite de 2MB.");
     }
-
     const path = `orgs/${data.orgId}/logo-${Date.now()}.${LOGO_EXT[data.mimeType]}`;
     const { error } = await supabaseAdmin.storage
       .from("org-assets")
       .upload(path, buffer, { contentType: data.mimeType, upsert: false });
     if (error) throw new Error(`Falha ao enviar logotipo: ${error.message}`);
-
     const { data: urlData } = supabaseAdmin.storage.from("org-assets").getPublicUrl(path);
     return { ok: true, url: urlData.publicUrl };
   });
@@ -208,19 +208,16 @@ export const updateOrganization = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await assertOrgAdmin(context.supabase, data.orgId, context.userId);
-
     const { data: before } = await supabaseAdmin
       .from("organizations")
       .select("logo_url")
       .eq("id", data.orgId)
       .maybeSingle();
-
     const { error } = await supabaseAdmin
       .from("organizations")
       .update({ name: data.name, logo_url: data.logoUrl })
       .eq("id", data.orgId);
     if (error) throw new Error(error.message);
-
     const oldUrl = before?.logo_url ?? null;
     if (oldUrl && oldUrl !== data.logoUrl) {
       const path = oldUrl.split("/org-assets/")[1];
@@ -243,7 +240,6 @@ export const deleteOrganization = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-
     const { data: mem } = await context.supabase
       .from("memberships")
       .select("role")
@@ -253,7 +249,6 @@ export const deleteOrganization = createServerFn({ method: "POST" })
     if (!mem || mem.role !== "owner") {
       throw new Error("Sem permissão: apenas o owner pode excluir a organização");
     }
-
     const { data: org } = await supabaseAdmin
       .from("organizations")
       .select("name, slug")
@@ -263,12 +258,10 @@ export const deleteOrganization = createServerFn({ method: "POST" })
     if (data.confirm !== org.name && data.confirm !== org.slug) {
       throw new Error("Confirmação não confere com o nome ou slug da organização");
     }
-
     const { error } = await supabaseAdmin.rpc("delete_organization_cascade", {
       p_org_id: data.orgId,
     });
     if (error) throw new Error(error.message);
-
     return { ok: true };
   });
 
@@ -289,13 +282,11 @@ export const setAllowGroupIngest = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await assertOrgAdmin(context.supabase, data.orgId, context.userId);
-
     const { error } = await supabaseAdmin
       .from("organizations")
       .update({ allow_group_ingest: data.enabled })
       .eq("id", data.orgId);
     if (error) throw new Error(error.message);
-
     return { ok: true };
   });
 
@@ -328,18 +319,15 @@ export const updateSlaSettings = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await assertOrgAdmin(context.supabase, data.orgId, context.userId);
-
     const patch: { sla_enabled?: boolean; sla_max_inactivity_hours?: number } = {};
     if (data.enabled !== undefined) patch.sla_enabled = data.enabled;
     if (data.maxInactivityHours !== undefined)
       patch.sla_max_inactivity_hours = data.maxInactivityHours;
-
     const { error } = await supabaseAdmin
       .from("organizations")
       .update(patch)
       .eq("id", data.orgId);
     if (error) throw new Error(error.message);
-
     return { ok: true };
   });
 
@@ -366,16 +354,80 @@ export const updateAutoAssignSettings = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await assertOrgAdmin(context.supabase, data.orgId, context.userId);
-
     const patch: { auto_assign_enabled?: boolean; auto_assign_mode?: string } = {};
     if (data.enabled !== undefined) patch.auto_assign_enabled = data.enabled;
     if (data.mode !== undefined) patch.auto_assign_mode = data.mode;
-
     const { error } = await supabaseAdmin
       .from("organizations")
       .update(patch)
       .eq("id", data.orgId);
     if (error) throw new Error(error.message);
+    return { ok: true };
+  });
 
+// ============================================================================
+// Onboarding guiado (ciclo 1, §38): estado derivado + dismiss por org
+// ============================================================================
+
+/**
+ * Estado do onboarding pra decisão de wizard/card persistente.
+ * Derivado de fontes existentes (sem tabela nova):
+ * - connected: whatsapp_settings.connection_status = 'connected'
+ *   (lido via supabaseAdmin: a RLS de whatsapp_settings é owner/admin-only,
+ *   mas o estado de onboarding é necessário a qualquer membro pra
+ *   redirect/card — a membership é validada ANTES, então é seguro);
+ * - dismissed: organizations.onboarding_dismissed_at (controla SÓ o
+ *   auto-abrir do wizard; a orientação na fila nunca some até conectar);
+ * - role: papel do usuário na org (wizard é owner/admin).
+ */
+export const getOnboardingState = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ orgId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: mem, error: memErr } = await context.supabase
+      .from("memberships")
+      .select("role")
+      .eq("org_id", data.orgId)
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (memErr) throw new Error(memErr.message);
+    if (!mem) throw new Error("Sem acesso");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: wa } = await supabaseAdmin
+      .from("whatsapp_settings")
+      .select("connection_status")
+      .eq("org_id", data.orgId)
+      .maybeSingle();
+    const { data: org } = await supabaseAdmin
+      .from("organizations")
+      .select("onboarding_dismissed_at")
+      .eq("id", data.orgId)
+      .maybeSingle();
+
+    return {
+      connected: wa?.connection_status === "connected",
+      dismissed: !!org?.onboarding_dismissed_at,
+      role: mem.role as string,
+    };
+  });
+
+/**
+ * Dispensa o auto-abrir do wizard (decisão D4/D5 do §38): owner/admin,
+ * idempotente (re-dispensar apenas regrava o timestamp; o efeito é o
+ * mesmo). NÃO esconde a orientação: o card persistente da fila continua
+ * visível até a conexão existir.
+ */
+export const dismissOnboarding = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ orgId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await assertOrgAdmin(context.supabase, data.orgId, context.userId);
+    const { error } = await supabaseAdmin
+      .from("organizations")
+      .update({ onboarding_dismissed_at: new Date().toISOString() })
+      .eq("id", data.orgId);
+    if (error) throw new Error(error.message);
     return { ok: true };
   });
