@@ -8,6 +8,7 @@ import { ListSkeleton } from "@/components/skeletons";
 import { OnboardingStepProfile } from "./-components/onboarding-step-profile";
 import { OnboardingStepConnect } from "./-components/onboarding-step-connect";
 
+
 /**
  * Wizard de ativação (ciclo 1, §38): tela cheia FORA do shell da org
  * (irmão de `app.o.$slug`, filho de `_authenticated` → herda o guard de

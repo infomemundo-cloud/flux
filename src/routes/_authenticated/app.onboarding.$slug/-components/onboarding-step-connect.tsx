@@ -22,6 +22,7 @@ export function OnboardingStepConnect({ orgId, orgSlug }: OnboardingStepConnectP
   async function handleLater() {
     try {
       await dismiss({ data: { orgId } });
+      try { sessionStorage.setItem(`onboarding-auto:${orgSlug}`, "skipped"); } catch { /* ignore */ }
       toast.success("Sem pressa — o guia continua disponível na fila.");
       goToFila();
     } catch (err: any) {

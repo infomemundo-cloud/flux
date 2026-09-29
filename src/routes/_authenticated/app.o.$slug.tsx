@@ -11,6 +11,7 @@ import { OrgSidebar } from "@/components/org-sidebar";
 import { OrgMobileNav } from "@/components/org-mobile-nav";
 import { PageFade, TopProgressBar, ListSkeleton } from "@/components/skeletons";
 import { OrgSidebarContext } from "@/lib/org-sidebar-context";
+import { getOnboardingState } from "@/lib/orgs.functions";
 
 const ROLE_LABEL: Record<string, string> = {
   owner: "Proprietário",
@@ -37,6 +38,26 @@ function OrgLayout() {
   const [newCount, setNewCount] = useState(0);
   const { collapsed, setCollapsed, toggle: toggleCollapsed } = useSidebarCollapsed();
   const [user, setUser] = useState<{ name: string; email: string | null } | null>(null);
+  // Auto-open do wizard (D6): owner/admin sem conexão E não dispensada
+  // são redirecionados pro wizard de ativação. sessionStorage evita flicker
+  // em retorno manual do usuário que clicou "Conectar depois".
+  const getState = useServerFn(getOnboardingState);
+  const onboardingQ = useQuery({
+    queryKey: ["onboarding-state", org?.id],
+    queryFn: () => getState({ data: { orgId: org!.id } }),
+    enabled: !!org && ["owner", "admin"].includes(org.role),
+  });
+
+  useEffect(() => {
+    if (!org || !onboardingQ.data) return;
+    if (!["owner", "admin"].includes(org.role)) return;
+    const { connected, dismissed } = onboardingQ.data;
+    if (connected || dismissed) return;
+    try {
+      if (sessionStorage.getItem(`onboarding-auto:${org.slug}`) === "skipped") return;
+    } catch { /* sessionStorage bloqueado: deixa passar */ }
+    navigate({ to: "/app/onboarding/$slug", params: { slug: org.slug } });
+  }, [org, onboardingQ.data, navigate]);
 
   useEffect(() => {
     if (location.pathname.endsWith("/fila")) setNewCount(0);

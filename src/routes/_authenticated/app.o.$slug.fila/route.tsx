@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { ListSkeleton } from "@/components/skeletons";
 import { listDemandas, createDemanda, markAllDemandasRead } from "@/lib/demandas/demandas.functions";
-import { getOrgBySlug } from "@/lib/orgs.functions";
+import { getOrgBySlug, getOnboardingState } from "@/lib/orgs.functions";
 import { getWhatsappConnection } from "@/lib/whatsapp.functions";
 import { toast } from "sonner";
 import { friendlyError } from "@/lib/friendly-error";
@@ -17,6 +17,8 @@ import {
   QrCode,
   Smartphone,
   CheckCircle2,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { formatRelative } from "@/components/demandas-ui";
 import { FilaSidebarContext } from "@/lib/demandas/fila-sidebar-context";
@@ -153,10 +155,10 @@ function FilaCard({ d, slug }: { d: any; slug: string }) {
 
 /**
  * Vazio da aba Fila SEMPRE contextualizado pra quem chega pela primeira vez:
- * com filtro/busca ativos → mensagem de filtro (comportamento antigo);
- * WhatsApp não conectado → onboarding com CTA pra Configurações (owner/admin);
- * demais papéis veem aviso neutro ("assim que um gestor conectar...");
- * conectado e vazio → "aguardando a primeira mensagem" (conforto, não dúvida).
+ * - com filtro/busca ativos → mensagem de filtro (comportamento antigo);
+ * - WhatsApp não conectado → onboarding com CTA pra Configurações (owner/admin);
+ * - demais papéis veem aviso neutro ("assim que um gestor conectar...");
+ * - conectado e vazio → "aguardando a primeira mensagem" (conforto, não dúvida).
  */
 function FilaEmptyState({
   hasFilters,
@@ -248,6 +250,22 @@ function FilaPage() {
     queryFn: () => connFn({ data: { orgId: org!.id } }),
   });
   const waStatus = conn?.status ?? "disconnected";
+
+  // Fase 3 (§38): card persistente de setup — aparece quando a org está
+  // desconectada e o usuário tem papel de gestão (owner/admin). Independente
+  // do `onboarding_dismissed_at` — adiar o wizard NÃO some com o card (D4).
+  const getState = useServerFn(getOnboardingState);
+  const onboardingQ = useQuery({
+    queryKey: ["onboarding-state", org?.id],
+    queryFn: () => getState({ data: { orgId: org!.id } }),
+    enabled: !!org && ["owner", "admin"].includes(org.role),
+  });
+  const showSetupCard =
+    !!org &&
+    ["owner", "admin"].includes(org.role) &&
+    waStatus !== "connected" &&
+    !!onboardingQ.data &&
+    !onboardingQ.data.connected;
 
   const hasSelection = location.pathname.includes("/fila/demandas/");
   const [collapsed, setCollapsed] = useState(false);
@@ -362,8 +380,34 @@ function FilaPage() {
                   onNewDemanda={() => setShowNew(true)}
                 />
               </div>
-              {/* Lista Rolável de Demandas */}
-              <div className="flex-1 overflow-y-auto scrollbar-thin p-2.5 pt-1 space-y-2">
+
+              {/* Card persistente de setup — Fase 3 (§38) */}
+              {showSetupCard && (
+                <div className="mx-2 mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/30">
+                  <div className="flex items-start gap-2.5">
+                    <WifiOff className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-semibold text-amber-900 dark:text-amber-100">
+                        Configure seu WhatsApp
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-amber-800 dark:text-amber-200">
+                        Conecte o WhatsApp da sua organização pra começar a receber demandas automaticamente.
+                      </div>
+                      <Link
+                        to="/app/onboarding/$slug"
+                        params={{ slug }}
+                        className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-900 dark:text-amber-100 hover:underline"
+                      >
+                        <Wifi className="h-3 w-3" /> Conectar agora
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Lista Rolável de Demandas — pt-20 quando card de setup visível
+                  (evita cobrir o primeiro card da lista) */}
+              <div className={`flex-1 overflow-y-auto scrollbar-thin p-2.5 space-y-2 ${showSetupCard ? "pt-4" : "pt-1"}`}>
                 {loadingFirstPage && <ListSkeleton rows={6} />}
                 {/* Vazio da aba Fila — contextualizado pra primeira viagem */}
                 {!loadingFirstPage && tab === "fila" && data.length === 0 && (

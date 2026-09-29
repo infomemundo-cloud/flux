@@ -25,7 +25,9 @@ function OrgPicker() {
     onSuccess: (org) => {
       qc.invalidateQueries({ queryKey: ["my-orgs"] });
       toast.success("Organização criada");
-      navigate({ to: "/app/o/$slug/fila", params: { slug: org.slug } });
+      // Fase 3 (§38): org nova cai direto no wizard de ativação
+      // (2 passos: perfil + conectar WhatsApp), não na fila vazia.
+      navigate({ to: "/app/onboarding/$slug", params: { slug: org.slug } });
     },
     onError: (e: any) => toast.error(e.message ?? "Erro"),
   });
