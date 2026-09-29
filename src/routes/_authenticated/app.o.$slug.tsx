@@ -39,8 +39,10 @@ function OrgLayout() {
   const { collapsed, setCollapsed, toggle: toggleCollapsed } = useSidebarCollapsed();
   const [user, setUser] = useState<{ name: string; email: string | null } | null>(null);
 
-  // Auto-open do wizard (D6): owner/admin sem conexão E não dispensada
-  // são redirecionados pro wizard de ativação. sessionStorage evita flicker
+  // Auto-open do wizard (D6 + Ciclo 1.5): só dispara enquanto a org NUNCA
+  // foi conectada (everConnected=false). Depois da primeira conexão bem-
+  // -sucedida, reconectar é ato de gestão em Configurações → Canais;
+  // desconectar NÃO faz o wizard reabrir. sessionStorage evita flicker
   // em retorno manual do usuário que clicou "Conectar depois".
   const getState = useServerFn(getOnboardingState);
   const onboardingQ = useQuery({
@@ -52,11 +54,12 @@ function OrgLayout() {
   useEffect(() => {
     if (!org || !onboardingQ.data) return;
     if (!["owner", "admin"].includes(org.role)) return;
-    const { connected, dismissed, status } = onboardingQ.data;
+    const { connected, dismissed, status, everConnected } = onboardingQ.data;
     if (connected || dismissed) return;
-    // Conexão em andamento (QR gerado/escaneando, DB ainda não flipou):
-    // nunca arrancar o usuário do fluxo — era isso que yankava de volta
-    // pro wizard logo após o scan (bug do E2E de 2026-09-30).
+    // Ciclo 1.5: já conectou pelo menos uma vez? Reconectar é ato de
+    // gestão em Configurações → Canais; o wizard NÃO reabre.
+    if (everConnected) return;
+    // Conexão em andamento (QR gerado/escaneando): nunca arrancar do fluxo.
     if (status === "connecting") return;
     try {
       if (sessionStorage.getItem(`onboarding-auto:${org.slug}`) === "skipped") return;
@@ -82,7 +85,6 @@ function OrgLayout() {
     });
   }, []);
 
-  // Um canal por organização alimenta fila, detalhe, painel e alertas em tempo real.
   const onNewDemanda = useCallback(
     (d: { title?: string; protocol?: string }) => {
       setNewCount((c) => c + 1);
@@ -117,7 +119,6 @@ function OrgLayout() {
   if (error || !org) return <div className="p-6 text-sm text-destructive">Sem acesso a esta organização.</div>;
 
   const roleLabel = ROLE_LABEL[org.role] ?? org.role;
-  // Fonte única da regra: só owner/admin veem (e acessam) Configurações.
   const isOwnerOrAdmin = org.role === "owner" || org.role === "admin";
 
   return (

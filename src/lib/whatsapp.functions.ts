@@ -58,6 +58,7 @@ type Settings = {
   connection_status: string;
   connected_number: string | null;
   use_master_credentials: boolean;
+  connected_at: string | null;
 };
 
 export async function loadSettings(orgId: string): Promise<Settings | null> {
@@ -65,7 +66,7 @@ export async function loadSettings(orgId: string): Promise<Settings | null> {
   const { data } = await supabaseAdmin
     .from("whatsapp_settings")
     .select(
-      "base_url, api_key, instance_name, auto_reply_enabled, connection_status, connected_number, use_master_credentials",
+      "base_url, api_key, instance_name, auto_reply_enabled, connection_status, connected_number, use_master_credentials, connected_at",
     )
     .eq("org_id", orgId)
     .maybeSingle();
@@ -189,10 +190,17 @@ export const getWhatsappConnection = createServerFn({ method: "GET" })
         status = st.exists ? mapState(st.state) : "disconnected";
         if (status !== "connected") number = status === "disconnected" ? null : number;
         if (status !== (cfg.connection_status ?? "disconnected")) {
-          await saveSettings(data.orgId, {
-            connection_status: status,
-            ...(status === "connected" ? { connected_at: new Date().toISOString() } : { connected_number: number }),
-          });
+          // Ciclo 1.5: connected_at é a MARCA HISTÓRICA de ativação — gravada
+          // quando o status flipa pra "connected" e NUNCA zerada no disconnect.
+          // É ela que diferencia "org nunca ativada" (wizard abre) de
+          // "org desconectada pelo gestor" (reconexão é ato de gestão).
+          const patch: Record<string, unknown> = { connection_status: status };
+          if (status === "connected") {
+            patch.connected_at = new Date().toISOString();
+          } else {
+            patch.connected_number = number;
+          }
+          await saveSettings(data.orgId, patch);
         }
       } catch (e) {
         console.error("[whatsapp] state read failed", e);
@@ -293,10 +301,11 @@ export const disconnectWhatsapp = createServerFn({ method: "POST" })
         await evo(creds.baseUrl, creds.key, `/instance/delete/${encodeURIComponent(instance)}`, { method: "DELETE" });
       }
     }
+    // Ciclo 1.5: connected_at NÃO é zerado — a marca histórica permanece
+    // (desconexão não reabre o wizard; reconexão é ato de gestão).
     await saveSettings(data.orgId, {
       connection_status: "disconnected",
       connected_number: null,
-      connected_at: null,
       ...(data.deleteInstance ? { instance_name: null } : {}),
     });
     return { ok: true, status: "disconnected" as const };
@@ -394,7 +403,7 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
         delivered = true;
         deliveryNote = "Enviado pelo WhatsApp.";
       } catch (e) {
-        if (e instanceof Error && e.message.startsWith("O WhatsApp")) throw e;
+        if (e instanceof Error && e.message.startsWith("O WhatsApp ")) throw e;
         console.error("[whatsapp] send error", e);
         throw new Error("Não foi possível enviar a mensagem agora.");
       }
@@ -423,7 +432,6 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
       },
     });
     if (evErr) throw new Error(evErr.message);
-    // Preview da fila: última mensagem da conversa + carimbo de tempo.
     const now = new Date().toISOString();
     await context.supabase
       .from("demandas")
@@ -442,11 +450,6 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
  * valida tamanho (3 MB conservador — teto do body da Vercel), envia pra
  * Evolution via sendMedia, sobe pro Storage com o key.id real da Evolution,
  * grava o evento message_out com media_url + legenda.
- *
- * Ordem importa: Evolution primeiro (gera o message_id), Storage depois
- * (usa o id como parte do caminho). Se o Storage falhar mas a Evolution
- * tiver aceito, grava o evento com metadata.media_failed — a mensagem
- * chegou no cliente, o histórico mostra o fallback.
  */
 export const sendMediaMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -480,7 +483,6 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
     if (!dem.whatsapp_jid || !dem.instance_name) {
       throw new Error("Esta demanda não tem WhatsApp conectado para envio de mídia.");
     }
-
     const { MAX_UPLOAD_BYTES, sendMediaViaEvolution, uploadMediaToStorage } = await import(
       "@/lib/demandas/media-storage"
     );
@@ -491,7 +493,6 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
         `Arquivo excede o limite de envio (${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB).`,
       );
     }
-
     const media = {
       buffer: buf,
       mimeType: data.mimeType,
@@ -500,8 +501,6 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
       height: null,
       bytes: buf.byteLength,
     };
-
-    // 1) Envia pra Evolution PRIMEIRO (gera o key.id que vira message_id).
     const send = await sendMediaViaEvolution({
       orgId: data.orgId,
       instance: dem.instance_name,
@@ -511,7 +510,6 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
       fileName: media.fileName,
       caption: data.caption.trim() || undefined,
     });
-
     if (!send.ok) {
       console.error("[sendMedia] evolution rejected", {
         demanda_id: data.demandId,
@@ -520,9 +518,6 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
       });
       throw new Error(`Evolution rejeitou o envio: ${send.reason}`);
     }
-
-    // 2) Upload pro Storage com o message_id real da Evolution.
-    // Falha aqui NÃO derruba o envio: grava evento com media_failed.
     let mediaUrl: string | null = null;
     let mediaFailed: string | null = null;
     const up = await uploadMediaToStorage({
@@ -541,8 +536,6 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
         reason: up.reason,
       });
     }
-
-    // 3) Grava evento message_out com mídia (ou fallback) + legenda como content.
     const { error: evtErr } = await supabaseAdmin.from("demanda_events").insert({
       org_id: data.orgId,
       demanda_id: data.demandId,
@@ -562,8 +555,6 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
       },
     });
     if (evtErr) throw new Error(`Falha ao gravar evento: ${evtErr.message}`);
-
-    // 4) Preview da fila: legenda se houver, senão rótulo de mídia.
     const now = new Date().toISOString();
     const preview = data.caption.trim()
       ? data.caption.trim().slice(0, 200)
@@ -577,7 +568,6 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
         updated_at: now,
       } as never)
       .eq("id", data.demandId);
-
     return {
       ok: true,
       messageId: send.result.messageId,
@@ -586,7 +576,6 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
     };
   });
 
-/** Rótulo pra metadata.media_kind (image/audio/video/document). */
 function sendMediaTypeLabel(mimeType: string): string {
   const m = mimeType.toLowerCase();
   if (m.startsWith("image/")) return "image";
@@ -595,7 +584,6 @@ function sendMediaTypeLabel(mimeType: string): string {
   return "document";
 }
 
-/** Preview da fila quando a mídia enviada não tem legenda. */
 function mediaPreviewLabel(mimeType: string): string {
   const m = mimeType.toLowerCase();
   if (m.startsWith("image/")) return "[Imagem]";

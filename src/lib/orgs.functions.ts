@@ -371,16 +371,10 @@ export const updateAutoAssignSettings = createServerFn({ method: "POST" })
 
 /**
  * Estado do onboarding pra decisão de wizard/card persistente.
- * Derivado de fontes existentes (sem tabela nova):
- * - connected: whatsapp_settings.connection_status = 'connected'
- *   (lido via supabaseAdmin: a RLS de whatsapp_settings é owner/admin-only,
- *   mas o estado de onboarding é necessário a qualquer membro pra
- *   redirect/card — a membership é validada ANTES, então é seguro);
- * - status: connection_status CRU (o layout usa pra não arrancar o
- *   usuário do fluxo durante 'connecting' — bug do yank pós-scan);
- * - dismissed: organizations.onboarding_dismissed_at (controla SÓ o
- *   auto-abrir do wizard; a orientação na fila nunca some até conectar);
- * - role: papel do usuário na org (wizard é owner/admin).
+ * Ciclo 1.5: `everConnected` deriva de `whatsapp_settings.connected_at`
+ * (marca histórica de primeira conexão — NÃO é zerada no disconnect).
+ * O auto-open do wizard só dispara enquanto everConnected=false; depois
+ * da primeira ativação, reconectar é ato de gestão em Configurações.
  */
 export const getOnboardingState = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -398,7 +392,7 @@ export const getOnboardingState = createServerFn({ method: "GET" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: wa } = await supabaseAdmin
       .from("whatsapp_settings")
-      .select("connection_status")
+      .select("connection_status, connected_at")
       .eq("org_id", data.orgId)
       .maybeSingle();
     const { data: org } = await supabaseAdmin
@@ -410,6 +404,7 @@ export const getOnboardingState = createServerFn({ method: "GET" })
     return {
       connected: wa?.connection_status === "connected",
       status: (wa?.connection_status as string) ?? "disconnected",
+      everConnected: !!wa?.connected_at,
       dismissed: !!org?.onboarding_dismissed_at,
       role: mem.role as string,
     };
