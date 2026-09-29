@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { getOrgBySlug } from "@/lib/orgs.functions";
+import { getOrgBySlug, getOnboardingState } from "@/lib/orgs.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useOrgRealtime } from "@/hooks/use-org-realtime";
 import { useSidebarCollapsed } from "@/hooks/use-sidebar-collapsed";
@@ -11,7 +11,6 @@ import { OrgSidebar } from "@/components/org-sidebar";
 import { OrgMobileNav } from "@/components/org-mobile-nav";
 import { PageFade, TopProgressBar, ListSkeleton } from "@/components/skeletons";
 import { OrgSidebarContext } from "@/lib/org-sidebar-context";
-import { getOnboardingState } from "@/lib/orgs.functions";
 
 const ROLE_LABEL: Record<string, string> = {
   owner: "Proprietário",
@@ -35,9 +34,11 @@ function OrgLayout() {
     queryFn: () => fn({ data: { slug } }),
     retry: false,
   });
+
   const [newCount, setNewCount] = useState(0);
   const { collapsed, setCollapsed, toggle: toggleCollapsed } = useSidebarCollapsed();
   const [user, setUser] = useState<{ name: string; email: string | null } | null>(null);
+
   // Auto-open do wizard (D6): owner/admin sem conexão E não dispensada
   // são redirecionados pro wizard de ativação. sessionStorage evita flicker
   // em retorno manual do usuário que clicou "Conectar depois".
@@ -51,11 +52,17 @@ function OrgLayout() {
   useEffect(() => {
     if (!org || !onboardingQ.data) return;
     if (!["owner", "admin"].includes(org.role)) return;
-    const { connected, dismissed } = onboardingQ.data;
+    const { connected, dismissed, status } = onboardingQ.data;
     if (connected || dismissed) return;
+    // Conexão em andamento (QR gerado/escaneando, DB ainda não flipou):
+    // nunca arrancar o usuário do fluxo — era isso que yankava de volta
+    // pro wizard logo após o scan (bug do E2E de 2026-09-30).
+    if (status === "connecting") return;
     try {
       if (sessionStorage.getItem(`onboarding-auto:${org.slug}`) === "skipped") return;
-    } catch { /* sessionStorage bloqueado: deixa passar */ }
+    } catch {
+      /* sessionStorage bloqueado: deixa passar */
+    }
     navigate({ to: "/app/onboarding/$slug", params: { slug: org.slug } });
   }, [org, onboardingQ.data, navigate]);
 
@@ -106,6 +113,7 @@ function OrgLayout() {
         </main>
       </div>
     );
+
   if (error || !org) return <div className="p-6 text-sm text-destructive">Sem acesso a esta organização.</div>;
 
   const roleLabel = ROLE_LABEL[org.role] ?? org.role;

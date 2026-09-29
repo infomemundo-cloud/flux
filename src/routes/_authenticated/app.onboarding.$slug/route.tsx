@@ -8,14 +8,15 @@ import { ListSkeleton } from "@/components/skeletons";
 import { OnboardingStepProfile } from "./-components/onboarding-step-profile";
 import { OnboardingStepConnect } from "./-components/onboarding-step-connect";
 
-
 /**
  * Wizard de ativação (ciclo 1, §38): tela cheia FORA do shell da org
  * (irmão de `app.o.$slug`, filho de `_authenticated` → herda o guard de
  * sessão). Guards D6: org conectada → fila; papel não-gestor → fila
  * (aviso neutro); erro de membership → /app.
  * "Conectar depois" (dismiss) vive no step 2 — controla só o auto-abrir
- * futuro (Fase 3); a orientação na fila nunca some até conectar.
+ * futuro; a orientação na fila nunca some até conectar.
+ * Step persistido por org em sessionStorage: remount (yank pós-scan)
+ * NÃO volta mais pra etapa de perfil já vencida (bug do E2E 2026-09-30).
  */
 export const Route = createFileRoute("/_authenticated/app/onboarding/$slug")({
   head: () => ({ meta: [{ title: "Configuração inicial — Fluxo" }] }),
@@ -26,7 +27,16 @@ function OnboardingWizard() {
   const { slug } = Route.useParams();
   const getOrg = useServerFn(getOrgBySlug);
   const getState = useServerFn(getOnboardingState);
-  const [step, setStep] = useState<1 | 2>(1);
+
+  // Step sobrevivente a remounts: perfil completo → step 2 persistido.
+  const stepKey = `onboarding-step:${slug}`;
+  const [step, setStep] = useState<1 | 2>(() => {
+    try {
+      return sessionStorage.getItem(stepKey) === "2" ? 2 : 1;
+    } catch {
+      return 1;
+    }
+  });
 
   const orgQ = useQuery({
     queryKey: ["org", slug],
@@ -70,7 +80,14 @@ function OnboardingWizard() {
       {step === 1 ? (
         <OnboardingStepProfile
           org={{ id: org.id, name: org.name, slug: org.slug, logo_url: org.logo_url }}
-          onComplete={() => setStep(2)}
+          onComplete={() => {
+            try {
+              sessionStorage.setItem(stepKey, "2");
+            } catch {
+              /* sessionStorage bloqueado: segue só com estado local */
+            }
+            setStep(2);
+          }}
         />
       ) : (
         <OnboardingStepConnect orgId={org.id} orgSlug={slug} />

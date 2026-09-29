@@ -376,6 +376,8 @@ export const updateAutoAssignSettings = createServerFn({ method: "POST" })
  *   (lido via supabaseAdmin: a RLS de whatsapp_settings é owner/admin-only,
  *   mas o estado de onboarding é necessário a qualquer membro pra
  *   redirect/card — a membership é validada ANTES, então é seguro);
+ * - status: connection_status CRU (o layout usa pra não arrancar o
+ *   usuário do fluxo durante 'connecting' — bug do yank pós-scan);
  * - dismissed: organizations.onboarding_dismissed_at (controla SÓ o
  *   auto-abrir do wizard; a orientação na fila nunca some até conectar);
  * - role: papel do usuário na org (wizard é owner/admin).
@@ -407,6 +409,7 @@ export const getOnboardingState = createServerFn({ method: "GET" })
 
     return {
       connected: wa?.connection_status === "connected",
+      status: (wa?.connection_status as string) ?? "disconnected",
       dismissed: !!org?.onboarding_dismissed_at,
       role: mem.role as string,
     };
