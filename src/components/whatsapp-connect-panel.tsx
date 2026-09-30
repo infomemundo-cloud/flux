@@ -9,8 +9,9 @@ import { InfoTip } from "@/components/info-tip";
  * Regras: 1º QR só por clique; renovação automática com teto (3×) e pausa
  * em background; `expired` com ação manual; `syncing` celebra 1.5s antes
  * de onConnected. Em compact o mount NÃO mostra loader: entra em idle
- * direto (a section já sabe que não está conectado) e só evolui se houver
- * QR pendente ou conexão confirmada — acesso sem atrito.
+ * direto e só evolui se houver QR pendente ou conexão confirmada.
+ * Badge de status vive NO FLUXO da coluna (topo, self-start) — nunca
+ * absoluto por cima do QR (bug de sobreposição do E2E 2026-09-30).
  */
 type PanelStatus =
   | "loading"
@@ -290,172 +291,172 @@ export function WhatsappConnectPanel({
       `}</style>
 
       <div className={compact ? "flex flex-col gap-4" : "grid gap-6 lg:grid-cols-2 lg:gap-8"}>
-        {/* Coluna 1: estados / QR / ação */}
+        {/* Coluna 1: badge no fluxo (topo) + estados centrados no restante */}
         <div
           className={`relative flex flex-col items-center overflow-hidden rounded-xl border border-border bg-background ${
-            idleCompact
-              ? "p-4"
-              : compact
-                ? "min-h-[280px] justify-center p-4"
-                : "min-h-[320px] justify-center p-6"
+            idleCompact ? "p-4" : compact ? "min-h-[280px] p-4" : "min-h-[320px] p-6"
           }`}
         >
-          {/* Badge de status — só no wizard; em Configurações o header do card já mostra */}
+          {/* Badge de status NO FLUXO (só wizard): nunca sobrepõe o QR */}
           {!compact && (
-            <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-card px-2 py-0.5 text-[10px] font-semibold ring-1 ring-border/60">
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${statusBadge.dot} ${statusBadge.pulse ? "animate-pulse" : ""}`}
-              />
-              <span className={statusBadge.color}>{statusBadge.label}</span>
-            </div>
-          )}
-
-          {/* Loading neutro (só wizard): nunca diz "Alocando instância" */}
-          {status === "loading" && (
-            <div className="flex flex-col items-center gap-3 py-10 animate-in fade-in duration-300">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              <div className="text-xs text-muted-foreground">Consultando o status da conexão…</div>
-            </div>
-          )}
-
-          {/* Starting/connecting: só existe após ação do usuário (ou fluxo do wizard) */}
-          {(status === "starting" || status === "connecting") && (
-            <div className="flex flex-col items-center gap-3 py-10 animate-in fade-in duration-300">
-              <div className="relative grid h-14 w-14 place-items-center">
-                <span className="absolute inset-0 rounded-full border-2 border-primary/20" />
-                <Loader2 className="h-7 w-7 animate-spin text-primary" />
-              </div>
-              <div className="text-sm font-medium text-foreground transition-opacity duration-300">
-                {status === "connecting" ? "Sincronizando com a Evolution…" : startingMsg}
-              </div>
-              <div className="text-xs text-muted-foreground">Isso leva alguns segundos</div>
-            </div>
-          )}
-
-          {status === "syncing" && (
-            <div className="flex w-full max-w-xs flex-col items-center gap-4 py-10">
-              <span
-                className="grid h-16 w-16 place-items-center rounded-full bg-emerald-500/10"
-                style={{ animation: "flux-check-bounce 500ms cubic-bezier(0.34, 1.56, 0.64, 1)" }}
-              >
-                <CheckCircle2 className="h-8 w-8 text-emerald-500" strokeWidth={2.2} />
-              </span>
-              <div className="text-center">
-                <div className="text-base font-semibold">Leitura confirmada!</div>
-                <div className="mt-1 text-xs text-muted-foreground">Preparando a fila de demandas…</div>
-              </div>
-              <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-emerald-500"
-                  style={{ animation: "flux-progress 1.5s linear forwards" }}
+            <div className="mb-3 flex w-full justify-start">
+              <div className="flex items-center gap-1.5 rounded-full bg-card px-2 py-0.5 text-[10px] font-semibold ring-1 ring-border/60">
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${statusBadge.dot} ${statusBadge.pulse ? "animate-pulse" : ""}`}
                 />
+                <span className={statusBadge.color}>{statusBadge.label}</span>
               </div>
             </div>
           )}
 
-          {status === "connected" && (
-            <div className="flex flex-col items-center gap-4 py-10 animate-in fade-in duration-300">
-              <span className="grid h-16 w-16 place-items-center rounded-full bg-emerald-500/10">
-                <CheckCircle2 className="h-8 w-8 text-emerald-500" strokeWidth={2.2} />
-              </span>
-              <div className="text-center">
-                <div className="text-base font-semibold">WhatsApp conectado</div>
-                <div className="text-xs text-muted-foreground">Pronto pra receber a primeira mensagem.</div>
+          {/* Wrapper de centragem: todo o conteúdo de estado vive aqui */}
+          <div className="flex w-full flex-1 flex-col items-center justify-center">
+            {/* Loading neutro (só wizard): nunca diz "Alocando instância" */}
+            {status === "loading" && (
+              <div className="flex flex-col items-center gap-3 py-10 animate-in fade-in duration-300">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <div className="text-xs text-muted-foreground">Consultando o status da conexão…</div>
               </div>
-            </div>
-          )}
+            )}
 
-          {status === "expired" && (
-            <div className="flex flex-col items-center gap-4 py-10 animate-in fade-in duration-300">
-              <span className="grid h-16 w-16 place-items-center rounded-full bg-muted">
-                <RefreshCw className="h-8 w-8 text-muted-foreground" />
-              </span>
-              <div className="max-w-xs text-center">
-                <div className="text-base font-semibold">Este QR Code expirou</div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Por segurança geramos poucos QR Codes automáticos. Clique para criar um novo e escanear em seguida.
+            {/* Starting/connecting: só existe após ação do usuário (ou fluxo do wizard) */}
+            {(status === "starting" || status === "connecting") && (
+              <div className="flex flex-col items-center gap-3 py-10 animate-in fade-in duration-300">
+                <div className="relative grid h-14 w-14 place-items-center">
+                  <span className="absolute inset-0 rounded-full border-2 border-primary/20" />
+                  <Loader2 className="h-7 w-7 animate-spin text-primary" />
                 </div>
+                <div className="text-sm font-medium text-foreground transition-opacity duration-300">
+                  {status === "connecting" ? "Sincronizando com a Evolution…" : startingMsg}
+                </div>
+                <div className="text-xs text-muted-foreground">Isso leva alguns segundos</div>
               </div>
-              <button
-                onClick={() => void regenerate(false)}
-                className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground hover:opacity-90"
-              >
-                <QrCode className="h-4 w-4" /> Gerar novo QR Code
-              </button>
-            </div>
-          )}
+            )}
 
-          {status === "error" && (
-            <div className="flex flex-col items-center gap-4 py-10 animate-in fade-in duration-300">
-              <span className="grid h-16 w-16 place-items-center rounded-full bg-destructive/10">
-                <WifiOff className="h-8 w-8 text-destructive" />
-              </span>
-              <div className="max-w-md text-center">
-                <div className="text-base font-semibold">Não foi possível conectar agora</div>
-                <div className="mt-1 text-xs text-muted-foreground">{error}</div>
-              </div>
-              <button
-                onClick={() => void regenerate(false)}
-                className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-xs font-semibold text-primary-foreground hover:opacity-90"
-              >
-                <RefreshCw className="h-3.5 w-3.5" /> Tentar novamente
-              </button>
-            </div>
-          )}
-
-          {status === "awaiting_scan" && qr && (
-            <>
-              <div
-                className="relative rounded-xl bg-white shadow-sm"
-                style={{
-                  padding: compact ? "10px" : "14px",
-                  animation: "flux-qr-pulse 2.5s ease-in-out infinite",
-                }}
-              >
-                <div className="relative overflow-hidden rounded-lg">
-                  {refreshing && (
-                    <span className="absolute inset-0 z-10 grid place-items-center rounded-lg bg-white/80 backdrop-blur-sm">
-                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                    </span>
-                  )}
-                  <img
-                    src={qrSrc(qr)}
-                    alt="QR Code de conexão do WhatsApp"
-                    className={compact ? "h-48 w-48" : "h-56 w-56 sm:h-64 sm:w-64"}
-                  />
-                  <span
-                    className="pointer-events-none absolute left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-sky-500 to-transparent"
-                    style={{ animation: "flux-qr-scan 2.5s ease-in-out infinite", top: "50%" }}
+            {status === "syncing" && (
+              <div className="flex w-full max-w-xs flex-col items-center gap-4 py-10">
+                <span
+                  className="grid h-16 w-16 place-items-center rounded-full bg-emerald-500/10"
+                  style={{ animation: "flux-check-bounce 500ms cubic-bezier(0.34, 1.56, 0.64, 1)" }}
+                >
+                  <CheckCircle2 className="h-8 w-8 text-emerald-500" strokeWidth={2.2} />
+                </span>
+                <div className="text-center">
+                  <div className="text-base font-semibold">Leitura confirmada!</div>
+                  <div className="mt-1 text-xs text-muted-foreground">Preparando a fila de demandas…</div>
+                </div>
+                <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-emerald-500"
+                    style={{ animation: "flux-progress 1.5s linear forwards" }}
                   />
                 </div>
               </div>
-              {code && code.length <= 16 && (
-                <div className="mt-3 text-xs text-muted-foreground">
-                  Ou use o código: <code className="font-bold tracking-widest text-foreground">{code}</code>
-                </div>
-              )}
-              <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
-                {refreshing
-                  ? "Atualizando QR…"
-                  : secsLeft != null
-                    ? `Novo QR automático em ${secsLeft}s`
-                    : "Aguardando o scan…"}
-              </div>
-              <button
-                onClick={() => void regenerate(false)}
-                disabled={refreshing}
-                className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-xs font-semibold transition hover:bg-secondary disabled:opacity-60"
-              >
-                <QrCode className="h-3.5 w-3.5" /> Gerar novo QR agora
-              </button>
-            </>
-          )}
+            )}
 
-          {status === "idle" &&
+            {status === "connected" && (
+              <div className="flex flex-col items-center gap-4 py-10 animate-in fade-in duration-300">
+                <span className="grid h-16 w-16 place-items-center rounded-full bg-emerald-500/10">
+                  <CheckCircle2 className="h-8 w-8 text-emerald-500" strokeWidth={2.2} />
+                </span>
+                <div className="text-center">
+                  <div className="text-base font-semibold">WhatsApp conectado</div>
+                  <div className="text-xs text-muted-foreground">Pronto pra receber a primeira mensagem.</div>
+                </div>
+              </div>
+            )}
+
+            {status === "expired" && (
+              <div className="flex flex-col items-center gap-4 py-10 animate-in fade-in duration-300">
+                <span className="grid h-16 w-16 place-items-center rounded-full bg-muted">
+                  <RefreshCw className="h-8 w-8 text-muted-foreground" />
+                </span>
+                <div className="max-w-xs text-center">
+                  <div className="text-base font-semibold">Este QR Code expirou</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    Por segurança geramos poucos QR Codes automáticos. Clique para criar um novo e escanear em seguida.
+                  </div>
+                </div>
+                <button
+                  onClick={() => void regenerate(false)}
+                  className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground hover:opacity-90"
+                >
+                  <QrCode className="h-4 w-4" /> Gerar novo QR Code
+                </button>
+              </div>
+            )}
+
+            {status === "error" && (
+              <div className="flex flex-col items-center gap-4 py-10 animate-in fade-in duration-300">
+                <span className="grid h-16 w-16 place-items-center rounded-full bg-destructive/10">
+                  <WifiOff className="h-8 w-8 text-destructive" />
+                </span>
+                <div className="max-w-md text-center">
+                  <div className="text-base font-semibold">Não foi possível conectar agora</div>
+                  <div className="mt-1 text-xs text-muted-foreground">{error}</div>
+                </div>
+                <button
+                  onClick={() => void regenerate(false)}
+                  className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-xs font-semibold text-primary-foreground hover:opacity-90"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" /> Tentar novamente
+                </button>
+              </div>
+            )}
+
+            {status === "awaiting_scan" && qr && (
+              <>
+                <div
+                  className="relative rounded-xl bg-white shadow-sm"
+                  style={{
+                    padding: compact ? "10px" : "14px",
+                    animation: "flux-qr-pulse 2.5s ease-in-out infinite",
+                  }}
+                >
+                  <div className="relative overflow-hidden rounded-lg">
+                    {refreshing && (
+                      <span className="absolute inset-0 z-10 grid place-items-center rounded-lg bg-white/80 backdrop-blur-sm">
+                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                      </span>
+                    )}
+                    <img
+                      src={qrSrc(qr)}
+                      alt="QR Code de conexão do WhatsApp"
+                      className={compact ? "h-48 w-48" : "h-56 w-56 sm:h-64 sm:w-64"}
+                    />
+                    <span
+                      className="pointer-events-none absolute left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-sky-500 to-transparent"
+                      style={{ animation: "flux-qr-scan 2.5s ease-in-out infinite", top: "50%" }}
+                    />
+                  </div>
+                </div>
+                {code && code.length <= 16 && (
+                  <div className="mt-3 text-xs text-muted-foreground">
+                    Ou use o código: <code className="font-bold tracking-widest text-foreground">{code}</code>
+                  </div>
+                )}
+                <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                  <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+                  {refreshing
+                    ? "Atualizando QR…"
+                    : secsLeft != null
+                      ? `Novo QR automático em ${secsLeft}s`
+                      : "Aguardando o scan…"}
+                </div>
+                <button
+                  onClick={() => void regenerate(false)}
+                  disabled={refreshing}
+                  className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-xs font-semibold transition hover:bg-secondary disabled:opacity-60"
+                >
+                  <QrCode className="h-3.5 w-3.5" /> Gerar novo QR agora
+                </button>
+              </>
+            )}
+
+            {status === "idle" &&
               (compact ? (
                 // CONFIGURAÇÕES: 2 linhas compactas — (1) título + info tip;
-                // (2) botão de gerar QR. Sem parágrafo solto, sem buraco vertical.
+                // (2) botão ghost de gerar QR.
                 <div className="flex w-full flex-col items-start gap-3 animate-in fade-in duration-300">
                   <div className="flex items-center gap-1.5">
                     <div className="text-sm font-semibold text-foreground">
@@ -471,22 +472,23 @@ export function WhatsappConnectPanel({
                   </button>
                 </div>
               ) : (
-              // Wizard: palco centralizado (tela de foco).
-              <div className="flex flex-col items-center gap-4 py-10 animate-in fade-in duration-300">
-                <div className="text-center">
-                  <div className="text-base font-semibold">Conecte o WhatsApp da sua empresa</div>
-                  <div className="mt-1 max-w-sm text-xs text-muted-foreground">
-                    Conexão por QR Code, sem compartilhar senhas. O número conectado passa a alimentar a fila automaticamente.
+                // WIZARD: palco centralizado (tela de foco).
+                <div className="flex flex-col items-center gap-4 py-10 animate-in fade-in duration-300">
+                  <div className="text-center">
+                    <div className="text-base font-semibold">Conecte o WhatsApp da sua empresa</div>
+                    <div className="mt-1 max-w-sm text-xs text-muted-foreground">
+                      Conexão por QR Code, sem compartilhar senhas. O número conectado passa a alimentar a fila automaticamente.
+                    </div>
                   </div>
+                  <button
+                    onClick={() => void regenerate(false)}
+                    className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground hover:opacity-90"
+                  >
+                    <QrCode className="h-4 w-4" /> Gerar QR Code
+                  </button>
                 </div>
-                <button
-                  onClick={() => void regenerate(false)}
-                  className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground hover:opacity-90"
-                >
-                  <QrCode className="h-4 w-4" /> Gerar QR Code
-                </button>
-              </div>
-            ))}
+              ))}
+          </div>
         </div>
 
         {/* Coluna 2: instruções (só no wizard) */}

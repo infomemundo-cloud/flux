@@ -12,9 +12,10 @@ interface OnboardingStepConnectProps {
 }
 
 /**
- * Step 2/2 do wizard: Conectar WhatsApp
- * Alinhado visualmente ao padrão Dark/Slate do Hub e do Step de Perfil.
- * Mantém o escape lateral ("Conectar depois") no topo à direita.
+ * Etapa única do wizard: Conectar WhatsApp.
+ * Padrão Dark/Slate do Hub; escape lateral ("Conectar depois") no topo
+ * à direita — adiar NÃO some com a orientação (card persistente na fila).
+ * goToFila sincroniza o cache de onboarding ANTES de navegar (anti-yank).
  */
 export function OnboardingStepConnect({ orgId, orgSlug }: OnboardingStepConnectProps) {
   const navigate = useNavigate();
@@ -47,7 +48,7 @@ export function OnboardingStepConnect({ orgId, orgSlug }: OnboardingStepConnectP
 
   return (
     <div className="space-y-5">
-      {/* Cabeçalho do Passo + Botão "Conectar depois" no canto superior direito */}
+      {/* Cabeçalho da etapa + escape "Conectar depois" */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold tracking-tight text-slate-100">
@@ -58,7 +59,6 @@ export function OnboardingStepConnect({ orgId, orgSlug }: OnboardingStepConnectP
             automáticas para a fila.
           </p>
         </div>
-
         <button
           type="button"
           onClick={() => void handleLater()}
@@ -69,7 +69,7 @@ export function OnboardingStepConnect({ orgId, orgSlug }: OnboardingStepConnectP
         </button>
       </div>
 
-      {/* Painel de Conexão com bordas e fundos no padrão Dark/Slate */}
+      {/* Painel de conexão (fonte única) no padrão Dark/Slate */}
       <div className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-4 sm:p-6">
         <WhatsappConnectPanel orgId={orgId} onConnected={goToFila} />
       </div>

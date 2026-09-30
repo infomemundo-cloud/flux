@@ -80,7 +80,7 @@ function Config() {
             orgId={org.id}
             orgSlug={org.slug}
             origin={origin}
-            allowGroupIngest={org.allow_group_ingest ?? true}
+            allowGroupIngest={org.allow_group_ingest ?? false}
           />
         </TabsContent>
         <TabsContent value="atendimento" className="mt-5 space-y-6">
