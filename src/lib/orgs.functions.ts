@@ -269,6 +269,17 @@ export const deleteOrganization = createServerFn({ method: "POST" })
 // Regras de ingestão: atendimento em grupos (@g.us)
 // ============================================================================
 
+// ============================================================================
+// Regras de ingestão: atendimento em grupos (@g.us)
+// ============================================================================
+
+/**
+ * Liga/desliga a ingestão de mensagens de grupos.
+ * Default de produto: DESLIGADO (grupos = firehose de mídia + dado de
+ * terceiro sem opt-in). Ao ATIVAR, exige `acknowledged: true` — o front
+ * mostra o aviso de sobrecarga e o servidor não aceita ligar sem o ack
+ * (defesa em profundidade: não dá pra bypassar via API).
+ */
 export const setAllowGroupIngest = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
@@ -276,6 +287,11 @@ export const setAllowGroupIngest = createServerFn({ method: "POST" })
       .object({
         orgId: z.string().uuid(),
         enabled: z.boolean(),
+        acknowledged: z.boolean().optional(),
+      })
+      .refine((v) => !v.enabled || v.acknowledged === true, {
+        message:
+          "É necessário confirmar o aviso de sobrecarga para ativar o atendimento em grupos.",
       })
       .parse(d),
   )
