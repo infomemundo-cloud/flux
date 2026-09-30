@@ -85,14 +85,19 @@ function systemLineFor(
 }
 
 /**
- * Histórico da conversa com auto-scroll e autoria correta:
- * - GRUPOS: cada bolha message_in mostra QUEM mandou
- *   (metadata.participant_name gravado no ingest), com fallback pro nome do
- *   contato/grupo em eventos antigos;
- * - 1:1 e demais kinds: regra anterior intacta (nameOf com fallback
- *   contactName/Sistema) — zero mudança de comportamento fora de grupos.
- * O nome do grupo CONTINUA onde deve: fila, header e aba Contato
- * (contactName = subject) — aqui só muda o author das bolhas.
+ * Histórico da conversa com auto-scroll resiliente a mídia e autoria correta:
+ * GRUPOS: cada bolha message_in mostra QUEM mandou
+ * (metadata.participant_name gravado no ingest), com fallback pro nome do
+ * contato/grupo em eventos antigos;
+ * 1:1 e demais kinds: regra anterior intacta (nameOf com fallback
+ * contactName/Sistema) — zero mudança de comportamento fora de grupos.
+ *
+ * SCROLL (fix do bug de mídia do E2E 2026-09-30): imagens/áudios/vídeos só
+ * ganham altura DEPOIS do load (lazy + URL assinada), então qualquer scroll
+ * feito antes fica desatualizado e a última mensagem cai abaixo da dobra.
+ * Padrão WhatsApp Web/Slack: rastreamos "pinned no fundo" (tolerância 64px)
+ * e um ResizeObserver no conteúdo re-pina quando o conteúdo cresce — sem
+ * yankar quem subiu pra ler histórico (pinned=false não re-pina).
  */
 export function DemandaHistory({
   events,
@@ -107,15 +112,42 @@ export function DemandaHistory({
   onRetryMedia,
 }: DemandaHistoryProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const lastCountRef = useRef(0);
+  // "Pinned no fundo": usuário está no fim da conversa (tolerância 64px).
+  const pinnedRef = useRef(true);
 
-  // Auto-scroll só quando chega evento novo (não no primeiro load).
+  function scrollToBottom() {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }
+
+  function handleScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 64;
+  }
+
+  // Auto-scroll quando chega evento novo.
   useEffect(() => {
-    if (events.length > lastCountRef.current && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (events.length > lastCountRef.current) {
+      pinnedRef.current = true;
+      scrollToBottom();
     }
     lastCountRef.current = events.length;
   }, [events.length]);
+
+  // Mídia (e qualquer conteúdo assíncrono) muda a altura depois do scroll:
+  // ResizeObserver no conteúdo re-pina ao fundo se estávamos lá.
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    const ro = new ResizeObserver(() => {
+      if (pinnedRef.current) scrollToBottom();
+    });
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, []);
 
   const avatarFor = (uid?: string | null, isClient?: boolean): ReactNode => {
     if (isClient) return <ContactAvatar url={contactAvatarUrl} name={contactName} size="sm" tone="client" />;
@@ -134,83 +166,89 @@ export function DemandaHistory({
   };
 
   return (
-    <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3 space-y-1">
-      {description && (
-        <div className="ml-10 rounded-lg border border-dashed border-border/60 bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
-          {description}
-        </div>
-      )}
-      {events.map((e: any) => {
-        if (e.kind === "message_in" || e.kind === "message_out" || e.kind === "commented") {
-          const isClient = e.kind === "message_in";
-          const isInternal = e.kind === "commented";
-          const isOutgoing = e.kind === "message_out";
-          const quoted = e.metadata?.quoted as QuotedRef | null;
-          const media: BubbleMedia | null = e.media_url
-            ? {
-                mediaKind: e.metadata?.media_kind ?? null,
-                mimeType: e.media_type ?? null,
-                url: e.media_url_signed ?? null,
-                fileName: e.file_name ?? null,
-                failedReason: e.metadata?.media_failed ?? null,
-                seconds: e.metadata?.media_seconds ?? null,
-                bytes: e.metadata?.media_bytes ?? null,
-                thumbUrl: e.media_thumb_signed ?? null,
-              }
-            : null;
+    <div
+      ref={scrollRef}
+      onScroll={handleScroll}
+      className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3"
+    >
+      <div ref={contentRef} className="space-y-1">
+        {description && (
+          <div className="ml-10 rounded-lg border border-dashed border-border/60 bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
+            {description}
+          </div>
+        )}
+        {events.map((e: any) => {
+          if (e.kind === "message_in" || e.kind === "message_out" || e.kind === "commented") {
+            const isClient = e.kind === "message_in";
+            const isInternal = e.kind === "commented";
+            const isOutgoing = e.kind === "message_out";
+            const quoted = e.metadata?.quoted as QuotedRef | null;
+            const media: BubbleMedia | null = e.media_url
+              ? {
+                  mediaKind: e.metadata?.media_kind ?? null,
+                  mimeType: e.media_type ?? null,
+                  url: e.media_url_signed ?? null,
+                  fileName: e.file_name ?? null,
+                  failedReason: e.metadata?.media_failed ?? null,
+                  seconds: e.metadata?.media_seconds ?? null,
+                  bytes: e.metadata?.media_bytes ?? null,
+                  thumbUrl: e.media_thumb_signed ?? null,
+                }
+              : null;
+            return (
+              <MessageBubble
+                key={e.id}
+                avatar={avatarFor(e.actor_id, isClient)}
+                author={authorFor(e)}
+                authorRole={roleOf(e.actor_id)}
+                rolePillClass={isAIOf(e.actor_id) ? "pill-violet" : isClient ? "pill-green" : "pill-brand"}
+                isClient={isClient}
+                isOutgoing={isOutgoing}
+                isInternal={isInternal}
+                when={formatRelative(e.created_at)}
+                content={e.content}
+                quoted={quoted}
+                media={media}
+                onReply={() =>
+                  onReply({
+                    event_id: e.id,
+                    author: authorFor(e),
+                    content: e.content ?? "[mídia]",
+                    kind: e.kind,
+                    message_id: e.metadata?.message_id,
+                    from_me: isOutgoing,
+                    participant: e.metadata?.participant_name ?? null,
+                  })
+                }
+                onRetryMedia={onRetryMedia}
+              />
+            );
+          }
+          const line = systemLineFor(e, nameOf);
+          if (!line) return null;
+          const Icon = line.icon;
+          // Recuo próprio (pl-6) pra linha de sistema não ficar colada na
+          // borda da coluna: o ícone alinha sob o conteúdo dos balões.
           return (
-            <MessageBubble
-              key={e.id}
-              avatar={avatarFor(e.actor_id, isClient)}
-              author={authorFor(e)}
-              authorRole={roleOf(e.actor_id)}
-              rolePillClass={isAIOf(e.actor_id) ? "pill-violet" : isClient ? "pill-green" : "pill-brand"}
-              isClient={isClient}
-              isOutgoing={isOutgoing}
-              isInternal={isInternal}
-              when={formatRelative(e.created_at)}
-              content={e.content}
-              quoted={quoted}
-              media={media}
-              onReply={() =>
-                onReply({
-                  event_id: e.id,
-                  author: authorFor(e),
-                  content: e.content ?? "[mídia]",
-                  kind: e.kind,
-                  message_id: e.metadata?.message_id,
-                  from_me: isOutgoing,
-                  participant: e.metadata?.participant_name ?? null,
-                })
-              }
-              onRetryMedia={onRetryMedia}
-            />
+            <div key={e.id} className="pl-6 pr-2 py-0.5">
+              <SystemLine icon={Icon} when={formatRelative(e.created_at)}>
+                {line.text}
+              </SystemLine>
+            </div>
           );
-        }
-        const line = systemLineFor(e, nameOf);
-        if (!line) return null;
-        const Icon = line.icon;
-        // Recuo próprio (pl-6) pra linha de sistema não ficar colada na
-        // borda da coluna: o ícone alinha sob o conteúdo dos balões.
-        return (
-          <div key={e.id} className="pl-6 pr-2 py-0.5">
-            <SystemLine icon={Icon} when={formatRelative(e.created_at)}>
-              {line.text}
-            </SystemLine>
+        })}
+        {events.length === 0 && (
+          <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary">
+              <MessageCircle className="h-5 w-5" strokeWidth={1.8} />
+            </div>
+            <div className="text-sm font-semibold text-foreground">Nenhuma mensagem ainda</div>
+            <p className="text-xs text-muted-foreground max-w-[240px]">
+              Envie uma mensagem ou espere o cliente entrar em contato.
+            </p>
           </div>
-        );
-      })}
-      {events.length === 0 && (
-        <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary">
-            <MessageCircle className="h-5 w-5" strokeWidth={1.8} />
-          </div>
-          <div className="text-sm font-semibold text-foreground">Nenhuma mensagem ainda</div>
-          <p className="text-xs text-muted-foreground max-w-[240px]">
-            Envie uma mensagem ou espere o cliente entrar em contato.
-          </p>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
