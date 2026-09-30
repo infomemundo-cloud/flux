@@ -29,6 +29,8 @@ import { connectWhatsapp, getWhatsappConnection } from "@/lib/whatsapp.functions
  * - padrão: grid 2 colunas no desktop (QR/ação | instruções);
  * - compact=true: coluna única com instruções resumidas (Configurações,
  *   onde o card tem largura limitada — sem grid esmagado).
+ * - compact + idle: linha horizontal (texto | botão) e card sem min-h alto,
+ *   pra não deixar buraco vertical morto acima/abaixo do botão.
  */
 type PanelStatus =
   | "loading"
@@ -247,57 +249,27 @@ export function WhatsappConnectPanel({
   const statusBadge = (() => {
     switch (status) {
       case "loading":
-        return {
-          color: "text-muted-foreground",
-          dot: "bg-muted-foreground",
-          label: "Consultando status…",
-          pulse: true,
-        };
+        return { color: "text-muted-foreground", dot: "bg-muted-foreground", label: "Consultando status…", pulse: true };
       case "awaiting_scan":
-        return {
-          color: "text-amber-600 dark:text-amber-400",
-          dot: "bg-amber-500",
-          label: "Aguardando leitura",
-          pulse: true,
-        };
+        return { color: "text-amber-600 dark:text-amber-400", dot: "bg-amber-500", label: "Aguardando leitura", pulse: true };
       case "connecting":
       case "starting":
-        return {
-          color: "text-sky-600 dark:text-sky-400",
-          dot: "bg-sky-500",
-          label: "Estabelecendo conexão…",
-          pulse: true,
-        };
+        return { color: "text-sky-600 dark:text-sky-400", dot: "bg-sky-500", label: "Estabelecendo conexão…", pulse: true };
       case "syncing":
-        return {
-          color: "text-emerald-600 dark:text-emerald-400",
-          dot: "bg-emerald-500",
-          label: "Sincronizando…",
-          pulse: true,
-        };
+        return { color: "text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-500", label: "Sincronizando…", pulse: true };
       case "connected":
-        return {
-          color: "text-emerald-600 dark:text-emerald-400",
-          dot: "bg-emerald-500",
-          label: "Instância online e sincronizada",
-          pulse: false,
-        };
+        return { color: "text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-500", label: "Instância online e sincronizada", pulse: false };
       case "error":
-        return {
-          color: "text-red-600 dark:text-red-400",
-          dot: "bg-red-500",
-          label: "Falha na conexão",
-          pulse: false,
-        };
+        return { color: "text-red-600 dark:text-red-400", dot: "bg-red-500", label: "Falha na conexão", pulse: false };
       default:
-        return {
-          color: "text-muted-foreground",
-          dot: "bg-muted-foreground",
-          label: "Desconectado",
-          pulse: false,
-        };
+        return { color: "text-muted-foreground", dot: "bg-muted-foreground", label: "Desconectado", pulse: false };
     }
   })();
+
+  // Em compacto + idle, o card encolhe (sem buraco vertical) e o conteúdo
+  // vira uma linha horizontal (texto | botão). Nos demais estados compactos
+  // mantém min-h alto centralizado pra dar palco ao QR/spinner.
+  const idleCompact = compact && status === "idle";
 
   return (
     <>
@@ -328,19 +300,23 @@ export function WhatsappConnectPanel({
       <div className={compact ? "flex flex-col gap-4" : "grid gap-6 lg:grid-cols-2 lg:gap-8"}>
         {/* ── Coluna 1: QR / ação / syncing / connected / error ── */}
         <div
-          className={`relative flex flex-col items-center justify-center overflow-hidden rounded-xl border border-border bg-background ${
-            compact ? "min-h-[280px] p-4" : "min-h-[320px] p-6"
+          className={`relative flex flex-col items-center overflow-hidden rounded-xl border border-border bg-background ${
+            idleCompact
+              ? "p-4"
+              : compact
+                ? "min-h-[280px] justify-center p-4"
+                : "min-h-[320px] justify-center p-6"
           }`}
         >
-          {/* Badge de status ao vivo no topo */}
-          <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-card px-2 py-0.5 text-[10px] font-semibold ring-1 ring-border/60">
-            <span
-              className={`h-1.5 w-1.5 rounded-full ${statusBadge.dot} ${
-                statusBadge.pulse ? "animate-pulse" : ""
-              }`}
-            />
-            <span className={statusBadge.color}>{statusBadge.label}</span>
-          </div>
+          {/* Badge de status — só no wizard; em Configurações o header do card já mostra o status */}
+          {!compact && (
+            <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-card px-2 py-0.5 text-[10px] font-semibold ring-1 ring-border/60">
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${statusBadge.dot} ${statusBadge.pulse ? "animate-pulse" : ""}`}
+              />
+              <span className={statusBadge.color}>{statusBadge.label}</span>
+            </div>
+          )}
 
           {(status === "loading" || status === "starting" || status === "connecting") && (
             <div className="flex flex-col items-center gap-3 py-10 animate-in fade-in duration-300">
@@ -458,23 +434,44 @@ export function WhatsappConnectPanel({
             </>
           )}
 
-          {status === "idle" && (
-            <div className="flex flex-col items-center gap-4 py-10 animate-in fade-in duration-300">
-              <div className="text-center">
-                <div className="text-base font-semibold">Conecte o WhatsApp da sua empresa</div>
-                <div className="mt-1 max-w-sm text-xs text-muted-foreground">
-                  Conexão por QR Code, sem compartilhar senhas. O número conectado passa a
-                  alimentar a fila automaticamente.
+          {status === "idle" &&
+            (compact ? (
+              // CONFIGURAÇÕES: linha horizontal — texto à esquerda, botão ao
+              // lado à direita. Usa a largura que o card já tem (não cresce)
+              // e, como o container perdeu o min-h alto, some o buraco vertical.
+              <div className="flex w-full items-center justify-between gap-4 animate-in fade-in duration-300">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-foreground">
+                    Conecte o WhatsApp da sua empresa
+                  </div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    Conexão por QR Code, sem compartilhar senhas. O número conectado alimenta a fila automaticamente.
+                  </div>
                 </div>
+                <button
+                  onClick={() => void regenerate(false)}
+                  className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground shadow-sm transition hover:brightness-110"
+                >
+                  <QrCode className="h-4 w-4" /> Gerar QR Code
+                </button>
               </div>
-              <button
-                onClick={() => void regenerate(false)}
-                className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground hover:opacity-90"
-              >
-                <QrCode className="h-4 w-4" /> Gerar QR Code
-              </button>
-            </div>
-          )}
+            ) : (
+              // WIZARD: empilhamento centralizado com palco (tela de foco).
+              <div className="flex flex-col items-center gap-4 py-10 animate-in fade-in duration-300">
+                <div className="text-center">
+                  <div className="text-base font-semibold">Conecte o WhatsApp da sua empresa</div>
+                  <div className="mt-1 max-w-sm text-xs text-muted-foreground">
+                    Conexão por QR Code, sem compartilhar senhas. O número conectado passa a alimentar a fila automaticamente.
+                  </div>
+                </div>
+                <button
+                  onClick={() => void regenerate(false)}
+                  className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground hover:opacity-90"
+                >
+                  <QrCode className="h-4 w-4" /> Gerar QR Code
+                </button>
+              </div>
+            ))}
         </div>
 
         {/* ── Coluna 2: instruções (só no modo completo) ── */}
@@ -504,14 +501,13 @@ export function WhatsappConnectPanel({
               </ul>
             </div>
             <p className="text-[11px] text-muted-foreground">
-              Por segurança o QR expira rápido — geramos um novo automaticamente enquanto esta
-              tela estiver aberta.
+              Por segurança o QR expira rápido — geramos um novo automaticamente enquanto esta tela estiver aberta.
             </p>
           </div>
         )}
 
-        {/* Resumo em 1 linha no modo compacto */}
-        {compact && status === "idle" && (
+        {/* Resumo em 1 linha no modo compacto (só fora do idle, que já traz o texto) */}
+        {compact && status !== "idle" && status !== "connected" && (
           <p className="text-center text-[11px] text-muted-foreground">
             Abra o WhatsApp no celular → Aparelhos conectados → Conectar um aparelho.
           </p>
