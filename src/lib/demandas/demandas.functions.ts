@@ -415,7 +415,7 @@ export const listOlderEvents = createServerFn({ method: "GET" })
     z
       .object({
         demandaId: z.string().uuid(),
-        before: z.string().datetime(), // cursor: created_at do mais antigo já carregado
+        before: z.string().datetime({ offset: true }), // cursor: created_at do mais antigo já carregado (PostgREST retorna timestamptz com offset +00:00, não Z)
         limit: z.number().int().min(10).max(100).default(OLDER_EVENTS_PAGE_SIZE),
       })
       .parse(d),
