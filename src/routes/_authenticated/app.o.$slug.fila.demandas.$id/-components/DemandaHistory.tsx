@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   CalendarClock,
   CheckCircle2,
+  ChevronUp,
   Flag,
   GitBranch,
   Inbox,
@@ -93,8 +94,10 @@ function systemLineFor(
 
 /**
  * Histórico da conversa com PAGINAÇÃO cursor-based (padrão WhatsApp Web):
- * - Renderiza a janela atual (últimas 50 mensagens + lotes anteriores
+ * - Renderiza a janela atual (últimas 20 mensagens + lotes anteriores
  *   carregados via onLoadMore);
+ * - Pill clicável no topo "↓ Mensagens anteriores" quando hasMore (affordance
+ *   de descoberta além do sentinel automático);
  * - Sentinel no topo (IntersectionObserver) dispara onLoadMore quando o
  *   usuário rola até lá;
  * - Âncora de scroll: ao prepend, ajusta scrollTop pelo delta de altura
@@ -244,13 +247,23 @@ export function DemandaHistory({
       className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3"
     >
       <div ref={contentRef} className="space-y-1">
-        {/* Sentinel + indicador de carregamento/fim do histórico */}
-        <div ref={sentinelRef} className="flex items-center justify-center py-3">
+        {/* Pill clicável + indicador de carregamento/fim do histórico */}
+        <div ref={sentinelRef} className="flex items-center justify-center py-3 min-h-[40px]">
           {loadingMore && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               Carregando mensagens anteriores…
             </div>
+          )}
+          {!loadingMore && hasMore && (
+            <button
+              type="button"
+              onClick={onLoadMore}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-secondary/50 px-3 py-1 text-[11px] font-medium text-muted-foreground transition hover:border-primary/40 hover:bg-primary/5 hover:text-foreground"
+            >
+              <ChevronUp className="h-3 w-3" />
+              Carregar mensagens anteriores
+            </button>
           )}
           {!hasMore && events.length > 0 && (
             <div className="text-[11px] text-muted-foreground">

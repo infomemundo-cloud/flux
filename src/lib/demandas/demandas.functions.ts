@@ -211,11 +211,20 @@ export const markAllDemandasRead = createServerFn({ method: "POST" })
   });
 
 /**
- * Tamanho da janela inicial de mensagens e de cada lote subsequente.
- * 50 mensagens = ~1 tela cheia de conversa + margem pra scroll — padrão
- * WhatsApp Web / Intercom. Conversas com menos de 50 eventos retornam tudo.
+ * Janela INICIAL de mensagens na abertura da demanda.
+ * 20 mensagens = ~1-2 telas de conversa — padrão Telegram/Slack mobile.
+ * Conversas com menos de 20 eventos retornam tudo (olderCursor = null).
+ * Valor menor que 50 (anterior) torna o efeito de paginação visível em
+ * conversas curtas-médias (30+ eventos já mostram "Carregar anteriores").
  */
-const EVENTS_PAGE_SIZE = 50;
+const INITIAL_EVENTS_PAGE_SIZE = 20;
+
+/**
+ * Tamanho do lote de scroll (quando usuário sobe a tela).
+ * 30 = padrão Intercom/Zendesk — carrega mais que a janela inicial
+ * pra reduzir o número de scrolls até o início da conversa.
+ */
+const OLDER_EVENTS_PAGE_SIZE = 30;
 
 /**
  * Assina URLs de mídia pra uma lista de eventos (paralelo, tolerante a
@@ -273,15 +282,15 @@ async function resolveActors(
 
 /**
  * Detalhe da demanda com HISTÓRICO PAGINADO (padrão WhatsApp Web).
- * Retorna só as últimas EVENTS_PAGE_SIZE mensagens (ordenadas cronológicas)
- * + olderCursor (created_at do mais antigo da janela, null se não tem mais).
- * O cliente busca lotes anteriores via listOlderEvents passando o cursor.
+ * Retorna só as últimas INITIAL_EVENTS_PAGE_SIZE mensagens (ordenadas
+ * cronológicas) + olderCursor (created_at do mais antigo, null se não tem
+ * mais). Cliente busca lotes anteriores via listOlderEvents.
  *
  * Benefícios (ciclo de corte de egress/logs):
  * - Conversa antiga (1000 eventos, 300 mídias) → 10x menos payload +
  *   95% menos signedMediaUrl() a cada refetch
  * - Abertura de demanda cai de 800-2000ms pra 100-200ms
- * - Memoria do browser cai proporcionalmente (50 bolhas no DOM, não 1000)
+ * - Memoria do browser cai proporcionalmente (20 bolhas no DOM, não 1000)
  */
 export const getDemanda = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -312,18 +321,18 @@ export const getDemanda = createServerFn({ method: "GET" })
       console.error("[getDemanda] falha ao marcar vista", e);
     }
 
-    // PAGINAÇÃO: busca os últimos EVENTS_PAGE_SIZE+1 eventos (o +1 serve
-    // pra saber se tem mais antigos sem COUNT adicional). Ordem DESC pra
-    // pegar os mais recentes primeiro, depois revertemos pra cronológica.
+    // PAGINAÇÃO: busca os últimos INITIAL_EVENTS_PAGE_SIZE+1 eventos (o +1
+    // serve pra saber se tem mais antigos sem COUNT adicional). Ordem DESC
+    // pra pegar os mais recentes primeiro, depois revertemos pra cronológica.
     const { data: eventsRaw } = await context.supabase
       .from("demanda_events")
       .select("*")
       .eq("demanda_id", data.id)
       .order("created_at", { ascending: false })
-      .limit(EVENTS_PAGE_SIZE + 1);
+      .limit(INITIAL_EVENTS_PAGE_SIZE + 1);
 
-    const hasMore = (eventsRaw ?? []).length > EVENTS_PAGE_SIZE;
-    const window = (eventsRaw ?? []).slice(0, EVENTS_PAGE_SIZE).reverse();
+    const hasMore = (eventsRaw ?? []).length > INITIAL_EVENTS_PAGE_SIZE;
+    const window = (eventsRaw ?? []).slice(0, INITIAL_EVENTS_PAGE_SIZE).reverse();
     // Cursor = created_at do evento MAIS ANTIGO da janela. Se hasMore=false,
     // cursor=null sinaliza "fim do histórico" pro cliente.
     const olderCursor: string | null = hasMore && window.length > 0 ? (window[0].created_at as string) : null;
@@ -396,12 +405,9 @@ export const getDemanda = createServerFn({ method: "GET" })
 /**
  * Busca lote ANTERIOR de eventos (scroll pra cima no histórico).
  * Chamado pelo cliente quando o sentinel no topo do DemandaHistory entra
- * na viewport. Retorna os próximos EVENTS_PAGE_SIZE eventos antes do cursor,
- * ordenados cronologicamente (mais antigo → mais recente dentro do lote),
- * + novo olderCursor (null se acabou o histórico).
- *
- * Assina URLs de mídia do lote (não das mensagens já carregadas —
- * deduplicação feita no cliente por event_id).
+ * na viewport. Retorna os próximos OLDER_EVENTS_PAGE_SIZE eventos antes do
+ * cursor, ordenados cronologicamente, + novo olderCursor (null se acabou).
+ * Assina URLs de mídia SÓ do lote novo (dedup por event_id no cliente).
  */
 export const listOlderEvents = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -410,7 +416,7 @@ export const listOlderEvents = createServerFn({ method: "GET" })
       .object({
         demandaId: z.string().uuid(),
         before: z.string().datetime(), // cursor: created_at do mais antigo já carregado
-        limit: z.number().int().min(10).max(100).default(EVENTS_PAGE_SIZE),
+        limit: z.number().int().min(10).max(100).default(OLDER_EVENTS_PAGE_SIZE),
       })
       .parse(d),
   )

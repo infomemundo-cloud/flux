@@ -58,12 +58,15 @@ function toBase64(file: File): Promise<string> {
  * -components/. Nenhum JSX de detalhe visual vive aqui.
  *
  * PAGINAÇÃO DO HISTÓRICO (padrão WhatsApp Web):
- * - Estado local `events` inicializado pelo getDemanda (últimas 50 msgs);
+ * - Estado local `events` inicializado pelo getDemanda (últimas 20 msgs);
  * - `olderCursor` controla se tem mais antigos pra carregar;
  * - Realtime APPEND-only: nova mensagem vai pro fim de `events` sem
- *   invalidar a query (evita re-assinar 50 mídias a cada mensagem nova);
+ *   invalidar a query (evita re-assinar 20 mídias a cada mensagem nova);
  * - loadMore() busca lote anterior via listOlderEvents e PREPEND em `events`
- *   + merge de atores; DemandaHistory ajusta scrollTop via âncora.
+ *   + merge de atores; DemandaHistory ajusta scrollTop via âncora;
+ * - MERGE SEGURO no refetch: só acrescenta eventos novos do rabo (append)
+ *   se o cliente ainda não tem páginas prepended — caso contrário preserva
+ *   o estado local (evita resetar scroll e re-assinar mídias já carregadas).
  */
 function DemandaDetail() {
   const { slug, id } = useParams({ from: "/_authenticated/app/o/$slug/fila/demandas/$id" });
@@ -98,6 +101,9 @@ function DemandaDetail() {
   const [events, setEvents] = useState<any[]>([]);
   const [olderCursor, setOlderCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  // Flag: usuário já carregou páginas anteriores? (se sim, não sobrescrever
+  // o estado no próximo refetch — preservar scroll + mídias assinadas).
+  const [hasPrepended, setHasPrepended] = useState(false);
   // Atores acumulados: cada lote (initial + older) traz seus atores; merge
   // aqui pra nameOf/roleOf cobrirem tudo que já foi carregado.
   const [actors, setActors] = useState<
@@ -129,20 +135,37 @@ function DemandaDetail() {
 
   // Inicializa estado de paginação quando o getDemanda resolve (ou quando
   // o id muda — reset completo pra não misturar eventos de demandas distintas).
+  // MERGE SEGURO: se o usuário já carregou páginas anteriores (hasPrepended),
+  // preservamos o estado local — só atualizamos a demanda (metadata) e não
+  // tocamos nos eventos já paginados. Isso evita reset de scroll e
+  // re-assinatura de mídias em cada refetch de 30s.
   useEffect(() => {
     if (!data) return;
     if (currentIdRef.current !== id) {
+      // Nova demanda: reset completo
       currentIdRef.current = id;
       setEventsInitialized(false);
+      setHasPrepended(false);
+      setEvents(data.events ?? []);
+      setOlderCursor(data.olderCursor ?? null);
+      setActors((data.actors ?? {}) as typeof actors);
+      setEventsInitialized(true);
+      return;
     }
-    setEvents(data.events ?? []);
-    setOlderCursor(data.olderCursor ?? null);
-    setActors((data.actors ?? {}) as typeof actors);
-    setEventsInitialized(true);
-  }, [data, id]);
+    // Mesma demanda: preserva o estado paginado (não sobrescreve eventos)
+    // Só atualiza os atores (caso o servidor tenha resolvido algum novo)
+    if (data.actors) {
+      setActors((prev) => ({ ...prev, ...data.actors }));
+    }
+    if (!eventsInitialized) {
+      setEvents(data.events ?? []);
+      setOlderCursor(data.olderCursor ?? null);
+      setEventsInitialized(true);
+    }
+  }, [data, id, eventsInitialized]);
 
   // Realtime APPEND-only: nova mensagem/evento na demanda vai pro fim de
-  // `events` sem invalidar a query (não re-assina 50 mídias, não re-resolve
+  // `events` sem invalidar a query (não re-assina 20 mídias, não re-resolve
   // atores, não reseta o scroll). Canal específico pra esta demanda
   // (diferente do org-wide, pra não conflitar com invalidações de lista).
   useEffect(() => {
@@ -225,6 +248,7 @@ function DemandaDetail() {
       });
       setEvents((prev) => [...(res.events ?? []), ...prev]);
       setOlderCursor(res.olderCursor ?? null);
+      setHasPrepended(true);
       if (res.actors) {
         setActors((prev) => ({ ...prev, ...res.actors }));
       }
@@ -347,7 +371,7 @@ function DemandaDetail() {
       if (attachment?.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
       setAttachment(null);
       // Não invalida a query: o Realtime vai appendar a mensagem nova no
-      // estado local. Invalidar resetaria o scroll e re-assinaria 50 mídias.
+      // estado local. Invalidar resetaria o scroll e re-assinaria 20 mídias.
       qc.invalidateQueries({ queryKey: ["demandas"] });
     },
     onError: (e) => {
