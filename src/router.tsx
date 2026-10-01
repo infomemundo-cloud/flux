@@ -10,11 +10,13 @@ export const getRouter = () => {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
-        // Rede de segurança: se o canal em tempo real cair, as telas
-        // continuam se atualizando sozinhas sem F5.
+        // Rede de segurança: se o canal em tempo real cair, focus/reconnect
+        // revalidam (limitado pelo staleTime). SEM refetchInterval global:
+        // ele fazia TODA query montada pollar a cada 15s (maior vetor de
+        // requests/logs do tier free). Fallbacks agora são explícitos e
+        // espaçados por query (fila 60s, detalhe 30s, conexão 120s).
         refetchOnWindowFocus: true,
         refetchOnReconnect: true,
-        refetchInterval: 15_000,
         // Cache ativo: ao voltar para uma aba já visitada o conteúdo aparece
         // na hora e revalida em segundo plano.
         staleTime: 1000 * 60 * 5,

@@ -85,7 +85,7 @@ function DemandaDetail() {
   const { data, isLoading } = useQuery({
     queryKey: ["demanda", id],
     queryFn: () => getFn({ data: { id } }),
-    refetchInterval: 8000,
+    refetchInterval: 30_000,
   });
 
   const update = useMutation({

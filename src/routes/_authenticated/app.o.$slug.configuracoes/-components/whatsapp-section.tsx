@@ -45,6 +45,7 @@ export function WhatsappSection({ orgId }: { orgId: string }) {
     queryKey: ["whatsapp-connection", orgId],
     queryFn: () => getFn({ data: { orgId } }),
     retry: false,
+    refetchInterval: 120_000, // detecta queda externa sem poll agressivo
   });
 
   const status = (conn?.status ?? "disconnected") as keyof typeof STATUS_META;

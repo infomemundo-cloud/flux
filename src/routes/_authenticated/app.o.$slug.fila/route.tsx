@@ -247,6 +247,7 @@ function FilaPage() {
     queryKey: ["whatsapp-connection", org?.id],
     enabled: !!org?.id,
     retry: false,
+    refetchInterval: 120_000, // idem: badge/empty-state honestos em queda externa
     queryFn: () => connFn({ data: { orgId: org!.id } }),
   });
   const waStatus = conn?.status ?? "disconnected";
@@ -320,6 +321,9 @@ function FilaPage() {
           overdueOnly: tab === "atrasadas",
         },
       }),
+    // Fallback gentil pra estado de leitura de OUTRAS sessões
+    // (markAllRead alheio não gera evento); frescor imediato vem do Realtime.
+    refetchInterval: 60_000,
     enabled: !!org?.id,
   });
 
