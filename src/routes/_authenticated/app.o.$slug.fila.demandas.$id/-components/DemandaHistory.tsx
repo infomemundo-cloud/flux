@@ -1,10 +1,11 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   CalendarClock,
   CheckCircle2,
   Flag,
   GitBranch,
   Inbox,
+  Loader2,
   MessageCircle,
   UserCog,
 } from "lucide-react";
@@ -42,6 +43,12 @@ type DemandaHistoryProps = {
   isAIOf: (uid?: string | null) => boolean;
   onReply: (target: ReplyTarget) => void;
   onRetryMedia: () => void;
+  /** Cursor do evento mais antigo já carregado (null = fim do histórico). */
+  olderCursor: string | null;
+  /** Disparado pelo sentinel quando o usuário rola até o topo. */
+  onLoadMore: () => void;
+  /** True enquanto o lote anterior está sendo buscado. */
+  loadingMore: boolean;
 };
 
 /**
@@ -85,19 +92,21 @@ function systemLineFor(
 }
 
 /**
- * Histórico da conversa com auto-scroll resiliente a mídia e autoria correta:
- * GRUPOS: cada bolha message_in mostra QUEM mandou
- * (metadata.participant_name gravado no ingest), com fallback pro nome do
- * contato/grupo em eventos antigos;
- * 1:1 e demais kinds: regra anterior intacta (nameOf com fallback
- * contactName/Sistema) — zero mudança de comportamento fora de grupos.
+ * Histórico da conversa com PAGINAÇÃO cursor-based (padrão WhatsApp Web):
+ * - Renderiza a janela atual (últimas 50 mensagens + lotes anteriores
+ *   carregados via onLoadMore);
+ * - Sentinel no topo (IntersectionObserver) dispara onLoadMore quando o
+ *   usuário rola até lá;
+ * - Âncora de scroll: ao prepend, ajusta scrollTop pelo delta de altura
+ *   (histórico cresce pra cima sem pular a tela — o usuário continua
+ *   vendo a mesma mensagem que estava olhando);
+ * - Auto-scroll pro fim: só quando chega evento novo NO FINAL (append)
+ *   e o usuário estava pinned (tolerância 64px). ResizeObserver re-pina
+ *   quando mídia carrega (corrige bug de imagem fora da dobra).
  *
- * SCROLL (fix do bug de mídia do E2E 2026-09-30): imagens/áudios/vídeos só
- * ganham altura DEPOIS do load (lazy + URL assinada), então qualquer scroll
- * feito antes fica desatualizado e a última mensagem cai abaixo da dobra.
- * Padrão WhatsApp Web/Slack: rastreamos "pinned no fundo" (tolerância 64px)
- * e um ResizeObserver no conteúdo re-pina quando o conteúdo cresce — sem
- * yankar quem subiu pra ler histórico (pinned=false não re-pina).
+ * GRUPOS: cada bolha message_in mostra QUEM mandou (metadata.participant_name
+ * gravado no ingest), com fallback pro nome do contato/grupo em eventos
+ * antigos; 1:1 e demais kinds: regra anterior intacta.
  */
 export function DemandaHistory({
   events,
@@ -110,12 +119,22 @@ export function DemandaHistory({
   isAIOf,
   onReply,
   onRetryMedia,
+  olderCursor,
+  onLoadMore,
+  loadingMore,
 }: DemandaHistoryProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
   const lastCountRef = useRef(0);
   // "Pinned no fundo": usuário está no fim da conversa (tolerância 64px).
   const pinnedRef = useRef(true);
+  // Guarda o scrollHeight ANTES do prepend pra ajustar scrollTop depois.
+  const prevScrollHeightRef = useRef(0);
+  // Flag: foi o primeiro load? (não queremos auto-scroll no primeiro load
+  // se o usuário chegou via back navigation — o scrollRestoration do
+  // Router cuida disso).
+  const [mounted, setMounted] = useState(false);
 
   function scrollToBottom() {
     const el = scrollRef.current;
@@ -128,16 +147,27 @@ export function DemandaHistory({
     pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 64;
   }
 
-  // Auto-scroll quando chega evento novo.
+  // Auto-scroll quando chega evento novo NO FINAL (append por Realtime).
+  // Detecta append: events.length cresceu E o último evento mudou de id.
   useEffect(() => {
-    if (events.length > lastCountRef.current) {
-      pinnedRef.current = true;
+    if (!mounted) {
+      setMounted(true);
+      lastCountRef.current = events.length;
+      // Primeiro load: scroll pro fim pra mostrar as últimas mensagens
+      // (padrão WhatsApp Web — nunca abre no topo da conversa).
       scrollToBottom();
+      return;
+    }
+    if (events.length > lastCountRef.current) {
+      // Se pinned, rola pro fim (nova mensagem chegou e usuário estava
+      // olhando o fim). Se não pinned (usuário lendo histórico), não
+      // faz nada — a mensagem nova entra silenciosamente no fim.
+      if (pinnedRef.current) scrollToBottom();
     }
     lastCountRef.current = events.length;
-  }, [events.length]);
+  }, [events, mounted]);
 
-  // Mídia (e qualquer conteúdo assíncrono) muda a altura depois do scroll:
+  // Mídia (e qualquer conteúdo assíncrono) muda a altura depois do load:
   // ResizeObserver no conteúdo re-pina ao fundo se estávamos lá.
   useEffect(() => {
     const content = contentRef.current;
@@ -148,6 +178,46 @@ export function DemandaHistory({
     ro.observe(content);
     return () => ro.disconnect();
   }, []);
+
+  // Âncora de scroll: após prepend (events.length menor que o esperado),
+  // ajusta scrollTop pelo delta pra manter a posição visual do usuário.
+  // Detecta prepend: events.length cresceu mas o último id é o mesmo
+  // (novo evento entrou NO TOPO, não no fim).
+  const prevLastIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !mounted) {
+      prevLastIdRef.current = events.length > 0 ? events[events.length - 1]?.id : null;
+      prevScrollHeightRef.current = el?.scrollHeight ?? 0;
+      return;
+    }
+    const lastId = events.length > 0 ? events[events.length - 1]?.id : null;
+    const currentScrollHeight = el.scrollHeight;
+    // Se o último id é o mesmo mas a altura cresceu, foi prepend no topo.
+    if (lastId && lastId === prevLastIdRef.current && currentScrollHeight > prevScrollHeightRef.current) {
+      const delta = currentScrollHeight - prevScrollHeightRef.current;
+      el.scrollTop += delta;
+    }
+    prevLastIdRef.current = lastId;
+    prevScrollHeightRef.current = currentScrollHeight;
+  }, [events, mounted]);
+
+  // Sentinel: quando entra na viewport, dispara onLoadMore (carregar mais antigos).
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    const scroller = scrollRef.current;
+    if (!sentinel || !scroller || !olderCursor || loadingMore) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) onLoadMore();
+        }
+      },
+      { root: scroller, threshold: 0.1 },
+    );
+    io.observe(sentinel);
+    return () => io.disconnect();
+  }, [olderCursor, loadingMore, onLoadMore]);
 
   const avatarFor = (uid?: string | null, isClient?: boolean): ReactNode => {
     if (isClient) return <ContactAvatar url={contactAvatarUrl} name={contactName} size="sm" tone="client" />;
@@ -165,6 +235,8 @@ export function DemandaHistory({
     return nameOf(e.actor_id, isClient ? contactName : "Sistema");
   };
 
+  const hasMore = olderCursor !== null;
+
   return (
     <div
       ref={scrollRef}
@@ -172,6 +244,21 @@ export function DemandaHistory({
       className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3"
     >
       <div ref={contentRef} className="space-y-1">
+        {/* Sentinel + indicador de carregamento/fim do histórico */}
+        <div ref={sentinelRef} className="flex items-center justify-center py-3">
+          {loadingMore && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Carregando mensagens anteriores…
+            </div>
+          )}
+          {!hasMore && events.length > 0 && (
+            <div className="text-[11px] text-muted-foreground">
+              Início da conversa
+            </div>
+          )}
+        </div>
+
         {description && (
           <div className="ml-10 rounded-lg border border-dashed border-border/60 bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
             {description}
