@@ -18,6 +18,7 @@ import { Route as Platform_adminProtectedRouteRouteImport } from './routes/platf
 import { Route as Platform_adminLoginRouteImport } from './routes/platform_admin/login'
 import { Route as Platform_adminProtectedIndexRouteImport } from './routes/platform_admin/_protected/index'
 import { Route as Platform_adminProtectedUsersRouteImport } from './routes/platform_admin/_protected/users'
+import { Route as Platform_adminConviteTokenRouteImport } from './routes/platform_admin/convite.$token'
 import { Route as AuthenticatedAppOSlugRouteImport } from './routes/_authenticated/app.o.$slug'
 import { Route as AuthenticatedAppOnboardingSlugRouteRouteImport } from './routes/_authenticated/app.onboarding.$slug/route'
 import { Route as ApiPublicIngestTokenRouteImport } from './routes/api/public/ingest.$token'
@@ -75,6 +76,12 @@ const Platform_adminProtectedUsersRoute =
     id: '/users',
     path: '/users',
     getParentRoute: () => Platform_adminProtectedRouteRoute,
+  } as any)
+const Platform_adminConviteTokenRoute =
+  Platform_adminConviteTokenRouteImport.update({
+    id: '/$token',
+    path: '/$token',
+    getParentRoute: () => Platform_adminConviteRoute,
   } as any)
 const AuthenticatedAppOSlugRoute = AuthenticatedAppOSlugRouteImport.update({
   id: '/o/$slug',
@@ -143,6 +150,7 @@ export interface FileRoutesByFullPath {
   '/convite/$token': typeof ConviteTokenRoute
   '/platform_admin/login': typeof Platform_adminLoginRoute
   '/platform_admin/users': typeof Platform_adminProtectedUsersRouteWithChildren
+  '/platform_admin/convite/$token': typeof Platform_adminConviteTokenRoute
   '/platform_admin/': typeof Platform_adminProtectedIndexRoute
   '/app/onboarding/$slug': typeof AuthenticatedAppOnboardingSlugRouteRoute
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
@@ -162,6 +170,7 @@ export interface FileRoutesByTo {
   '/convite/$token': typeof ConviteTokenRoute
   '/platform_admin/login': typeof Platform_adminLoginRoute
   '/platform_admin/users': typeof Platform_adminProtectedUsersRouteWithChildren
+  '/platform_admin/convite/$token': typeof Platform_adminConviteTokenRoute
   '/platform_admin': typeof Platform_adminProtectedIndexRoute
   '/app/onboarding/$slug': typeof AuthenticatedAppOnboardingSlugRouteRoute
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
@@ -184,6 +193,7 @@ export interface FileRoutesById {
   '/convite/$token': typeof ConviteTokenRoute
   '/platform_admin/login': typeof Platform_adminLoginRoute
   '/platform_admin/_protected/users': typeof Platform_adminProtectedUsersRouteWithChildren
+  '/platform_admin/convite/$token': typeof Platform_adminConviteTokenRoute
   '/platform_admin/_protected/': typeof Platform_adminProtectedIndexRoute
   '/_authenticated/app/onboarding/$slug': typeof AuthenticatedAppOnboardingSlugRouteRoute
   '/_authenticated/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
@@ -206,6 +216,7 @@ export interface FileRouteTypes {
     | '/convite/$token'
     | '/platform_admin/login'
     | '/platform_admin/users'
+    | '/platform_admin/convite/$token'
     | '/platform_admin/'
     | '/app/onboarding/$slug'
     | '/app/o/$slug'
@@ -225,6 +236,7 @@ export interface FileRouteTypes {
     | '/convite/$token'
     | '/platform_admin/login'
     | '/platform_admin/users'
+    | '/platform_admin/convite/$token'
     | '/platform_admin'
     | '/app/onboarding/$slug'
     | '/app/o/$slug'
@@ -246,6 +258,7 @@ export interface FileRouteTypes {
     | '/convite/$token'
     | '/platform_admin/login'
     | '/platform_admin/_protected/users'
+    | '/platform_admin/convite/$token'
     | '/platform_admin/_protected/'
     | '/_authenticated/app/onboarding/$slug'
     | '/_authenticated/app/o/$slug'
@@ -333,6 +346,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/platform_admin/users'
       preLoaderRoute: typeof Platform_adminProtectedUsersRouteImport
       parentRoute: typeof Platform_adminProtectedRouteRoute
+    }
+    '/platform_admin/convite/$token': {
+      id: '/platform_admin/convite/$token'
+      path: '/$token'
+      fullPath: '/platform_admin/convite/$token'
+      preLoaderRoute: typeof Platform_adminConviteTokenRouteImport
+      parentRoute: typeof Platform_adminConviteRoute
     }
     '/_authenticated/app/o/$slug': {
       id: '/_authenticated/app/o/$slug'
