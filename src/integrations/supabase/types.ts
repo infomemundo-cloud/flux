@@ -610,24 +610,30 @@ export type Database = {
       }
       profiles: {
         Row: {
+          banned_until: string | null
           created_at: string
           email: string
           full_name: string | null
           id: string
+          last_sign_in_at: string | null
           updated_at: string
         }
         Insert: {
+          banned_until?: string | null
           created_at?: string
           email: string
           full_name?: string | null
           id: string
+          last_sign_in_at?: string | null
           updated_at?: string
         }
         Update: {
+          banned_until?: string | null
           created_at?: string
           email?: string
           full_name?: string | null
           id?: string
+          last_sign_in_at?: string | null
           updated_at?: string
         }
         Relationships: []

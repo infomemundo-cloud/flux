@@ -30,10 +30,15 @@ export const Route = createFileRoute("/platform_admin/_protected")({
  * acontece em useEffect com circuit breaker de hops — nunca <Navigate> em
  * fase de renderização (ciclo síncrono login↔shell congela a aba).
  *
- * PERFORMANCE (pós-auditoria):
- * - staleTime 5min: evita refetch da sessão a cada navegação/foco de janela.
- * - refetchOnWindowFocus false: não revalida ao alternar abas do navegador.
- * - refetchOnReconnect false: não revalida ao reconectar rede (evita picos).
+ * CACHE (alinhado): staleTime 5min + sem refetch em foco/reconexão — o
+ * probe de sessão roda 1x a cada 5min no máximo, não por navegação.
+ * Mutations que mudam status de admin invalidam esta query explicitamente.
+ *
+ * NAVEGAÇÃO pro LOGIN (fix de raiz): o validateSearch do login declara
+ * `redirect` como OPCIONAL ({ redirect?: string }), então navegar pra lá
+ * NÃO exige `search` — os 4 pontos abaixo usam navigate simples. O fluxo
+ * de convite é o único que passa search ({ redirect: <token> }), vindo
+ * de convite.$token.tsx.
  */
 const NAV = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/platform_admin", soon: false },
@@ -62,7 +67,6 @@ function PlatformAdminShell() {
     },
     retry: false,
     // CACHE OTIMIZADO: sessão admin muda raramente (só via mutation).
-    // 5min de staleTime evita refetch em cada navegação/foco de janela.
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -81,6 +85,7 @@ function PlatformAdminShell() {
   }, [isPending]);
 
   // Guard: sem sessão admin → login, via effect + hop guard.
+  // Navigate simples: redirect é opcional no schema de search do login.
   useEffect(() => {
     if (isPending || session) return;
     if (bumpRedirectHops() > 2) {

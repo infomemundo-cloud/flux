@@ -10,6 +10,18 @@ import { bumpRedirectHops, resetRedirectHops } from "@/lib/platform-admin-redire
 
 export const Route = createFileRoute("/platform_admin/login")({
   head: () => ({ meta: [{ title: "Admin — Fluxo" }] }),
+  // Aceita apenas redirect pro fluxo de convite (whitelist de prefixo —
+  // evita open redirect). Usado quando o convidado clica no link sem sessão.
+  // Anotação de retorno = schema de search da rota. Com `redirect?`
+  // OPCIONAL, navegar pra /platform_admin/login não exige `search`
+  // (resolve os TS2322/TS2345 nos 4 pontos do shell de uma vez).
+  validateSearch: (search: Record<string, unknown>): { redirect?: string } => ({
+    redirect:
+      typeof search.redirect === "string" &&
+      search.redirect.startsWith("/platform_admin/convite/")
+        ? search.redirect
+        : undefined,
+  }),
   component: PlatformAdminLogin,
 });
 
@@ -20,9 +32,15 @@ export const Route = createFileRoute("/platform_admin/login")({
  * ANTI-CONGELAMENTO: nenhum <Navigate> em fase de renderização — toda
  * navegação acontece em useEffect (cede a main thread entre hops) com
  * circuit breaker de hops (login ↔ shell não podem ciclar em loop).
+ *
+ * CACHE (alinhado): probe com staleTime 5min + sem refetch em foco/reconexão.
+ * FLUXO DE CONVITE (alinhado): com ?redirect=/platform_admin/convite/<token>,
+ * após autenticar volta pro aceite (o convidado ainda NÃO é admin, então o
+ * probe daria null e o aviso âmbar seria enganoso nesse contexto).
  */
 function PlatformAdminLogin() {
   const navigate = useNavigate();
+  const { redirect } = Route.useSearch();
   const qc = useQueryClient();
   const sessionFn = useServerFn(getPlatformAdminSession);
   const { data: session, isLoading } = useQuery({
@@ -35,6 +53,9 @@ function PlatformAdminLogin() {
       }
     },
     retry: false,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -60,6 +81,12 @@ function PlatformAdminLogin() {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
         toast.error("Credenciais inválidas.");
+        return;
+      }
+      // Fluxo de convite: autenticou → volta pro aceite (ainda não é admin,
+      // probe daria null e mostraria o aviso enganoso "não é admin").
+      if (redirect) {
+        navigate({ to: redirect });
         return;
       }
       const probe = await sessionFn();

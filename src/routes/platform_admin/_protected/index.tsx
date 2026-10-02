@@ -10,13 +10,11 @@ export const Route = createFileRoute("/platform_admin/_protected/")({
 
 /**
  * Dashboard placeholder da Fase 1.7: prova que sessão + gate + audit estão
- * vivos (card de contagem do audit log). As 8 áreas reais chegam nas
- * fases 1.8→4 (D4).
+ * vivos (card de contagem do audit log). As áreas reais chegam nas fases
+ * seguintes (D4).
  *
- * PERFORMANCE (pós-auditoria):
- * - staleTime 5min: evita refetch da sessão e contagem a cada navegação.
- * - refetchOnWindowFocus false: não revalida ao alternar abas do navegador.
- * - refetchOnReconnect false: não revalida ao reconectar rede.
+ * CACHE (alinhado): staleTime 5min + sem refetch em foco/reconexão nas duas
+ * queries — dashboard não gera request em navegação de volta dentro da janela.
  */
 function PlatformAdminDashboard() {
   const sessionFn = useServerFn(getPlatformAdminSession);
@@ -25,7 +23,6 @@ function PlatformAdminDashboard() {
   const { data: session } = useQuery({
     queryKey: ["platform-admin-session"],
     queryFn: () => sessionFn(),
-    // CACHE OTIMIZADO: sessão admin muda raramente (só via mutation).
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -34,7 +31,6 @@ function PlatformAdminDashboard() {
   const { data: audit } = useQuery({
     queryKey: ["admin-audit-count"],
     queryFn: () => countFn(),
-    // CACHE OTIMIZADO: contagem de audit muda raramente (só quando admin age).
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -67,8 +63,10 @@ function PlatformAdminDashboard() {
           <div className="flex items-center gap-2 text-[11px] text-slate-400">
             <Building2 className="h-3.5 w-3.5" /> Tenants
           </div>
-          <div className="mt-2 text-sm font-bold text-slate-500">Fase 1.8</div>
-          <div className="mt-0.5 text-[10px] text-slate-500">gestão cross-tenant em seguida</div>
+          <div className="mt-2 text-sm font-bold text-slate-500">em breve</div>
+          <div className="mt-0.5 text-[10px] text-slate-500">
+            gestão de tenants numa fase futura
+          </div>
         </div>
       </div>
     </div>
