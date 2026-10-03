@@ -35,7 +35,10 @@ dist-ssr
 # Secrets
 .env
 
-# Ignorar Supabase
-supabase/
+# Ignorar Supabase (raiz: migrations/config — política: não commitar)
+# Âncora "/" é obrigatória: sem ela o padrão casa com QUALQUER dir
+# "supabase" em qualquer profundidade — inclusive src/integrations/supabase/,
+# o que fez admin-middleware.ts nascer invisível pro git (build SSR Vercel, 2026-10-04).
+/supabase/
 
 scripts/
