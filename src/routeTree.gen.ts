@@ -22,6 +22,8 @@ import { Route as Platform_adminConviteTokenRouteImport } from './routes/platfor
 import { Route as AuthenticatedAppOSlugRouteImport } from './routes/_authenticated/app.o.$slug'
 import { Route as AuthenticatedAppOnboardingSlugRouteRouteImport } from './routes/_authenticated/app.onboarding.$slug/route'
 import { Route as ApiPublicIngestTokenRouteImport } from './routes/api/public/ingest.$token'
+import { Route as Platform_adminProtectedFlagsFlagsRouteImport } from './routes/platform_admin/_protected/_flags/flags'
+import { Route as Platform_adminProtectedWebhooksWebhooksRouteImport } from './routes/platform_admin/_protected/_webhooks/webhooks'
 import { Route as Platform_adminProtectedUsersIndexRouteImport } from './routes/platform_admin/_protected/users.index'
 import { Route as Platform_adminProtectedUsersUserIdRouteImport } from './routes/platform_admin/_protected/users.$userId'
 import { Route as AuthenticatedAppOSlugAlertasRouteImport } from './routes/_authenticated/app.o.$slug.alertas'
@@ -29,6 +31,8 @@ import { Route as AuthenticatedAppOSlugConfiguracoesRouteRouteImport } from './r
 import { Route as AuthenticatedAppOSlugDashboardRouteImport } from './routes/_authenticated/app.o.$slug.dashboard'
 import { Route as AuthenticatedAppOSlugEquipeRouteImport } from './routes/_authenticated/app.o.$slug.equipe'
 import { Route as AuthenticatedAppOSlugFilaRouteRouteImport } from './routes/_authenticated/app.o.$slug.fila/route'
+import { Route as Platform_adminProtectedFlagsFlagsIndexRouteImport } from './routes/platform_admin/_protected/_flags/flags.index'
+import { Route as Platform_adminProtectedWebhooksWebhooksIndexRouteImport } from './routes/platform_admin/_protected/_webhooks/webhooks.index'
 import { Route as AuthenticatedAppOSlugFilaDemandasIdRouteRouteImport } from './routes/_authenticated/app.o.$slug.fila.demandas.$id/route'
 
 const IndexRoute = IndexRouteImport.update({
@@ -100,6 +104,18 @@ const ApiPublicIngestTokenRoute = ApiPublicIngestTokenRouteImport.update({
   path: '/api/public/ingest/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Platform_adminProtectedFlagsFlagsRoute =
+  Platform_adminProtectedFlagsFlagsRouteImport.update({
+    id: '/_flags/flags',
+    path: '/flags',
+    getParentRoute: () => Platform_adminProtectedRouteRoute,
+  } as any)
+const Platform_adminProtectedWebhooksWebhooksRoute =
+  Platform_adminProtectedWebhooksWebhooksRouteImport.update({
+    id: '/_webhooks/webhooks',
+    path: '/webhooks',
+    getParentRoute: () => Platform_adminProtectedRouteRoute,
+  } as any)
 const Platform_adminProtectedUsersIndexRoute =
   Platform_adminProtectedUsersIndexRouteImport.update({
     id: '/',
@@ -142,6 +158,18 @@ const AuthenticatedAppOSlugFilaRouteRoute =
     path: '/fila',
     getParentRoute: () => AuthenticatedAppOSlugRoute,
   } as any)
+const Platform_adminProtectedFlagsFlagsIndexRoute =
+  Platform_adminProtectedFlagsFlagsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => Platform_adminProtectedFlagsFlagsRoute,
+  } as any)
+const Platform_adminProtectedWebhooksWebhooksIndexRoute =
+  Platform_adminProtectedWebhooksWebhooksIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => Platform_adminProtectedWebhooksWebhooksRoute,
+  } as any)
 const AuthenticatedAppOSlugFilaDemandasIdRouteRoute =
   AuthenticatedAppOSlugFilaDemandasIdRouteRouteImport.update({
     id: '/demandas/$id',
@@ -162,6 +190,8 @@ export interface FileRoutesByFullPath {
   '/app/onboarding/$slug': typeof AuthenticatedAppOnboardingSlugRouteRoute
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
+  '/platform_admin/flags': typeof Platform_adminProtectedFlagsFlagsRouteWithChildren
+  '/platform_admin/webhooks': typeof Platform_adminProtectedWebhooksWebhooksRouteWithChildren
   '/platform_admin/users/$userId': typeof Platform_adminProtectedUsersUserIdRoute
   '/platform_admin/users/': typeof Platform_adminProtectedUsersIndexRoute
   '/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRouteRoute
@@ -169,6 +199,8 @@ export interface FileRoutesByFullPath {
   '/app/o/$slug/alertas': typeof AuthenticatedAppOSlugAlertasRoute
   '/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
   '/app/o/$slug/equipe': typeof AuthenticatedAppOSlugEquipeRoute
+  '/platform_admin/flags/': typeof Platform_adminProtectedFlagsFlagsIndexRoute
+  '/platform_admin/webhooks/': typeof Platform_adminProtectedWebhooksWebhooksIndexRoute
   '/app/o/$slug/fila/demandas/$id': typeof AuthenticatedAppOSlugFilaDemandasIdRouteRoute
 }
 export interface FileRoutesByTo {
@@ -189,6 +221,8 @@ export interface FileRoutesByTo {
   '/app/o/$slug/alertas': typeof AuthenticatedAppOSlugAlertasRoute
   '/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
   '/app/o/$slug/equipe': typeof AuthenticatedAppOSlugEquipeRoute
+  '/platform_admin/flags': typeof Platform_adminProtectedFlagsFlagsIndexRoute
+  '/platform_admin/webhooks': typeof Platform_adminProtectedWebhooksWebhooksIndexRoute
   '/app/o/$slug/fila/demandas/$id': typeof AuthenticatedAppOSlugFilaDemandasIdRouteRoute
 }
 export interface FileRoutesById {
@@ -206,6 +240,8 @@ export interface FileRoutesById {
   '/_authenticated/app/onboarding/$slug': typeof AuthenticatedAppOnboardingSlugRouteRoute
   '/_authenticated/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
+  '/platform_admin/_protected/_flags/flags': typeof Platform_adminProtectedFlagsFlagsRouteWithChildren
+  '/platform_admin/_protected/_webhooks/webhooks': typeof Platform_adminProtectedWebhooksWebhooksRouteWithChildren
   '/platform_admin/_protected/users/$userId': typeof Platform_adminProtectedUsersUserIdRoute
   '/platform_admin/_protected/users/': typeof Platform_adminProtectedUsersIndexRoute
   '/_authenticated/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRouteRoute
@@ -213,6 +249,8 @@ export interface FileRoutesById {
   '/_authenticated/app/o/$slug/alertas': typeof AuthenticatedAppOSlugAlertasRoute
   '/_authenticated/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
   '/_authenticated/app/o/$slug/equipe': typeof AuthenticatedAppOSlugEquipeRoute
+  '/platform_admin/_protected/_flags/flags/': typeof Platform_adminProtectedFlagsFlagsIndexRoute
+  '/platform_admin/_protected/_webhooks/webhooks/': typeof Platform_adminProtectedWebhooksWebhooksIndexRoute
   '/_authenticated/app/o/$slug/fila/demandas/$id': typeof AuthenticatedAppOSlugFilaDemandasIdRouteRoute
 }
 export interface FileRouteTypes {
@@ -230,6 +268,8 @@ export interface FileRouteTypes {
     | '/app/onboarding/$slug'
     | '/app/o/$slug'
     | '/api/public/ingest/$token'
+    | '/platform_admin/flags'
+    | '/platform_admin/webhooks'
     | '/platform_admin/users/$userId'
     | '/platform_admin/users/'
     | '/app/o/$slug/configuracoes'
@@ -237,6 +277,8 @@ export interface FileRouteTypes {
     | '/app/o/$slug/alertas'
     | '/app/o/$slug/dashboard'
     | '/app/o/$slug/equipe'
+    | '/platform_admin/flags/'
+    | '/platform_admin/webhooks/'
     | '/app/o/$slug/fila/demandas/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -257,6 +299,8 @@ export interface FileRouteTypes {
     | '/app/o/$slug/alertas'
     | '/app/o/$slug/dashboard'
     | '/app/o/$slug/equipe'
+    | '/platform_admin/flags'
+    | '/platform_admin/webhooks'
     | '/app/o/$slug/fila/demandas/$id'
   id:
     | '__root__'
@@ -273,6 +317,8 @@ export interface FileRouteTypes {
     | '/_authenticated/app/onboarding/$slug'
     | '/_authenticated/app/o/$slug'
     | '/api/public/ingest/$token'
+    | '/platform_admin/_protected/_flags/flags'
+    | '/platform_admin/_protected/_webhooks/webhooks'
     | '/platform_admin/_protected/users/$userId'
     | '/platform_admin/_protected/users/'
     | '/_authenticated/app/o/$slug/configuracoes'
@@ -280,6 +326,8 @@ export interface FileRouteTypes {
     | '/_authenticated/app/o/$slug/alertas'
     | '/_authenticated/app/o/$slug/dashboard'
     | '/_authenticated/app/o/$slug/equipe'
+    | '/platform_admin/_protected/_flags/flags/'
+    | '/platform_admin/_protected/_webhooks/webhooks/'
     | '/_authenticated/app/o/$slug/fila/demandas/$id'
   fileRoutesById: FileRoutesById
 }
@@ -387,6 +435,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicIngestTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/platform_admin/_protected/_flags/flags': {
+      id: '/platform_admin/_protected/_flags/flags'
+      path: '/flags'
+      fullPath: '/platform_admin/flags'
+      preLoaderRoute: typeof Platform_adminProtectedFlagsFlagsRouteImport
+      parentRoute: typeof Platform_adminProtectedRouteRoute
+    }
+    '/platform_admin/_protected/_webhooks/webhooks': {
+      id: '/platform_admin/_protected/_webhooks/webhooks'
+      path: '/webhooks'
+      fullPath: '/platform_admin/webhooks'
+      preLoaderRoute: typeof Platform_adminProtectedWebhooksWebhooksRouteImport
+      parentRoute: typeof Platform_adminProtectedRouteRoute
+    }
     '/platform_admin/_protected/users/': {
       id: '/platform_admin/_protected/users/'
       path: '/'
@@ -435,6 +497,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/app/o/$slug/fila'
       preLoaderRoute: typeof AuthenticatedAppOSlugFilaRouteRouteImport
       parentRoute: typeof AuthenticatedAppOSlugRoute
+    }
+    '/platform_admin/_protected/_flags/flags/': {
+      id: '/platform_admin/_protected/_flags/flags/'
+      path: '/'
+      fullPath: '/platform_admin/flags/'
+      preLoaderRoute: typeof Platform_adminProtectedFlagsFlagsIndexRouteImport
+      parentRoute: typeof Platform_adminProtectedFlagsFlagsRoute
+    }
+    '/platform_admin/_protected/_webhooks/webhooks/': {
+      id: '/platform_admin/_protected/_webhooks/webhooks/'
+      path: '/'
+      fullPath: '/platform_admin/webhooks/'
+      preLoaderRoute: typeof Platform_adminProtectedWebhooksWebhooksIndexRouteImport
+      parentRoute: typeof Platform_adminProtectedWebhooksWebhooksRoute
     }
     '/_authenticated/app/o/$slug/fila/demandas/$id': {
       id: '/_authenticated/app/o/$slug/fila/demandas/$id'
@@ -527,9 +603,41 @@ const Platform_adminProtectedUsersRouteWithChildren =
     Platform_adminProtectedUsersRouteChildren,
   )
 
+interface Platform_adminProtectedFlagsFlagsRouteChildren {
+  Platform_adminProtectedFlagsFlagsIndexRoute: typeof Platform_adminProtectedFlagsFlagsIndexRoute
+}
+
+const Platform_adminProtectedFlagsFlagsRouteChildren: Platform_adminProtectedFlagsFlagsRouteChildren =
+  {
+    Platform_adminProtectedFlagsFlagsIndexRoute:
+      Platform_adminProtectedFlagsFlagsIndexRoute,
+  }
+
+const Platform_adminProtectedFlagsFlagsRouteWithChildren =
+  Platform_adminProtectedFlagsFlagsRoute._addFileChildren(
+    Platform_adminProtectedFlagsFlagsRouteChildren,
+  )
+
+interface Platform_adminProtectedWebhooksWebhooksRouteChildren {
+  Platform_adminProtectedWebhooksWebhooksIndexRoute: typeof Platform_adminProtectedWebhooksWebhooksIndexRoute
+}
+
+const Platform_adminProtectedWebhooksWebhooksRouteChildren: Platform_adminProtectedWebhooksWebhooksRouteChildren =
+  {
+    Platform_adminProtectedWebhooksWebhooksIndexRoute:
+      Platform_adminProtectedWebhooksWebhooksIndexRoute,
+  }
+
+const Platform_adminProtectedWebhooksWebhooksRouteWithChildren =
+  Platform_adminProtectedWebhooksWebhooksRoute._addFileChildren(
+    Platform_adminProtectedWebhooksWebhooksRouteChildren,
+  )
+
 interface Platform_adminProtectedRouteRouteChildren {
   Platform_adminProtectedUsersRoute: typeof Platform_adminProtectedUsersRouteWithChildren
   Platform_adminProtectedIndexRoute: typeof Platform_adminProtectedIndexRoute
+  Platform_adminProtectedFlagsFlagsRoute: typeof Platform_adminProtectedFlagsFlagsRouteWithChildren
+  Platform_adminProtectedWebhooksWebhooksRoute: typeof Platform_adminProtectedWebhooksWebhooksRouteWithChildren
 }
 
 const Platform_adminProtectedRouteRouteChildren: Platform_adminProtectedRouteRouteChildren =
@@ -537,6 +645,10 @@ const Platform_adminProtectedRouteRouteChildren: Platform_adminProtectedRouteRou
     Platform_adminProtectedUsersRoute:
       Platform_adminProtectedUsersRouteWithChildren,
     Platform_adminProtectedIndexRoute: Platform_adminProtectedIndexRoute,
+    Platform_adminProtectedFlagsFlagsRoute:
+      Platform_adminProtectedFlagsFlagsRouteWithChildren,
+    Platform_adminProtectedWebhooksWebhooksRoute:
+      Platform_adminProtectedWebhooksWebhooksRouteWithChildren,
   }
 
 const Platform_adminProtectedRouteRouteWithChildren =

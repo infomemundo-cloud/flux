@@ -409,6 +409,87 @@ export type Database = {
           },
         ]
       }
+      feature_flag_overrides: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          enabled: boolean
+          flag_id: string
+          id: string
+          org_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          enabled: boolean
+          flag_id: string
+          id?: string
+          org_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          flag_id?: string
+          id?: string
+          org_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feature_flag_overrides_flag_id_fkey"
+            columns: ["flag_id"]
+            isOneToOne: false
+            referencedRelation: "feature_flags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "feature_flag_overrides_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      feature_flags: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          default_state: boolean
+          description: string
+          enabled_for_tags: string[]
+          id: string
+          key: string
+          rollout_percent: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          default_state?: boolean
+          description?: string
+          enabled_for_tags?: string[]
+          id?: string
+          key: string
+          rollout_percent?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          default_state?: boolean
+          description?: string
+          enabled_for_tags?: string[]
+          id?: string
+          key?: string
+          rollout_percent?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       invites: {
         Row: {
           approved_at: string | null
@@ -512,6 +593,7 @@ export type Database = {
           sla_enabled: boolean
           sla_max_inactivity_hours: number
           slug: string
+          tags: string[]
           updated_at: string
         }
         Insert: {
@@ -528,6 +610,7 @@ export type Database = {
           sla_enabled?: boolean
           sla_max_inactivity_hours?: number
           slug: string
+          tags?: string[]
           updated_at?: string
         }
         Update: {
@@ -544,6 +627,7 @@ export type Database = {
           sla_enabled?: boolean
           sla_max_inactivity_hours?: number
           slug?: string
+          tags?: string[]
           updated_at?: string
         }
         Relationships: []
@@ -669,6 +753,66 @@ export type Database = {
             columns: ["org_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      webhook_delivery_logs: {
+        Row: {
+          action: string
+          created_at: string
+          demanda_id: string | null
+          error: string | null
+          id: number
+          latency_ms: number | null
+          org_id: string | null
+          outcome: string
+          payload: Json
+          protocol: string | null
+          status: number | null
+          token_id: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          demanda_id?: string | null
+          error?: string | null
+          id?: number
+          latency_ms?: number | null
+          org_id?: string | null
+          outcome: string
+          payload?: Json
+          protocol?: string | null
+          status?: number | null
+          token_id?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          demanda_id?: string | null
+          error?: string | null
+          id?: number
+          latency_ms?: number | null
+          org_id?: string | null
+          outcome?: string
+          payload?: Json
+          protocol?: string | null
+          status?: number | null
+          token_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webhook_delivery_logs_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "webhook_delivery_logs_token_id_fkey"
+            columns: ["token_id"]
+            isOneToOne: false
+            referencedRelation: "webhook_tokens"
             referencedColumns: ["id"]
           },
         ]

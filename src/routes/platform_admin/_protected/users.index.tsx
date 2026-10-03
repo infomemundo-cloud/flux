@@ -16,7 +16,6 @@ import {
   Check,
   MailX,
   Loader2,
-  MoreHorizontal,
   Eye,
   Ban,
   CheckCircle,
@@ -36,6 +35,7 @@ import {
   getPlatformAdminSession,
 } from "@/lib/platform-admin.functions";
 import { friendlyError } from "@/lib/friendly-error";
+import { RowMenu } from "@/components/row-menu";
 
 export const Route = createFileRoute("/platform_admin/_protected/users/")({
   component: PlatformAdminUsers,
@@ -103,7 +103,6 @@ function PlatformAdminUsers() {
   const [tab, setTab] = useState<"users" | "invites">("users");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [openMenu, setOpenMenu] = useState<string | null>(null);
 
   // Modal de convite (com prefill pra "Promover a admin…" do dropdown)
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -263,7 +262,6 @@ function PlatformAdminUsers() {
     setIsModalOpen(true);
   };
 
-  const closeMenu = () => setOpenMenu(null);
 
   return (
     <div className="p-5 space-y-4">
@@ -392,72 +390,50 @@ function PlatformAdminUsers() {
                       <td className="px-3 py-2 text-[11px] text-slate-500 whitespace-nowrap">
                         {fmtDate(user.created_at)}
                       </td>
-                      <td className="px-3 py-2 relative">
+                      <td className="px-3 py-2">
                         <div className="flex justify-end">
-                          <button
-                            onClick={() => setOpenMenu(openMenu === user.id ? null : user.id)}
-                            className="grid h-7 w-7 place-items-center rounded-md text-slate-400 transition hover:bg-slate-700/60 hover:text-slate-100"
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </button>
+                          <RowMenu
+                            items={[
+                              {
+                                label: "Ver detalhes",
+                                icon: <Eye className="h-3.5 w-3.5" />,
+                                onClick: () =>
+                                  navigate({ to: `/platform_admin/users/${user.id}` }),
+                              },
+                              ...(canManageUsers
+                                ? [
+                                    {
+                                      label: user.banned ? "Reativar login" : "Suspender login",
+                                      icon: user.banned ? (
+                                        <CheckCircle className="h-3.5 w-3.5" />
+                                      ) : (
+                                        <Ban className="h-3.5 w-3.5" />
+                                      ),
+                                      onClick: () =>
+                                        banMutation.mutate({
+                                          userId: user.id,
+                                          banned: !user.banned,
+                                        }),
+                                    },
+                                    {
+                                      label: "Link de recuperação",
+                                      icon: <Link2 className="h-3.5 w-3.5" />,
+                                      onClick: () => recoveryMutation.mutate(user.id),
+                                    },
+                                  ]
+                                : []),
+                              ...(canManageAdmins && !user.platform_role
+                                ? [
+                                    {
+                                      label: "Promover a admin…",
+                                      icon: <ArrowUpCircle className="h-3.5 w-3.5" />,
+                                      onClick: () => openInviteModal(user.email),
+                                    },
+                                  ]
+                                : []),
+                            ]}
+                          />
                         </div>
-                        {openMenu === user.id && (
-                          <>
-                            <div className="fixed inset-0 z-30" onClick={closeMenu} />
-                            <div className="absolute right-3 z-40 mt-1 w-52 rounded-lg bg-slate-900 py-1 shadow-xl ring-1 ring-slate-700">
-                              <button
-                                onClick={() => {
-                                  closeMenu();
-                                  navigate({ to: `/platform_admin/users/${user.id}` });
-                                }}
-                                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-slate-300 transition hover:bg-slate-800"
-                              >
-                                <Eye className="h-3.5 w-3.5" /> Ver detalhes
-                              </button>
-                              {canManageUsers && (
-                                <button
-                                  onClick={() => {
-                                    closeMenu();
-                                    banMutation.mutate({ userId: user.id, banned: !user.banned });
-                                  }}
-                                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-slate-300 transition hover:bg-slate-800"
-                                >
-                                  {user.banned ? (
-                                    <>
-                                      <CheckCircle className="h-3.5 w-3.5" /> Reativar login
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Ban className="h-3.5 w-3.5" /> Suspender login
-                                    </>
-                                  )}
-                                </button>
-                              )}
-                              {canManageUsers && (
-                                <button
-                                  onClick={() => {
-                                    closeMenu();
-                                    recoveryMutation.mutate(user.id);
-                                  }}
-                                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-slate-300 transition hover:bg-slate-800"
-                                >
-                                  <Link2 className="h-3.5 w-3.5" /> Link de recuperação
-                                </button>
-                              )}
-                              {canManageAdmins && !user.platform_role && (
-                                <button
-                                  onClick={() => {
-                                    closeMenu();
-                                    openInviteModal(user.email);
-                                  }}
-                                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-violet-300 transition hover:bg-slate-800"
-                                >
-                                  <ArrowUpCircle className="h-3.5 w-3.5" /> Promover a admin…
-                                </button>
-                              )}
-                            </div>
-                          </>
-                        )}
                       </td>
                     </tr>
                   ))}

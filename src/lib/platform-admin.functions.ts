@@ -93,6 +93,7 @@ export function assertRole(adminRole: string, allowed: string[], actionLabel: st
 export const ROLE_ACTIONS = {
   adminManagement: ["superadmin"],
   userManagement: ["superadmin", "support"],
+  flagManagement: ["superadmin"],
 } as const;
 
 /**

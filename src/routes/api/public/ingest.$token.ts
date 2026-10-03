@@ -1,7 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { fetchMediaFromEvolution, uploadMediaToStorage, uploadThumbToStorage, bufferFromByteMap } from "@/lib/demandas/media-storage";
+import {
+  fetchMediaFromEvolution,
+  uploadMediaToStorage,
+  uploadThumbToStorage,
+  bufferFromByteMap,
+} from "@/lib/demandas/media-storage";
 import { resolveAutoAssignment } from "@/lib/demandas/assignment";
+import { recordWebhookDelivery } from "@/lib/webhook-delivery-log";
 
 const Body = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -22,7 +28,6 @@ const Body = z.object({
   reopen_if_open: z.boolean().optional(),
 });
 
-/** Tipos de mensagem de mídia que a Evolution manda dentro de `message`. */
 const MEDIA_KINDS = [
   "imageMessage",
   "audioMessage",
@@ -41,7 +46,6 @@ const MEDIA_LABEL: Record<MediaKind, string> = {
   stickerMessage: "Figurinha recebida",
 };
 
-/** Preview da fila quando a mensagem é só mídia (sem legenda). */
 const PREVIEW_LABEL: Record<MediaKind, string> = {
   imageMessage: "[Imagem]",
   audioMessage: "[Áudio]",
@@ -69,7 +73,6 @@ type Normalized = z.infer<typeof Body> & {
   } | null;
 };
 
-// Schema para o evento contacts.update da Evolution.
 const ContactsUpdatePayload = z.object({
   event: z.string().optional(),
   instance: z.string().max(120).optional(),
@@ -135,10 +138,7 @@ function looksLikeEvolution(payload: any): boolean {
   );
 }
 
-/**
- * Redator de payload pro log CRU: campos binários da Evolution viram
- * placeholder — sem spam de kilobytes por webhook de mídia.
- */
+/** Campos binários substituídos por placeholder no log de console. */
 const BINARY_LOG_FIELDS = new Set([
   "jpegThumbnail",
   "mediaKey",
@@ -161,13 +161,6 @@ function redactForLog(payload: unknown): string {
   );
 }
 
-/**
- * Busca o SUBJECT (nome real) do grupo na Evolution.
- * Rotas candidatas cobrem Evolution v2 (`/group/info` nas duas ordens),
- * v1 (`/group/findGroupInfos/{instance}?groupJid=...`) e v2 sem instance.
- * O log de falha lista o status de cada tentativa — dá pra ver no
- * Vercel qual rota a sua versão da Evolution atende.
- */
 async function fetchGroupSubject(
   serverUrl: string,
   apikey: string,
@@ -204,17 +197,14 @@ async function fetchGroupSubject(
       tried.push(`${c.kind}:erro`);
     }
   }
-  console.error("[ingest] não consegui buscar o assunto do grupo", { groupJid, instance, tried });
+  console.error("[ingest] não consegui buscar o assunto do grupo", {
+    groupJid,
+    instance,
+    tried,
+  });
   return null;
 }
 
-/**
- * Trata eventos contacts.update da Evolution: atualiza o avatar e o nome
- * do contato no banco. GRUPOS (@g.us) NUNCA recebem patch.name aqui —
- * a Evolution manda o pushName do ÚLTIMO participante como pushName do
- * remoteJid do grupo, o que corrompia o nome do grupo a cada mensagem.
- * Avatar continua atualizando pra qualquer jid.
- */
 async function handleContactsUpdate(
   orgId: string,
   payload: z.infer<typeof ContactsUpdatePayload>,
@@ -222,10 +212,10 @@ async function handleContactsUpdate(
   const items = Array.isArray(payload.data) ? payload.data : [payload.data];
   for (const item of items) {
     const isGroup = item.remoteJid.endsWith("@g.us");
-    const hasPhoto = typeof item.profilePicUrl === "string" || item.profilePicUrl === null;
+    const hasPhoto =
+      typeof item.profilePicUrl === "string" || item.profilePicUrl === null;
     const hasName = typeof item.pushName === "string" && item.pushName.trim().length > 0;
     if (!hasPhoto && !hasName) continue;
-
     const { data: found, error: findErr } = await (
       await import("@/integrations/supabase/client.server")
     ).supabaseAdmin
@@ -234,7 +224,6 @@ async function handleContactsUpdate(
       .eq("org_id", orgId)
       .eq("external_id", item.remoteJid)
       .maybeSingle();
-
     if (findErr) {
       console.error("[ingest] falha ao buscar contato para atualização", {
         org_id: orgId,
@@ -244,7 +233,6 @@ async function handleContactsUpdate(
       continue;
     }
     if (!found) continue;
-
     const patch: Record<string, any> = {};
     if (hasPhoto) {
       patch.avatar_fetched_at = new Date().toISOString();
@@ -252,14 +240,10 @@ async function handleContactsUpdate(
         patch.avatar_url = item.profilePicUrl.trim();
       }
     }
-    // GRUPO: nunca aplicar pushName como nome (é o nome do último
-    // participante). Nome de grupo só via fetchGroupSubject ou edição manual.
     if (hasName && !isGroup) {
       patch.name = item.pushName!.trim();
     }
-    // Se não sobrou nada no patch (grupo só com pushName), pula o update.
     if (Object.keys(patch).length === 0) continue;
-
     const { error: updErr } = await (
       await import("@/integrations/supabase/client.server")
     ).supabaseAdmin
@@ -276,9 +260,9 @@ async function handleContactsUpdate(
   }
 }
 
-function normalize(payload: unknown):
-  | { ok: true; value: Normalized }
-  | { ok: false; status: number; body: unknown } {
+function normalize(
+  payload: unknown,
+): { ok: true; value: Normalized } | { ok: false; status: number; body: unknown } {
   if (looksLikeEvolution(payload)) {
     const raw = payload as any;
     const eventName =
@@ -288,7 +272,11 @@ function normalize(payload: unknown):
     }
     const parsed = EvolutionPayload.safeParse(payload);
     if (!parsed.success) {
-      return { ok: false, status: 200, body: { ok: true, ignored: "non_message_or_invalid_structure" } };
+      return {
+        ok: false,
+        status: 200,
+        body: { ok: true, ignored: "non_message_or_invalid_structure" },
+      };
     }
     const d = parsed.data.data;
     if (d.key.fromMe === true) {
@@ -308,10 +296,6 @@ function normalize(payload: unknown):
       ? undefined
       : jid.replace(/@s.whatsapp.net$/i, "").replace(/@c.us$/i, "");
     const contactName = isGroup ? "Grupo" : d.pushName?.trim() || "Contato WhatsApp";
-    // AUTORIA EM GRUPOS: cadeia defensiva pro pushName do participante
-    // (data.pushName é o padrão; os demais níveis cobrem variações de
-    // payload da Evolution). participant_jid vai junto pro metadata —
-    // habilita citação nativa em grupos no futuro.
     const participantName = isGroup
       ? d.pushName?.trim() || raw?.pushName?.trim() || raw?.data?.pushName?.trim() || null
       : null;
@@ -353,11 +337,11 @@ function normalize(payload: unknown):
 
 function mediaTitleFor(b: Normalized): string {
   if (!b.media) return "Mensagem recebida";
-  if (b.media.kind === "documentMessage" && b.media.fileName) return b.media.fileName.slice(0, 80);
+  if (b.media.kind === "documentMessage" && b.media.fileName)
+    return b.media.fileName.slice(0, 80);
   return MEDIA_LABEL[b.media.kind];
 }
 
-/** Texto do preview da fila: legenda/texto ou rótulo de mídia; null se nada. */
 function previewFor(b: Normalized): string | null {
   const t = b.message.trim();
   if (t) return t.slice(0, 200);
@@ -369,6 +353,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
   server: {
     handlers: {
       POST: async ({ request, params }) => {
+        const t0 = Date.now();
         const json = (body: unknown, status: number) =>
           new Response(JSON.stringify(body), {
             status,
@@ -381,12 +366,32 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           .select("id, org_id, channel_id, organizations:org_id(name)")
           .eq("token", params.token)
           .maybeSingle();
-        if (te || !tok) return json({ error: "invalid_token" }, 401);
+        if (te || !tok) {
+          recordWebhookDelivery({
+            tokenId: null,
+            orgId: null,
+            outcome: "error",
+            action: "auth_failed",
+            status: 401,
+            latencyMs: Date.now() - t0,
+            error: te?.message ?? "token_not_found",
+          });
+          return json({ error: "invalid_token" }, 401);
+        }
 
         let payload: unknown;
         try {
           payload = await request.json();
         } catch {
+          recordWebhookDelivery({
+            tokenId: tok.id,
+            orgId: tok.org_id,
+            outcome: "error",
+            action: "invalid_payload",
+            status: 400,
+            latencyMs: Date.now() - t0,
+            error: "json_parse_failed",
+          });
           return json({ error: "invalid_json" }, 400);
         }
         console.log("[EVOLUTION PAYLOAD CRU]:", redactForLog(payload));
@@ -399,7 +404,19 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           const parsed = ContactsUpdatePayload.safeParse(payload);
           if (parsed.success) {
             await handleContactsUpdate(tok.org_id, parsed.data);
+            // DESCARTADO: contacts.update sucesso é sincronização de perfil,
+            // não ticket. Não entra em webhook_delivery_logs.
           } else {
+            recordWebhookDelivery({
+              tokenId: tok.id,
+              orgId: tok.org_id,
+              outcome: "rejected",
+              action: "contacts_update_invalid",
+              status: 200,
+              latencyMs: Date.now() - t0,
+              error: JSON.stringify(parsed.error.flatten()),
+              payload,
+            });
             console.error("[ingest] contacts.update inválido", parsed.error.flatten());
           }
           return new Response(JSON.stringify({ ok: true, event: "contacts.update" }), {
@@ -409,13 +426,28 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
         }
 
         const norm = normalize(payload);
-        if (!norm.ok) return json(norm.body, norm.status);
+        if (!norm.ok) {
+          // Só grava como validation_failed quando o status é 4xx (corpo inválido real).
+          // Status 200 com `ignored` são descartes de negócio (from_me, evento não-mensagem)
+          // e não devem poluir o log.
+          if (norm.status >= 400) {
+            recordWebhookDelivery({
+              tokenId: tok.id,
+              orgId: tok.org_id,
+              outcome: "rejected",
+              action: "validation_failed",
+              status: norm.status,
+              latencyMs: Date.now() - t0,
+              error: JSON.stringify(norm.body),
+              payload,
+            });
+          }
+          return json(norm.body, norm.status);
+        }
         const b = norm.value;
 
         // REGRA DE NEGÓCIO DA ORG: ingestão de grupos pode estar desligada.
-        // Descarta ANTES de qualquer fetch de mídia/contato: payload de grupo
-        // com flag off vira 200 silencioso pra Evolution, sem gravar nada.
-        // (Cobre Evolution E simulações manuais com jid de grupo.)
+        // DESCARTADO SILENCIOSAMENTE (não grava log — é comportamento esperado).
         const groupJid = b.whatsapp_jid ?? b.contact?.external_id ?? null;
         if (groupJid?.endsWith("@g.us")) {
           const { data: orgRow } = await supabaseAdmin
@@ -431,8 +463,6 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           }
         }
 
-        // Diagnóstico de autoria em grupo: se o messages.upsert vier sem
-        // pushName, avisamos UMA vez por mensagem pra calibrar o parser.
         if (b.whatsapp_jid?.endsWith("@g.us") && !b.participant_name) {
           console.warn("[ingest] mensagem de grupo SEM pushName no payload", {
             message_id: b.message_id,
@@ -440,7 +470,6 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           });
         }
 
-        // 1. Busca ou cria o contato associado
         let contactId: string | null = null;
         if (b.contact?.external_id || b.contact?.phone) {
           const orParts = [
@@ -449,10 +478,6 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           ]
             .filter(Boolean)
             .join(",");
-
-          // limit(1) em vez de maybeSingle: .or() casando 2+ contatos (dups por
-          // external_id × phone) fazia o maybeSingle ERRAR e a demanda nascer
-          // órfã (contact_id null). Pega o mais antigo deterministicamente.
           const { data: foundRows, error: findErr } = await supabaseAdmin
             .from("contacts")
             .select("id, name")
@@ -461,7 +486,6 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             .order("created_at", { ascending: true })
             .limit(1);
           const found = foundRows?.[0] ?? null;
-
           if (findErr) {
             console.error("[ingest] falha ao buscar contato", {
               org_id: tok.org_id,
@@ -470,15 +494,12 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               error: findErr,
             });
           }
-
           const isGroup = !!b.whatsapp_jid?.endsWith("@g.us");
           if (b.contact) {
             const savedName = found?.name ?? null;
             const savedIsGeneric =
               !savedName || savedName === "Grupo" || savedName === "Contato WhatsApp";
             if (isGroup && !savedIsGeneric) {
-              // Grupo com nome REAL salvo: preserva o nome do contato e não
-              // tenta fetch de novo (o fetch só roda quando o salvo é genérico).
               b.contact.name = savedName;
             } else if (
               isGroup &&
@@ -487,9 +508,6 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               b.evolution_apikey &&
               b.instance_name
             ) {
-              // AUTO-HEAL: grupo com nome genérico dispara o fetch do subject
-              // real (4 rotas candidatas). Falha → segue "Grupo" e re-tenta
-              // na próxima mensagem do grupo.
               const subject = await fetchGroupSubject(
                 b.evolution_server_url,
                 b.evolution_apikey,
@@ -499,7 +517,6 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               if (subject) b.contact.name = subject;
             }
           }
-
           if (found) {
             contactId = found.id;
             const incomingNameIsGeneric =
@@ -508,12 +525,6 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               b.contact.name === "Grupo";
             const savedNameIsGeneric =
               !found.name || found.name === "Contato WhatsApp" || found.name === "Grupo";
-            // Regras separadas:
-            // - Grupo: só atualiza se o incoming é REAL (não-genérico) E o
-            //   salvo é genérico — protege contra sobrescrever subject real
-            //   por "Grupo" ou "Contato WhatsApp".
-            // - Individual: atualiza quando o nome muda e (incoming é real
-            //   OU o salvo é genérico) — protege o pushName real.
             const shouldUpdateGroup = isGroup && !incomingNameIsGeneric && savedNameIsGeneric;
             const shouldUpdateIndividual =
               !isGroup &&
@@ -557,20 +568,12 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           }
         }
 
-        // 2+3. REUSA ABERTA OU CRIA — ATÔMICO via RPC ingest_upsert_demand
-        // (advisory lock por org+contato em UMA transação): dois webhooks
-        // paralelos do MESMO contato (rajada/encaminhada — caso Diana, 171ms
-        // de janela) não criam mais duas demandas; o segundo espera o lock
-        // e cai no ramo de reuso (created=false).
-        // Exceção: reopen_if_open=false é pedido EXPLÍCITO do integrador por
-        // demanda nova por mensagem — insert inline intencional, sem race bug.
         const preview = previewFor(b);
         const messageAt = new Date().toISOString();
         const title = b.title ?? (b.message.trim() ? b.message.slice(0, 80) : mediaTitleFor(b));
         let demandaId: string | null = null;
         let protocol: string | null = null;
         let createdNow = false;
-
         if (b.reopen_if_open === false) {
           const { data: dem, error: de } = await supabaseAdmin
             .from("demandas")
@@ -591,6 +594,16 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             .select("id, protocol")
             .single();
           if (de || !dem) {
+            recordWebhookDelivery({
+              tokenId: tok.id,
+              orgId: tok.org_id,
+              outcome: "error",
+              action: "internal_error",
+              status: 500,
+              latencyMs: Date.now() - t0,
+              error: `demand_insert: ${de?.message ?? "no_row"}`,
+              payload,
+            });
             console.error("[ingest] demanda insert failed", de);
             return json({ error: "internal_error" }, 500);
           }
@@ -598,31 +611,34 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           protocol = dem.protocol as string | null;
           createdNow = true;
         } else {
-          // Cast `as any` cirúrgico: os tipos gerados do Supabase
-          // (supabase gen types) inferem os parâmetros da RPC como `string`
-          // (não nullable), mas a função aceita NULL nos campos text.
-          // Gap conhecido do gerador — a função está correta no banco.
-          const { data: up, error: upErr } = await supabaseAdmin.rpc(
-            "ingest_upsert_demand",
-            {
-              p_org_id: tok.org_id,
-              p_contact_id: contactId,
-              p_title: title,
-              p_description: b.message || null,
-              p_priority: b.priority ?? "media",
-              p_channel_id: tok.channel_id,
-              p_channel_type: b.channel_type,
-              p_whatsapp_jid: b.whatsapp_jid ?? null,
-              p_instance_name: b.instance_name ?? null,
-              p_preview: preview,
-              p_message_id: b.message_id ?? null,
-              p_message_at: messageAt,
-            } as any,
-          );
+          const { data: up, error: upErr } = await supabaseAdmin.rpc("ingest_upsert_demand", {
+            p_org_id: tok.org_id,
+            p_contact_id: contactId,
+            p_title: title,
+            p_description: b.message || null,
+            p_priority: b.priority ?? "media",
+            p_channel_id: tok.channel_id,
+            p_channel_type: b.channel_type,
+            p_whatsapp_jid: b.whatsapp_jid ?? null,
+            p_instance_name: b.instance_name ?? null,
+            p_preview: preview,
+            p_message_id: b.message_id ?? null,
+            p_message_at: messageAt,
+          } as any);
           const row = Array.isArray(up)
             ? up[0]
             : (up as { demanda_id: string; protocol: string | null; created: boolean } | null);
           if (upErr || !row) {
+            recordWebhookDelivery({
+              tokenId: tok.id,
+              orgId: tok.org_id,
+              outcome: "error",
+              action: "internal_error",
+              status: 500,
+              latencyMs: Date.now() - t0,
+              error: `ingest_upsert_demand: ${upErr?.message ?? "no_row"}`,
+              payload,
+            });
             console.error("[ingest] ingest_upsert_demand falhou", upErr);
             return json({ error: "internal_error" }, 500);
           }
@@ -631,8 +647,6 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           createdNow = row.created;
         }
 
-        // Auto-assign só em criação (round-robin/least-busy); falha nunca
-        // derruba o ingest — demanda nasce órfã e gerente atribui depois.
         if (createdNow && demandaId) {
           try {
             await resolveAutoAssignment(supabaseAdmin, { orgId: tok.org_id, demandaId });
@@ -645,7 +659,6 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           }
         }
 
-        // 4. Registra evento de mensagem e trata idempotência
         if (b.message_id) {
           const { data: already } = await supabaseAdmin
             .from("demanda_events")
@@ -655,6 +668,17 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             .limit(1)
             .maybeSingle();
           if (already) {
+            // DEDUP mantido: justifica ao suporte por que msg repetida não gerou novo ticket.
+            recordWebhookDelivery({
+              tokenId: tok.id,
+              orgId: tok.org_id,
+              outcome: "success",
+              action: "demand_dedup",
+              status: 200,
+              latencyMs: Date.now() - t0,
+              demandaId,
+              protocol,
+            });
             return new Response(
               JSON.stringify({ ok: true, demanda_id: demandaId, protocol, duplicate: true }),
               { status: 200, headers: { "content-type": "application/json" } },
@@ -662,7 +686,6 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           }
         }
 
-        // 4b. Mídia: baixa o arquivo decifrado da Evolution e sobe pro Storage privado.
         let mediaUrl: string | null = null;
         let mediaType: string | null = null;
         let mediaFileName: string | null = null;
@@ -752,13 +775,29 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           .update({ last_used_at: new Date().toISOString() })
           .eq("id", tok.id);
 
+        // Sucesso de negócio: created = demand_created, reuse = demand_reopened
+        recordWebhookDelivery({
+          tokenId: tok.id,
+          orgId: tok.org_id,
+          outcome: "success",
+          action: createdNow ? "demand_created" : "demand_reopened",
+          status: 200,
+          latencyMs: Date.now() - t0,
+          demandaId,
+          protocol,
+        });
+
         return new Response(
           JSON.stringify({
             ok: true,
             demanda_id: demandaId,
             protocol,
             org: (tok as any).organizations?.name ?? null,
-            media: mediaUrl ? { stored: true } : mediaFailed ? { stored: false, reason: mediaFailed } : undefined,
+            media: mediaUrl
+              ? { stored: true }
+              : mediaFailed
+                ? { stored: false, reason: mediaFailed }
+                : undefined,
           }),
           { status: 200, headers: { "content-type": "application/json" } },
         );
