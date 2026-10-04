@@ -28,6 +28,7 @@ const Body = z.object({
   reopen_if_open: z.boolean().optional(),
 });
 
+/** Tipos de mensagem de mídia que a Evolution manda dentro de `message`. */
 const MEDIA_KINDS = [
   "imageMessage",
   "audioMessage",
@@ -46,6 +47,7 @@ const MEDIA_LABEL: Record<MediaKind, string> = {
   stickerMessage: "Figurinha recebida",
 };
 
+/** Preview da fila quando a mensagem é só mídia (sem legenda). */
 const PREVIEW_LABEL: Record<MediaKind, string> = {
   imageMessage: "[Imagem]",
   audioMessage: "[Áudio]",
@@ -73,6 +75,7 @@ type Normalized = z.infer<typeof Body> & {
   } | null;
 };
 
+// Schema para o evento contacts.update da Evolution.
 const ContactsUpdatePayload = z.object({
   event: z.string().optional(),
   instance: z.string().max(120).optional(),
@@ -161,6 +164,81 @@ function redactForLog(payload: unknown): string {
   );
 }
 
+/**
+ * ============ ESCUDOS ANTI-RUÍDO (pós-migração Hostinger) ============
+ * A Evolution v2 re-emite messages.upsert a cada transição de status
+ * (DELIVERY_ACK etc.) e o tráfego de grupo descartado pagava 2-5 queries
+ * por POST (~76k queries/hora em webhook_tokens no pico). Estes escudos
+ * matam o ruído ANTES de qualquer query, SEM alterar o caminho de mensagem
+ * real — que segue idêntico, com o dedup de banco (demanda_events) e o
+ * advisory lock do RPC como fontes de verdade.
+ *
+ *   1) resolveToken: memo 60s de token+org+flag → 1 SELECT/min/token;
+ *   2) seenWindow: dedup em memória por message_id (10min) → re-emissões
+ *      morrem em 0 query; entre instâncias/após a janela, o banco decide;
+ *   3) lastUsedTouch: UPDATE de last_used_at no máx. 1x/min/token.
+ *
+ * Multi-instância (Vercel): memos são best-effort POR instância — corretude
+ * NUNCA depende deles. Grupo descartado e descartes de negócio marcam o
+ * message_id pra re-emissões não repetirem nem o parse de negócio.
+ */
+type TokenMemo = {
+  id: string;
+  org_id: string;
+  channel_id: string | null;
+  orgName: string | null;
+  allowGroup: boolean;
+};
+const tokenMemo = new Map<string, { at: number; value: TokenMemo | null }>();
+const TOKEN_MEMO_TTL = 60_000;
+
+async function resolveToken(token: string): Promise<TokenMemo | null> {
+  const hit = tokenMemo.get(token);
+  if (hit && Date.now() - hit.at < TOKEN_MEMO_TTL) return hit.value;
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data, error } = await supabaseAdmin
+    .from("webhook_tokens")
+    .select("id, org_id, channel_id, organizations:org_id(name, allow_group_ingest)")
+    .eq("token", token)
+    .maybeSingle();
+  const value: TokenMemo | null =
+    error || !data
+      ? null
+      : {
+          id: data.id,
+          org_id: data.org_id,
+          channel_id: data.channel_id,
+          orgName: (data as any).organizations?.name ?? null,
+          allowGroup: (data as any).organizations?.allow_group_ingest !== false,
+        };
+  tokenMemo.set(token, { at: Date.now(), value });
+  return value;
+}
+
+const seenWindow = new Map<string, number>();
+const SEEN_TTL = 10 * 60_000;
+const SEEN_MAX = 5_000;
+
+function seenBefore(id: string): boolean {
+  const at = seenWindow.get(id);
+  return !!at && Date.now() - at < SEEN_TTL;
+}
+
+function markSeen(id: string | null | undefined): void {
+  if (!id) return;
+  if (seenWindow.size >= SEEN_MAX) seenWindow.clear();
+  seenWindow.set(id, Date.now());
+}
+
+const lastUsedTouch = new Map<string, number>();
+
+/**
+ * Busca o SUBJECT (nome real) do grupo na Evolution.
+ * Rotas candidatas cobrem Evolution v2 (`/group/info` nas duas ordens),
+ * v1 (`/group/findGroupInfos/{instance}?groupJid=...`) e v2 sem instance.
+ * O log de falha lista o status de cada tentativa — dá pra ver no
+ * Vercel qual rota a sua versão da Evolution atende.
+ */
 async function fetchGroupSubject(
   serverUrl: string,
   apikey: string,
@@ -205,6 +283,13 @@ async function fetchGroupSubject(
   return null;
 }
 
+/**
+ * Trata eventos contacts.update da Evolution: atualiza o avatar e o nome
+ * do contato no banco. GRUPOS (@g.us) NUNCA recebem patch.name aqui —
+ * a Evolution manda o pushName do ÚLTIMO participante como pushName do
+ * remoteJid do grupo, o que corrompia o nome do grupo a cada mensagem.
+ * Avatar continua atualizando pra qualquer jid.
+ */
 async function handleContactsUpdate(
   orgId: string,
   payload: z.infer<typeof ContactsUpdatePayload>,
@@ -212,8 +297,7 @@ async function handleContactsUpdate(
   const items = Array.isArray(payload.data) ? payload.data : [payload.data];
   for (const item of items) {
     const isGroup = item.remoteJid.endsWith("@g.us");
-    const hasPhoto =
-      typeof item.profilePicUrl === "string" || item.profilePicUrl === null;
+    const hasPhoto = typeof item.profilePicUrl === "string" || item.profilePicUrl === null;
     const hasName = typeof item.pushName === "string" && item.pushName.trim().length > 0;
     if (!hasPhoto && !hasName) continue;
     const { data: found, error: findErr } = await (
@@ -240,9 +324,12 @@ async function handleContactsUpdate(
         patch.avatar_url = item.profilePicUrl.trim();
       }
     }
+    // GRUPO: nunca aplicar pushName como nome (é o nome do último
+    // participante). Nome de grupo só via fetchGroupSubject ou edição manual.
     if (hasName && !isGroup) {
       patch.name = item.pushName!.trim();
     }
+    // Se não sobrou nada no patch (grupo só com pushName), pula o update.
     if (Object.keys(patch).length === 0) continue;
     const { error: updErr } = await (
       await import("@/integrations/supabase/client.server")
@@ -296,6 +383,10 @@ function normalize(
       ? undefined
       : jid.replace(/@s.whatsapp.net$/i, "").replace(/@c.us$/i, "");
     const contactName = isGroup ? "Grupo" : d.pushName?.trim() || "Contato WhatsApp";
+    // AUTORIA EM GRUPOS: cadeia defensiva pro pushName do participante
+    // (data.pushName é o padrão; os demais níveis cobrem variações de
+    // payload da Evolution). participant_jid vai junto pro metadata —
+    // habilita citação nativa em grupos no futuro.
     const participantName = isGroup
       ? d.pushName?.trim() || raw?.pushName?.trim() || raw?.data?.pushName?.trim() || null
       : null;
@@ -342,6 +433,7 @@ function mediaTitleFor(b: Normalized): string {
   return MEDIA_LABEL[b.media.kind];
 }
 
+/** Texto do preview da fila: legenda/texto ou rótulo de mídia; null se nada. */
 function previewFor(b: Normalized): string | null {
   const t = b.message.trim();
   if (t) return t.slice(0, 200);
@@ -361,12 +453,11 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           });
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-        const { data: tok, error: te } = await supabaseAdmin
-          .from("webhook_tokens")
-          .select("id, org_id, channel_id, organizations:org_id(name)")
-          .eq("token", params.token)
-          .maybeSingle();
-        if (te || !tok) {
+
+        // ESCUDO 1: token+org+flag em memo 60s — 1 SELECT/min/token,
+        // não 1 por POST. Token inválido também memoiza (anti-spam de 401).
+        const tok = await resolveToken(params.token);
+        if (!tok) {
           recordWebhookDelivery({
             tokenId: null,
             orgId: null,
@@ -374,7 +465,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             action: "auth_failed",
             status: 401,
             latencyMs: Date.now() - t0,
-            error: te?.message ?? "token_not_found",
+            error: "token_not_found",
           });
           return json({ error: "invalid_token" }, 401);
         }
@@ -428,8 +519,9 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
         const norm = normalize(payload);
         if (!norm.ok) {
           // Só grava como validation_failed quando o status é 4xx (corpo inválido real).
-          // Status 200 com `ignored` são descartes de negócio (from_me, evento não-mensagem)
-          // e não devem poluir o log.
+          // Status 200 com `ignored` são descartes de negócio (from_me, evento
+          // não-mensagem, tipo não suportado): não poluem o log, mas marcam o
+          // message_id pra re-emissões (acks) morrerem no ESCUDO 2.
           if (norm.status >= 400) {
             recordWebhookDelivery({
               tokenId: tok.id,
@@ -441,28 +533,38 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               error: JSON.stringify(norm.body),
               payload,
             });
+          } else {
+            markSeen((payload as any)?.data?.key?.id);
           }
           return json(norm.body, norm.status);
         }
         const b = norm.value;
 
-        // REGRA DE NEGÓCIO DA ORG: ingestão de grupos pode estar desligada.
-        // DESCARTADO SILENCIOSAMENTE (não grava log — é comportamento esperado).
-        const groupJid = b.whatsapp_jid ?? b.contact?.external_id ?? null;
-        if (groupJid?.endsWith("@g.us")) {
-          const { data: orgRow } = await supabaseAdmin
-            .from("organizations")
-            .select("allow_group_ingest")
-            .eq("id", tok.org_id)
-            .maybeSingle();
-          if (orgRow && orgRow.allow_group_ingest === false) {
-            return new Response(
-              JSON.stringify({ ok: true, ignored: "group_ingest_disabled" }),
-              { status: 200, headers: { "content-type": "application/json" } },
-            );
-          }
+        // ESCUDO 2: re-emissão conhecida (ack/status/retry da mesma mensagem)
+        // → 200 duplicate em ZERO query e ZERO log. O dedup de banco
+        // (demanda_events) segue como fonte de verdade entre instâncias e
+        // após a janela de 10min.
+        if (b.message_id && seenBefore(b.message_id)) {
+          return new Response(
+            JSON.stringify({ ok: true, duplicate: true, memo: true }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
         }
 
+        // REGRA DE NEGÓCIO DA ORG: ingestão de grupos pode estar desligada.
+        // DESCARTADO SILENCIOSAMENTE (não grava log — é comportamento esperado).
+        // Com o ESCUDO 1, a flag vem do memo: ZERO query por POST de grupo.
+        const groupJid = b.whatsapp_jid ?? b.contact?.external_id ?? null;
+        if (groupJid?.endsWith("@g.us") && tok.allowGroup === false) {
+          markSeen(b.message_id);
+          return new Response(
+            JSON.stringify({ ok: true, ignored: "group_ingest_disabled" }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+
+        // Diagnóstico de autoria em grupo: se o messages.upsert vier sem
+        // pushName, avisamos UMA vez por mensagem pra calibrar o parser.
         if (b.whatsapp_jid?.endsWith("@g.us") && !b.participant_name) {
           console.warn("[ingest] mensagem de grupo SEM pushName no payload", {
             message_id: b.message_id,
@@ -470,6 +572,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           });
         }
 
+        // 1. Busca ou cria o contato associado
         let contactId: string | null = null;
         if (b.contact?.external_id || b.contact?.phone) {
           const orParts = [
@@ -478,6 +581,10 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           ]
             .filter(Boolean)
             .join(",");
+
+          // limit(1) em vez de maybeSingle: .or() casando 2+ contatos (dups por
+          // external_id × phone) fazia o maybeSingle ERRAR e a demanda nascer
+          // órfã (contact_id null). Pega o mais antigo deterministicamente.
           const { data: foundRows, error: findErr } = await supabaseAdmin
             .from("contacts")
             .select("id, name")
@@ -486,6 +593,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             .order("created_at", { ascending: true })
             .limit(1);
           const found = foundRows?.[0] ?? null;
+
           if (findErr) {
             console.error("[ingest] falha ao buscar contato", {
               org_id: tok.org_id,
@@ -494,12 +602,15 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               error: findErr,
             });
           }
+
           const isGroup = !!b.whatsapp_jid?.endsWith("@g.us");
           if (b.contact) {
             const savedName = found?.name ?? null;
             const savedIsGeneric =
               !savedName || savedName === "Grupo" || savedName === "Contato WhatsApp";
             if (isGroup && !savedIsGeneric) {
+              // Grupo com nome REAL salvo: preserva o nome do contato e não
+              // tenta fetch de novo (o fetch só roda quando o salvo é genérico).
               b.contact.name = savedName;
             } else if (
               isGroup &&
@@ -508,6 +619,9 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               b.evolution_apikey &&
               b.instance_name
             ) {
+              // AUTO-HEAL: grupo com nome genérico dispara o fetch do subject
+              // real (4 rotas candidatas). Falha → segue "Grupo" e re-tenta
+              // na próxima mensagem do grupo.
               const subject = await fetchGroupSubject(
                 b.evolution_server_url,
                 b.evolution_apikey,
@@ -517,6 +631,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               if (subject) b.contact.name = subject;
             }
           }
+
           if (found) {
             contactId = found.id;
             const incomingNameIsGeneric =
@@ -525,6 +640,12 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               b.contact.name === "Grupo";
             const savedNameIsGeneric =
               !found.name || found.name === "Contato WhatsApp" || found.name === "Grupo";
+            // Regras separadas:
+            // - Grupo: só atualiza se o incoming é REAL (não-genérico) E o
+            //   salvo é genérico — protege contra sobrescrever subject real
+            //   por "Grupo" ou "Contato WhatsApp".
+            // - Individual: atualiza quando o nome muda e (incoming é real
+            //   OU o salvo é genérico) — protege o pushName real.
             const shouldUpdateGroup = isGroup && !incomingNameIsGeneric && savedNameIsGeneric;
             const shouldUpdateIndividual =
               !isGroup &&
@@ -568,6 +689,13 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           }
         }
 
+        // 2+3. REUSA ABERTA OU CRIA — ATÔMICO via RPC ingest_upsert_demand
+        // (advisory lock por org+contato em UMA transação): dois webhooks
+        // paralelos do MESMO contato (rajada/encaminhada — caso Diana, 171ms
+        // de janela) não criam mais duas demandas; o segundo espera o lock
+        // e cai no ramo de reuso (created=false).
+        // Exceção: reopen_if_open=false é pedido EXPLÍCITO do integrador por
+        // demanda nova por mensagem — insert inline intencional, sem race bug.
         const preview = previewFor(b);
         const messageAt = new Date().toISOString();
         const title = b.title ?? (b.message.trim() ? b.message.slice(0, 80) : mediaTitleFor(b));
@@ -611,6 +739,10 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           protocol = dem.protocol as string | null;
           createdNow = true;
         } else {
+          // Cast `as any` cirúrgico: os tipos gerados do Supabase
+          // (supabase gen types) inferem os parâmetros da RPC como `string`
+          // (não nullable), mas a função aceita NULL nos campos text.
+          // Gap conhecido do gerador — a função está correta no banco.
           const { data: up, error: upErr } = await supabaseAdmin.rpc("ingest_upsert_demand", {
             p_org_id: tok.org_id,
             p_contact_id: contactId,
@@ -647,6 +779,8 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           createdNow = row.created;
         }
 
+        // Auto-assign só em criação (round-robin/least-busy); falha nunca
+        // derruba o ingest — demanda nasce órfã e gerente atribui depois.
         if (createdNow && demandaId) {
           try {
             await resolveAutoAssignment(supabaseAdmin, { orgId: tok.org_id, demandaId });
@@ -659,6 +793,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           }
         }
 
+        // 4. Registra evento de mensagem e trata idempotência
         if (b.message_id) {
           const { data: already } = await supabaseAdmin
             .from("demanda_events")
@@ -668,7 +803,10 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             .limit(1)
             .maybeSingle();
           if (already) {
-            // DEDUP mantido: justifica ao suporte por que msg repetida não gerou novo ticket.
+            // DEDUP de banco (fonte de verdade entre instâncias/após janela):
+            // justifica ao suporte por que msg repetida não gerou novo ticket.
+            // Marca no ESCUDO 2 pra re-emissões seguintes morrerem em 0 query.
+            markSeen(b.message_id);
             recordWebhookDelivery({
               tokenId: tok.id,
               orgId: tok.org_id,
@@ -686,6 +824,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           }
         }
 
+        // 4b. Mídia: baixa o arquivo decifrado da Evolution e sobe pro Storage privado.
         let mediaUrl: string | null = null;
         let mediaType: string | null = null;
         let mediaFileName: string | null = null;
@@ -770,10 +909,20 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           },
         });
 
-        await supabaseAdmin
-          .from("webhook_tokens")
-          .update({ last_used_at: new Date().toISOString() })
-          .eq("id", tok.id);
+        // Mensagem processada de verdade: entra na janela do ESCUDO 2 —
+        // re-emissões de ack/status desta message_id morrem em 0 query.
+        markSeen(b.message_id);
+
+        // ESCUDO 3: last_used_at no máx. 1x/min/token (era 1 UPDATE por POST).
+        const nowMs = Date.now();
+        const lastTouch = lastUsedTouch.get(tok.id) ?? 0;
+        if (nowMs - lastTouch > 60_000) {
+          lastUsedTouch.set(tok.id, nowMs);
+          await supabaseAdmin
+            .from("webhook_tokens")
+            .update({ last_used_at: new Date(nowMs).toISOString() })
+            .eq("id", tok.id);
+        }
 
         // Sucesso de negócio: created = demand_created, reuse = demand_reopened
         recordWebhookDelivery({
@@ -792,7 +941,7 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             ok: true,
             demanda_id: demandaId,
             protocol,
-            org: (tok as any).organizations?.name ?? null,
+            org: tok.orgName,
             media: mediaUrl
               ? { stored: true }
               : mediaFailed
