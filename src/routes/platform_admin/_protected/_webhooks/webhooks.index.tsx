@@ -34,7 +34,7 @@ const ACTION_LABEL: Record<string, string> = {
   contacts_update_invalid: "contacts.update inválido",
   demand_dedup: "Mensagem duplicada",
   demand_created: "Demanda criada",
-  demand_reopened: "Demanda reaberta",
+  demand_reopened: "Mensagem recebida",
   internal_error: "Erro interno",
 };
 
