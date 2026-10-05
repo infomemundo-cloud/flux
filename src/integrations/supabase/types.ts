@@ -594,6 +594,7 @@ export type Database = {
           sla_max_inactivity_hours: number
           slug: string
           tags: string[]
+          trial_ends_at: string | null
           updated_at: string
         }
         Insert: {
@@ -611,6 +612,7 @@ export type Database = {
           sla_max_inactivity_hours?: number
           slug: string
           tags?: string[]
+          trial_ends_at?: string | null
           updated_at?: string
         }
         Update: {
@@ -628,6 +630,7 @@ export type Database = {
           sla_max_inactivity_hours?: number
           slug?: string
           tags?: string[]
+          trial_ends_at?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -756,6 +759,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      tiers: {
+        Row: {
+          code: string
+          created_at: string
+          limits: Json
+          name: string
+          position: number
+          price_cents: number
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          limits?: Json
+          name: string
+          position?: number
+          price_cents?: number
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          limits?: Json
+          name?: string
+          position?: number
+          price_cents?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       webhook_delivery_logs: {
         Row: {

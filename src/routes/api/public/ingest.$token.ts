@@ -8,6 +8,7 @@ import {
 } from "@/lib/demandas/media-storage";
 import { resolveAutoAssignment } from "@/lib/demandas/assignment";
 import { recordWebhookDelivery } from "@/lib/webhook-delivery-log";
+import { resolveAccountAccess } from "@/lib/billing/account-access";
 
 const Body = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -547,6 +548,29 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
         if (b.message_id && seenBefore(b.message_id)) {
           return new Response(
             JSON.stringify({ ok: true, duplicate: true, memo: true }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+
+        // ◆ FASE 3 — GATE DE ACESSO (trial → grace → suspended) ◆
+        // readonly/blocked barram message_in NOVO. contacts.update segue
+        // liberado acima (sincronização de perfil não é operação de negócio).
+        // O memo 60s/org vive dentro do resolveAccountAccess (diretriz v2.4):
+        // o gate custa 1 SELECT/min/org no caminho quente.
+        const access = await resolveAccountAccess(supabaseAdmin, tok.org_id);
+        if (access.access_level !== "full") {
+          markSeen(b.message_id);
+          recordWebhookDelivery({
+            tokenId: tok.id,
+            orgId: tok.org_id,
+            outcome: "rejected",
+            action: "account_gated",
+            status: 200,
+            latencyMs: Date.now() - t0,
+            error: `effective_state=${access.effective_state}`,
+          });
+          return new Response(
+            JSON.stringify({ ok: true, ignored: `account_${access.effective_state}` }),
             { status: 200, headers: { "content-type": "application/json" } },
           );
         }

@@ -12,7 +12,7 @@
  *   - Payload SEMPRE passa por redactForLogPayload antes de gravar
  */
 
-/** Enum fechado — espelha o CHECK da migration 20261004150000. */
+/** Enum fechado — espelha o CHECK da migration 20261004150000 + Fase 3. */
 export type WebhookAction =
   | "auth_failed"
   | "invalid_payload"
@@ -21,7 +21,8 @@ export type WebhookAction =
   | "demand_dedup"
   | "demand_created"
   | "demand_reopened"
-  | "internal_error";
+  | "internal_error"
+  | "account_gated"; // ← Fase 3: gate de trial/grace/suspended
 
 export type WebhookOutcome = "success" | "rejected" | "error";
 
@@ -73,6 +74,7 @@ export function redactForLogPayload(payload: unknown): Record<string, unknown> {
 
 /**
  * Grava uma linha em webhook_delivery_logs.
+ *
  * - Fire-and-forget: não await no caller, try/catch silencioso
  * - Nunca derruba a requisição do ingest
  * - Payload já deve estar redacted (helper aplica walk de segurança)
