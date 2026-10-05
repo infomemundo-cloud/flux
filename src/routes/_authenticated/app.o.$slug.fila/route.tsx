@@ -26,6 +26,7 @@ import { useOrgSidebar } from "@/lib/org-sidebar-context";
 import { resolveContactName } from "@/lib/demandas/resolve-contact-name";
 import { ContactAvatar } from "@/components/contact-avatar";
 import { FilaHeaderToolbar, type FilaTab } from "./-components/fila-header-toolbar";
+import { AccountAccessBanner } from "@/components/account-access-banner";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/fila")({
   head: () => ({ meta: [{ title: "Fila — Fluxo" }] }),
@@ -349,7 +350,9 @@ function FilaPage() {
 
   return (
     <FilaSidebarContext.Provider value={{ collapsed, setCollapsed }}>
-      <div className="relative flex h-screen overflow-hidden">
+      <div className="flex h-screen flex-col overflow-hidden">
+        <AccountAccessBanner orgId={org?.id ?? null} slug={slug} />
+        <div className="relative flex flex-1 overflow-hidden">
         {/* Botão flutuante pra reabrir — só existe quando a fila está recolhida. */}
         {collapsed && (
           <button
@@ -518,6 +521,7 @@ function FilaPage() {
           )}
         </div>
         {showNew && org && <NewDemandaModal orgId={org.id} onClose={() => setShowNew(false)} />}
+        </div>
       </div>
     </FilaSidebarContext.Provider>
   );

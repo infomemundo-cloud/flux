@@ -3,6 +3,7 @@ import { getRequestHeader } from "@tanstack/react-start/server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertMember } from "@/lib/demandas/demandas-guard";
 import { z } from "zod";
+import { resolveAccountAccess } from "@/lib/billing/account-access";
 
 const ADMIN_ROLES = ["owner", "admin"];
 const OP_ROLES = ["owner", "admin", "gerente", "operador", "agente_ia"];
@@ -359,6 +360,16 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
     const memberRole = await roleOf(context.supabase, dem.org_id, context.userId);
     if (!OP_ROLES.includes(memberRole)) throw new Error("Você não pode responder nesta demanda.");
     if (!dem.whatsapp_jid) throw new Error("Esta demanda não tem um WhatsApp associado.");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const access = await resolveAccountAccess(supabaseAdmin, dem.org_id);
+    if (access.access_level === "readonly")
+      throw new Error(
+        "Sua conta está em período de carência. Você ainda pode visualizar todo o histórico, mas o envio está bloqueado até a renovação do plano.",
+      );
+    if (access.access_level === "blocked")
+      throw new Error(
+        "Sua conta foi suspensa por inadimplência. Regularize o pagamento para liberar o envio. O histórico continua disponível para consulta.",
+      );
     let delivered = false;
     let deliveryNote = "Registrado apenas no histórico (integração inativa).";
     let messageId: string | null = null;
@@ -483,9 +494,15 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
     if (!dem.whatsapp_jid || !dem.instance_name) {
       throw new Error("Esta demanda não tem WhatsApp conectado para envio de mídia.");
     }
-    const { MAX_UPLOAD_BYTES, sendMediaViaEvolution, uploadMediaToStorage } = await import(
-      "@/lib/demandas/media-storage"
-    );
+    // ◆ FASE 3 — GATE DE ENVIO ◆ mídia segue a mesma regra de texto.
+    const access = await resolveAccountAccess(supabaseAdmin, data.orgId);
+    if (access.access_level === "readonly")
+      throw new Error("Sua conta está em período de carência. Você ainda pode visualizar todo o histórico, mas o envio está bloqueado até a renovação do plano.",
+      );
+    if (access.access_level === "blocked")
+      throw new Error("Sua conta foi suspensa por inadimplência. Regularize o pagamento para liberar o envio. O histórico continua disponível para consulta.",
+      );
+    const { MAX_UPLOAD_BYTES, sendMediaViaEvolution, uploadMediaToStorage } = await import("@/lib/demandas/media-storage");
     const buf = Buffer.from(data.fileBase64, "base64");
     if (buf.byteLength === 0) throw new Error("Arquivo vazio.");
     if (buf.byteLength > MAX_UPLOAD_BYTES) {
