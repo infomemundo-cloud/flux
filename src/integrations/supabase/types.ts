@@ -75,6 +75,48 @@ export type Database = {
         }
         Relationships: []
       }
+      billing_events: {
+        Row: {
+          action: string | null
+          created_at: string
+          error: string | null
+          id: string
+          live_mode: boolean
+          mp_event_id: string
+          payload: Json
+          processed_at: string | null
+          status: Database["public"]["Enums"]["billing_event_status"]
+          topic: string
+          updated_at: string
+        }
+        Insert: {
+          action?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          live_mode?: boolean
+          mp_event_id: string
+          payload?: Json
+          processed_at?: string | null
+          status?: Database["public"]["Enums"]["billing_event_status"]
+          topic: string
+          updated_at?: string
+        }
+        Update: {
+          action?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          live_mode?: boolean
+          mp_event_id?: string
+          payload?: Json
+          processed_at?: string | null
+          status?: Database["public"]["Enums"]["billing_event_status"]
+          topic?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       channels: {
         Row: {
           active: boolean
@@ -104,6 +146,13 @@ export type Database = {
           org_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "channels_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "org_access_effective"
+            referencedColumns: ["org_id"]
+          },
           {
             foreignKeyName: "channels_org_id_fkey"
             columns: ["org_id"]
@@ -163,6 +212,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "contacts_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "org_access_effective"
+            referencedColumns: ["org_id"]
+          },
           {
             foreignKeyName: "contacts_org_id_fkey"
             columns: ["org_id"]
@@ -230,6 +286,13 @@ export type Database = {
             foreignKeyName: "demanda_events_org_id_fkey"
             columns: ["org_id"]
             isOneToOne: false
+            referencedRelation: "org_access_effective"
+            referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "demanda_events_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
@@ -273,6 +336,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "demandas"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "demanda_status_audit_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "org_access_effective"
+            referencedColumns: ["org_id"]
           },
           {
             foreignKeyName: "demanda_status_audit_org_id_fkey"
@@ -404,6 +474,13 @@ export type Database = {
             foreignKeyName: "demandas_org_id_fkey"
             columns: ["org_id"]
             isOneToOne: false
+            referencedRelation: "org_access_effective"
+            referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "demandas_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
@@ -441,6 +518,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "feature_flags"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "feature_flag_overrides_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "org_access_effective"
+            referencedColumns: ["org_id"]
           },
           {
             foreignKeyName: "feature_flag_overrides_org_id_fkey"
@@ -541,7 +625,87 @@ export type Database = {
             foreignKeyName: "invites_org_id_fkey"
             columns: ["org_id"]
             isOneToOne: false
+            referencedRelation: "org_access_effective"
+            referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "invites_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invoices: {
+        Row: {
+          amount_cents: number
+          created_at: string
+          currency: string
+          due_at: string | null
+          failure_reason: string | null
+          id: string
+          mp_payment_id: string | null
+          org_id: string
+          paid_at: string | null
+          period_end: string | null
+          period_start: string | null
+          status: Database["public"]["Enums"]["invoice_status"]
+          subscription_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          amount_cents: number
+          created_at?: string
+          currency?: string
+          due_at?: string | null
+          failure_reason?: string | null
+          id?: string
+          mp_payment_id?: string | null
+          org_id: string
+          paid_at?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          status?: Database["public"]["Enums"]["invoice_status"]
+          subscription_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          amount_cents?: number
+          created_at?: string
+          currency?: string
+          due_at?: string | null
+          failure_reason?: string | null
+          id?: string
+          mp_payment_id?: string | null
+          org_id?: string
+          paid_at?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          status?: Database["public"]["Enums"]["invoice_status"]
+          subscription_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoices_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "org_access_effective"
+            referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "invoices_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_subscription_id_fkey"
+            columns: ["subscription_id"]
+            isOneToOne: false
+            referencedRelation: "subscriptions"
             referencedColumns: ["id"]
           },
         ]
@@ -569,6 +733,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "memberships_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "org_access_effective"
+            referencedColumns: ["org_id"]
+          },
           {
             foreignKeyName: "memberships_org_id_fkey"
             columns: ["org_id"]
@@ -755,8 +926,82 @@ export type Database = {
             foreignKeyName: "quick_replies_org_id_fkey"
             columns: ["org_id"]
             isOneToOne: false
+            referencedRelation: "org_access_effective"
+            referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "quick_replies_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      subscriptions: {
+        Row: {
+          cancel_requested_by_user: boolean
+          created_at: string
+          current_period_end: string | null
+          current_period_start: string | null
+          id: string
+          mp_external_reference: string | null
+          mp_preapproval_id: string | null
+          mp_preapproval_plan_id: string | null
+          org_id: string
+          plan_code: string
+          state: Database["public"]["Enums"]["tenant_subscription_state"]
+          updated_at: string
+        }
+        Insert: {
+          cancel_requested_by_user?: boolean
+          created_at?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
+          id?: string
+          mp_external_reference?: string | null
+          mp_preapproval_id?: string | null
+          mp_preapproval_plan_id?: string | null
+          org_id: string
+          plan_code: string
+          state?: Database["public"]["Enums"]["tenant_subscription_state"]
+          updated_at?: string
+        }
+        Update: {
+          cancel_requested_by_user?: boolean
+          created_at?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
+          id?: string
+          mp_external_reference?: string | null
+          mp_preapproval_id?: string | null
+          mp_preapproval_plan_id?: string | null
+          org_id?: string
+          plan_code?: string
+          state?: Database["public"]["Enums"]["tenant_subscription_state"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscriptions_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "org_access_effective"
+            referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "subscriptions_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscriptions_plan_code_fkey"
+            columns: ["plan_code"]
+            isOneToOne: false
+            referencedRelation: "tiers"
+            referencedColumns: ["code"]
           },
         ]
       }
@@ -838,6 +1083,13 @@ export type Database = {
             foreignKeyName: "webhook_delivery_logs_org_id_fkey"
             columns: ["org_id"]
             isOneToOne: false
+            referencedRelation: "org_access_effective"
+            referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "webhook_delivery_logs_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
@@ -893,6 +1145,13 @@ export type Database = {
             foreignKeyName: "webhook_tokens_org_id_fkey"
             columns: ["org_id"]
             isOneToOne: false
+            referencedRelation: "org_access_effective"
+            referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "webhook_tokens_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
@@ -943,6 +1202,13 @@ export type Database = {
             foreignKeyName: "whatsapp_settings_org_id_fkey"
             columns: ["org_id"]
             isOneToOne: true
+            referencedRelation: "org_access_effective"
+            referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "whatsapp_settings_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: true
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
@@ -950,7 +1216,18 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      org_access_effective: {
+        Row: {
+          access_level: Database["public"]["Enums"]["access_level"] | null
+          days_left: number | null
+          effective_state: string | null
+          org_id: string | null
+          source: string | null
+          subscription_state: string | null
+          trial_ends_at: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       delete_organization_cascade: {
@@ -983,7 +1260,9 @@ export type Database = {
       show_trgm: { Args: { "": string }; Returns: string[] }
     }
     Enums: {
+      access_level: "full" | "readonly" | "blocked"
       app_role: "owner" | "admin" | "agent" | "viewer"
+      billing_event_status: "received" | "processed" | "failed" | "ignored"
       channel_kind:
         | "whatsapp"
         | "instagram"
@@ -1010,6 +1289,19 @@ export type Database = {
         | "due_updated"
         | "priority_changed"
         | "closed"
+      invoice_status:
+        | "scheduled"
+        | "processing"
+        | "retrying"
+        | "paid"
+        | "failed"
+      tenant_subscription_state:
+        | "active"
+        | "grace_period"
+        | "past_due"
+        | "canceled_by_user"
+        | "canceled_by_dunning"
+        | "suspended"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1140,7 +1432,9 @@ export const Constants = {
   },
   public: {
     Enums: {
+      access_level: ["full", "readonly", "blocked"],
       app_role: ["owner", "admin", "agent", "viewer"],
+      billing_event_status: ["received", "processed", "failed", "ignored"],
       channel_kind: [
         "whatsapp",
         "instagram",
@@ -1169,6 +1463,15 @@ export const Constants = {
         "due_updated",
         "priority_changed",
         "closed",
+      ],
+      invoice_status: ["scheduled", "processing", "retrying", "paid", "failed"],
+      tenant_subscription_state: [
+        "active",
+        "grace_period",
+        "past_due",
+        "canceled_by_user",
+        "canceled_by_dunning",
+        "suspended",
       ],
     },
   },
