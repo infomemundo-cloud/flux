@@ -42,7 +42,7 @@ export const Route = createFileRoute("/platform_admin/_protected")({
  */
 const NAV = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/platform_admin", soon: false },
-  { label: "Tenants", icon: Building2, href: null, soon: true },
+  { label: "Tenants", icon: Building2, href: "/platform_admin/tenants", soon: false },
   { label: "Usuários", icon: Users, href: "/platform_admin/users", soon: false },
   { label: "Logs de webhook", icon: Webhook, href: "/platform_admin/webhooks", soon: false },
   { label: "Audit log", icon: ScrollText, href: null, soon: true },

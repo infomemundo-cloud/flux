@@ -23,6 +23,7 @@ import { Route as AuthenticatedAppOSlugRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedAppOnboardingSlugRouteRouteImport } from './routes/_authenticated/app.onboarding.$slug/route'
 import { Route as ApiPublicIngestTokenRouteImport } from './routes/api/public/ingest.$token'
 import { Route as Platform_adminProtectedFlagsFlagsRouteImport } from './routes/platform_admin/_protected/_flags/flags'
+import { Route as Platform_adminProtectedTenantsTenantsRouteImport } from './routes/platform_admin/_protected/_tenants/tenants'
 import { Route as Platform_adminProtectedTiersTiersRouteImport } from './routes/platform_admin/_protected/_tiers/tiers'
 import { Route as Platform_adminProtectedWebhooksWebhooksRouteImport } from './routes/platform_admin/_protected/_webhooks/webhooks'
 import { Route as Platform_adminProtectedUsersIndexRouteImport } from './routes/platform_admin/_protected/users.index'
@@ -33,6 +34,7 @@ import { Route as AuthenticatedAppOSlugDashboardRouteImport } from './routes/_au
 import { Route as AuthenticatedAppOSlugEquipeRouteImport } from './routes/_authenticated/app.o.$slug.equipe'
 import { Route as AuthenticatedAppOSlugFilaRouteRouteImport } from './routes/_authenticated/app.o.$slug.fila/route'
 import { Route as Platform_adminProtectedFlagsFlagsIndexRouteImport } from './routes/platform_admin/_protected/_flags/flags.index'
+import { Route as Platform_adminProtectedTenantsTenantsIndexRouteImport } from './routes/platform_admin/_protected/_tenants/tenants.index'
 import { Route as Platform_adminProtectedTiersTiersIndexRouteImport } from './routes/platform_admin/_protected/_tiers/tiers.index'
 import { Route as Platform_adminProtectedWebhooksWebhooksIndexRouteImport } from './routes/platform_admin/_protected/_webhooks/webhooks.index'
 import { Route as AuthenticatedAppOSlugFilaDemandasIdRouteRouteImport } from './routes/_authenticated/app.o.$slug.fila.demandas.$id/route'
@@ -112,6 +114,12 @@ const Platform_adminProtectedFlagsFlagsRoute =
     path: '/flags',
     getParentRoute: () => Platform_adminProtectedRouteRoute,
   } as any)
+const Platform_adminProtectedTenantsTenantsRoute =
+  Platform_adminProtectedTenantsTenantsRouteImport.update({
+    id: '/_tenants/tenants',
+    path: '/tenants',
+    getParentRoute: () => Platform_adminProtectedRouteRoute,
+  } as any)
 const Platform_adminProtectedTiersTiersRoute =
   Platform_adminProtectedTiersTiersRouteImport.update({
     id: '/_tiers/tiers',
@@ -172,6 +180,12 @@ const Platform_adminProtectedFlagsFlagsIndexRoute =
     path: '/',
     getParentRoute: () => Platform_adminProtectedFlagsFlagsRoute,
   } as any)
+const Platform_adminProtectedTenantsTenantsIndexRoute =
+  Platform_adminProtectedTenantsTenantsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => Platform_adminProtectedTenantsTenantsRoute,
+  } as any)
 const Platform_adminProtectedTiersTiersIndexRoute =
   Platform_adminProtectedTiersTiersIndexRouteImport.update({
     id: '/',
@@ -205,6 +219,7 @@ export interface FileRoutesByFullPath {
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
   '/platform_admin/flags': typeof Platform_adminProtectedFlagsFlagsRouteWithChildren
+  '/platform_admin/tenants': typeof Platform_adminProtectedTenantsTenantsRouteWithChildren
   '/platform_admin/tiers': typeof Platform_adminProtectedTiersTiersRouteWithChildren
   '/platform_admin/webhooks': typeof Platform_adminProtectedWebhooksWebhooksRouteWithChildren
   '/platform_admin/users/$userId': typeof Platform_adminProtectedUsersUserIdRoute
@@ -215,6 +230,7 @@ export interface FileRoutesByFullPath {
   '/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
   '/app/o/$slug/equipe': typeof AuthenticatedAppOSlugEquipeRoute
   '/platform_admin/flags/': typeof Platform_adminProtectedFlagsFlagsIndexRoute
+  '/platform_admin/tenants/': typeof Platform_adminProtectedTenantsTenantsIndexRoute
   '/platform_admin/tiers/': typeof Platform_adminProtectedTiersTiersIndexRoute
   '/platform_admin/webhooks/': typeof Platform_adminProtectedWebhooksWebhooksIndexRoute
   '/app/o/$slug/fila/demandas/$id': typeof AuthenticatedAppOSlugFilaDemandasIdRouteRoute
@@ -238,6 +254,7 @@ export interface FileRoutesByTo {
   '/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
   '/app/o/$slug/equipe': typeof AuthenticatedAppOSlugEquipeRoute
   '/platform_admin/flags': typeof Platform_adminProtectedFlagsFlagsIndexRoute
+  '/platform_admin/tenants': typeof Platform_adminProtectedTenantsTenantsIndexRoute
   '/platform_admin/tiers': typeof Platform_adminProtectedTiersTiersIndexRoute
   '/platform_admin/webhooks': typeof Platform_adminProtectedWebhooksWebhooksIndexRoute
   '/app/o/$slug/fila/demandas/$id': typeof AuthenticatedAppOSlugFilaDemandasIdRouteRoute
@@ -258,6 +275,7 @@ export interface FileRoutesById {
   '/_authenticated/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
   '/platform_admin/_protected/_flags/flags': typeof Platform_adminProtectedFlagsFlagsRouteWithChildren
+  '/platform_admin/_protected/_tenants/tenants': typeof Platform_adminProtectedTenantsTenantsRouteWithChildren
   '/platform_admin/_protected/_tiers/tiers': typeof Platform_adminProtectedTiersTiersRouteWithChildren
   '/platform_admin/_protected/_webhooks/webhooks': typeof Platform_adminProtectedWebhooksWebhooksRouteWithChildren
   '/platform_admin/_protected/users/$userId': typeof Platform_adminProtectedUsersUserIdRoute
@@ -268,6 +286,7 @@ export interface FileRoutesById {
   '/_authenticated/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
   '/_authenticated/app/o/$slug/equipe': typeof AuthenticatedAppOSlugEquipeRoute
   '/platform_admin/_protected/_flags/flags/': typeof Platform_adminProtectedFlagsFlagsIndexRoute
+  '/platform_admin/_protected/_tenants/tenants/': typeof Platform_adminProtectedTenantsTenantsIndexRoute
   '/platform_admin/_protected/_tiers/tiers/': typeof Platform_adminProtectedTiersTiersIndexRoute
   '/platform_admin/_protected/_webhooks/webhooks/': typeof Platform_adminProtectedWebhooksWebhooksIndexRoute
   '/_authenticated/app/o/$slug/fila/demandas/$id': typeof AuthenticatedAppOSlugFilaDemandasIdRouteRoute
@@ -288,6 +307,7 @@ export interface FileRouteTypes {
     | '/app/o/$slug'
     | '/api/public/ingest/$token'
     | '/platform_admin/flags'
+    | '/platform_admin/tenants'
     | '/platform_admin/tiers'
     | '/platform_admin/webhooks'
     | '/platform_admin/users/$userId'
@@ -298,6 +318,7 @@ export interface FileRouteTypes {
     | '/app/o/$slug/dashboard'
     | '/app/o/$slug/equipe'
     | '/platform_admin/flags/'
+    | '/platform_admin/tenants/'
     | '/platform_admin/tiers/'
     | '/platform_admin/webhooks/'
     | '/app/o/$slug/fila/demandas/$id'
@@ -321,6 +342,7 @@ export interface FileRouteTypes {
     | '/app/o/$slug/dashboard'
     | '/app/o/$slug/equipe'
     | '/platform_admin/flags'
+    | '/platform_admin/tenants'
     | '/platform_admin/tiers'
     | '/platform_admin/webhooks'
     | '/app/o/$slug/fila/demandas/$id'
@@ -340,6 +362,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/o/$slug'
     | '/api/public/ingest/$token'
     | '/platform_admin/_protected/_flags/flags'
+    | '/platform_admin/_protected/_tenants/tenants'
     | '/platform_admin/_protected/_tiers/tiers'
     | '/platform_admin/_protected/_webhooks/webhooks'
     | '/platform_admin/_protected/users/$userId'
@@ -350,6 +373,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/o/$slug/dashboard'
     | '/_authenticated/app/o/$slug/equipe'
     | '/platform_admin/_protected/_flags/flags/'
+    | '/platform_admin/_protected/_tenants/tenants/'
     | '/platform_admin/_protected/_tiers/tiers/'
     | '/platform_admin/_protected/_webhooks/webhooks/'
     | '/_authenticated/app/o/$slug/fila/demandas/$id'
@@ -466,6 +490,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof Platform_adminProtectedFlagsFlagsRouteImport
       parentRoute: typeof Platform_adminProtectedRouteRoute
     }
+    '/platform_admin/_protected/_tenants/tenants': {
+      id: '/platform_admin/_protected/_tenants/tenants'
+      path: '/tenants'
+      fullPath: '/platform_admin/tenants'
+      preLoaderRoute: typeof Platform_adminProtectedTenantsTenantsRouteImport
+      parentRoute: typeof Platform_adminProtectedRouteRoute
+    }
     '/platform_admin/_protected/_tiers/tiers': {
       id: '/platform_admin/_protected/_tiers/tiers'
       path: '/tiers'
@@ -535,6 +566,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/platform_admin/flags/'
       preLoaderRoute: typeof Platform_adminProtectedFlagsFlagsIndexRouteImport
       parentRoute: typeof Platform_adminProtectedFlagsFlagsRoute
+    }
+    '/platform_admin/_protected/_tenants/tenants/': {
+      id: '/platform_admin/_protected/_tenants/tenants/'
+      path: '/'
+      fullPath: '/platform_admin/tenants/'
+      preLoaderRoute: typeof Platform_adminProtectedTenantsTenantsIndexRouteImport
+      parentRoute: typeof Platform_adminProtectedTenantsTenantsRoute
     }
     '/platform_admin/_protected/_tiers/tiers/': {
       id: '/platform_admin/_protected/_tiers/tiers/'
@@ -656,6 +694,21 @@ const Platform_adminProtectedFlagsFlagsRouteWithChildren =
     Platform_adminProtectedFlagsFlagsRouteChildren,
   )
 
+interface Platform_adminProtectedTenantsTenantsRouteChildren {
+  Platform_adminProtectedTenantsTenantsIndexRoute: typeof Platform_adminProtectedTenantsTenantsIndexRoute
+}
+
+const Platform_adminProtectedTenantsTenantsRouteChildren: Platform_adminProtectedTenantsTenantsRouteChildren =
+  {
+    Platform_adminProtectedTenantsTenantsIndexRoute:
+      Platform_adminProtectedTenantsTenantsIndexRoute,
+  }
+
+const Platform_adminProtectedTenantsTenantsRouteWithChildren =
+  Platform_adminProtectedTenantsTenantsRoute._addFileChildren(
+    Platform_adminProtectedTenantsTenantsRouteChildren,
+  )
+
 interface Platform_adminProtectedTiersTiersRouteChildren {
   Platform_adminProtectedTiersTiersIndexRoute: typeof Platform_adminProtectedTiersTiersIndexRoute
 }
@@ -690,6 +743,7 @@ interface Platform_adminProtectedRouteRouteChildren {
   Platform_adminProtectedUsersRoute: typeof Platform_adminProtectedUsersRouteWithChildren
   Platform_adminProtectedIndexRoute: typeof Platform_adminProtectedIndexRoute
   Platform_adminProtectedFlagsFlagsRoute: typeof Platform_adminProtectedFlagsFlagsRouteWithChildren
+  Platform_adminProtectedTenantsTenantsRoute: typeof Platform_adminProtectedTenantsTenantsRouteWithChildren
   Platform_adminProtectedTiersTiersRoute: typeof Platform_adminProtectedTiersTiersRouteWithChildren
   Platform_adminProtectedWebhooksWebhooksRoute: typeof Platform_adminProtectedWebhooksWebhooksRouteWithChildren
 }
@@ -701,6 +755,8 @@ const Platform_adminProtectedRouteRouteChildren: Platform_adminProtectedRouteRou
     Platform_adminProtectedIndexRoute: Platform_adminProtectedIndexRoute,
     Platform_adminProtectedFlagsFlagsRoute:
       Platform_adminProtectedFlagsFlagsRouteWithChildren,
+    Platform_adminProtectedTenantsTenantsRoute:
+      Platform_adminProtectedTenantsTenantsRouteWithChildren,
     Platform_adminProtectedTiersTiersRoute:
       Platform_adminProtectedTiersTiersRouteWithChildren,
     Platform_adminProtectedWebhooksWebhooksRoute:
