@@ -47,7 +47,7 @@ const NAV = [
   { label: "Logs de webhook", icon: Webhook, href: "/platform_admin/webhooks", soon: false },
   { label: "Audit log", icon: ScrollText, href: null, soon: true },
   { label: "Feature flags", icon: Flag, href: "/platform_admin/flags", soon: false },
-  { label: "Tiers", icon: Layers, href: null, soon: true },
+  { label: "Tiers", icon: Layers, href: "/platform_admin/tiers", soon: false },
   { label: "Billing", icon: CreditCard, href: null, soon: true },
 ] as const;
 
