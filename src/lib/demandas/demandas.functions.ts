@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { StateEnum, PriorityEnum, OP_ROLES, assertMember } from "@/lib/demandas/demandas-guard";
+import { resolveAccountAccess } from "@/lib/billing/account-access";
 
 /**
  * Shape da citação ("em resposta a…") gravada no metadata dos eventos.
@@ -67,7 +68,7 @@ export const listDemandas = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
     const now = Date.now();
     // 2. Contagens das 4 abas via head counts (independentes da paginação e
-    // do escopo atual): os badges nunca mentem ao trocar de aba.
+    //    do escopo atual): os badges nunca mentem ao trocar de aba.
     const isOverdue = (r: any) =>
       !!r.due_at && new Date(r.due_at).getTime() < now && r.state !== "concluido";
     const baseCount = () => {
@@ -285,12 +286,11 @@ async function resolveActors(
  * Retorna só as últimas INITIAL_EVENTS_PAGE_SIZE mensagens (ordenadas
  * cronológicas) + olderCursor (created_at do mais antigo, null se não tem
  * mais). Cliente busca lotes anteriores via listOlderEvents.
- *
  * Benefícios (ciclo de corte de egress/logs):
- * - Conversa antiga (1000 eventos, 300 mídias) → 10x menos payload +
- *   95% menos signedMediaUrl() a cada refetch
- * - Abertura de demanda cai de 800-2000ms pra 100-200ms
- * - Memoria do browser cai proporcionalmente (20 bolhas no DOM, não 1000)
+ *   - Conversa antiga (1000 eventos, 300 mídias) → 10x menos payload +
+ *     95% menos signedMediaUrl() a cada refetch
+ *   - Abertura de demanda cai de 800-2000ms pra 100-200ms
+ *   - Memoria do browser cai proporcionalmente (20 bolhas no DOM, não 1000)
  */
 export const getDemanda = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -305,7 +305,6 @@ export const getDemanda = createServerFn({ method: "GET" })
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!dem) throw new Error("Demanda não encontrada");
-
     // Marca como vista pra este usuário — o dot de "não lida" some na fila.
     // Upsert idempotente (PK demanda_id+user_id); falha aqui NÃO pode
     // derrubar a abertura da demanda, então engolimos com log.
@@ -320,7 +319,6 @@ export const getDemanda = createServerFn({ method: "GET" })
     } catch (e) {
       console.error("[getDemanda] falha ao marcar vista", e);
     }
-
     // PAGINAÇÃO: busca os últimos INITIAL_EVENTS_PAGE_SIZE+1 eventos (o +1
     // serve pra saber se tem mais antigos sem COUNT adicional). Ordem DESC
     // pra pegar os mais recentes primeiro, depois revertemos pra cronológica.
@@ -330,15 +328,12 @@ export const getDemanda = createServerFn({ method: "GET" })
       .eq("demanda_id", data.id)
       .order("created_at", { ascending: false })
       .limit(INITIAL_EVENTS_PAGE_SIZE + 1);
-
     const hasMore = (eventsRaw ?? []).length > INITIAL_EVENTS_PAGE_SIZE;
     const window = (eventsRaw ?? []).slice(0, INITIAL_EVENTS_PAGE_SIZE).reverse();
     // Cursor = created_at do evento MAIS ANTIGO da janela. Se hasMore=false,
     // cursor=null sinaliza "fim do histórico" pro cliente.
     const olderCursor: string | null = hasMore && window.length > 0 ? (window[0].created_at as string) : null;
-
     const signedEvents = await signEventsMedia(window);
-
     // Identidade dos personagens: quem criou, mudou status, comentou e é responsável.
     const ids = new Set<string>();
     if (dem.created_by) ids.add(dem.created_by as string);
@@ -351,7 +346,6 @@ export const getDemanda = createServerFn({ method: "GET" })
       }
     }
     const actors = await resolveActors(context.supabase, dem.org_id, ids);
-
     // "Demanda nº X deste contato" + anteriores (aba Demanda do trilho).
     // Três queries baratas (2 head counts + lista limitada) só quando existe
     // contato vinculado; sem contato, contactStats = null e o trilho omite.
@@ -391,7 +385,6 @@ export const getDemanda = createServerFn({ method: "GET" })
         }[],
       };
     }
-
     return {
       demanda: dem,
       events: signedEvents,
@@ -430,7 +423,6 @@ export const listOlderEvents = createServerFn({ method: "GET" })
     if (demErr) throw new Error(demErr.message);
     if (!dem) throw new Error("Demanda não encontrada");
     await assertMember(context.supabase, dem.org_id, context.userId);
-
     // 2. Busca lote anterior (DESC +1 pra detectar "tem mais")
     const { data: eventsRaw } = await context.supabase
       .from("demanda_events")
@@ -439,15 +431,12 @@ export const listOlderEvents = createServerFn({ method: "GET" })
       .lt("created_at", data.before)
       .order("created_at", { ascending: false })
       .limit(data.limit + 1);
-
     const hasMore = (eventsRaw ?? []).length > data.limit;
     const window = (eventsRaw ?? []).slice(0, data.limit).reverse();
     const olderCursor: string | null =
       hasMore && window.length > 0 ? (window[0].created_at as string) : null;
-
     // 3. Assina URLs de mídia SÓ do lote novo
     const signed = await signEventsMedia(window);
-
     // 4. Atores do lote (batch único)
     const ids = new Set<string>();
     for (const e of signed) {
@@ -458,7 +447,6 @@ export const listOlderEvents = createServerFn({ method: "GET" })
       }
     }
     const actors = await resolveActors(context.supabase, dem.org_id, ids);
-
     return { events: signed, olderCursor, actors };
   });
 
@@ -494,7 +482,21 @@ export const createDemanda = createServerFn({ method: "POST" })
     const role = await assertMember(context.supabase, data.orgId, context.userId);
     if (!OP_ROLES.includes(role as (typeof OP_ROLES)[number]))
       throw new Error("Sem permissão para criar");
+
+    // ◆ FASE 3 — GATE DE CRIAÇÃO (Opção A / D2-D3) ◆ grace/suspended barram
+    // demanda NOVA (manual). Responder demanda existente segue liberado no
+    // grace; message_in novo é barrado no ingest; saída, no send (blocked).
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const access = await resolveAccountAccess(supabaseAdmin, data.orgId);
+    if (access.access_level === "readonly")
+      throw new Error(
+        "Sua conta está em período de carência. Você pode responder às demandas existentes, mas não é possível criar novas demandas até a renovação do plano.",
+      );
+    if (access.access_level === "blocked")
+      throw new Error(
+        "Sua conta foi suspensa por inadimplência. Regularize o pagamento para liberar a criação de demandas. O histórico continua disponível para consulta.",
+      );
+
     let contactId: string | null = null;
     if (data.contact_name || data.contact_phone) {
       const { data: c, error: ce } = await supabaseAdmin

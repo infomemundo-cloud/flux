@@ -360,16 +360,17 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
     const memberRole = await roleOf(context.supabase, dem.org_id, context.userId);
     if (!OP_ROLES.includes(memberRole)) throw new Error("Você não pode responder nesta demanda.");
     if (!dem.whatsapp_jid) throw new Error("Esta demanda não tem um WhatsApp associado.");
+
+    // ◆ FASE 3 — GATE DE ENVIO (Opção A / D2-D3) ◆ grace (readonly) RESPONDE
+    // demandas existentes; só suspended (blocked) corta a saída. Criação de
+    // demanda nova é gateada em createDemanda; message_in novo, no ingest.
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const access = await resolveAccountAccess(supabaseAdmin, dem.org_id);
-    if (access.access_level === "readonly")
-      throw new Error(
-        "Sua conta está em período de carência. Você ainda pode visualizar todo o histórico, mas o envio está bloqueado até a renovação do plano.",
-      );
     if (access.access_level === "blocked")
       throw new Error(
         "Sua conta foi suspensa por inadimplência. Regularize o pagamento para liberar o envio. O histórico continua disponível para consulta.",
       );
+
     let delivered = false;
     let deliveryNote = "Registrado apenas no histórico (integração inativa).";
     let messageId: string | null = null;
@@ -414,7 +415,7 @@ export const sendWhatsAppMessage = createServerFn({ method: "POST" })
         delivered = true;
         deliveryNote = "Enviado pelo WhatsApp.";
       } catch (e) {
-        if (e instanceof Error && e.message.startsWith("O WhatsApp ")) throw e;
+        if (e instanceof Error && e.message.startsWith("O WhatsApp")) throw e;
         console.error("[whatsapp] send error", e);
         throw new Error("Não foi possível enviar a mensagem agora.");
       }
@@ -494,15 +495,19 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
     if (!dem.whatsapp_jid || !dem.instance_name) {
       throw new Error("Esta demanda não tem WhatsApp conectado para envio de mídia.");
     }
-    // ◆ FASE 3 — GATE DE ENVIO ◆ mídia segue a mesma regra de texto.
+
+    // ◆ FASE 3 — GATE DE ENVIO (Opção A / D2-D3) ◆ grace (readonly) RESPONDE
+    // demandas existentes; só suspended (blocked) corta a saída. Criação de
+    // demanda nova é gateada em createDemanda; message_in novo, no ingest.
     const access = await resolveAccountAccess(supabaseAdmin, data.orgId);
-    if (access.access_level === "readonly")
-      throw new Error("Sua conta está em período de carência. Você ainda pode visualizar todo o histórico, mas o envio está bloqueado até a renovação do plano.",
-      );
     if (access.access_level === "blocked")
-      throw new Error("Sua conta foi suspensa por inadimplência. Regularize o pagamento para liberar o envio. O histórico continua disponível para consulta.",
+      throw new Error(
+        "Sua conta foi suspensa por inadimplência. Regularize o pagamento para liberar o envio. O histórico continua disponível para consulta.",
       );
-    const { MAX_UPLOAD_BYTES, sendMediaViaEvolution, uploadMediaToStorage } = await import("@/lib/demandas/media-storage");
+
+    const { MAX_UPLOAD_BYTES, sendMediaViaEvolution, uploadMediaToStorage } = await import(
+      "@/lib/demandas/media-storage"
+    );
     const buf = Buffer.from(data.fileBase64, "base64");
     if (buf.byteLength === 0) throw new Error("Arquivo vazio.");
     if (buf.byteLength > MAX_UPLOAD_BYTES) {
