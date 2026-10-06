@@ -19,7 +19,7 @@ export function TenantActionsMenu({
   onAction: (action: TenantAction, new_trial: string | null, new_state: TenantRow["effective_state"]) => void;
 }) {
   const now = Date.now();
-  const base = tenant.trial_ends_at ? new Date(tenant.trial_ends_at).getTime() : now;
+  const base = Math.max(now, tenant.trial_ends_at ? new Date(tenant.trial_ends_at).getTime() : now);
 
   const plan = (action: TenantAction): { new_trial: string | null; new_state: TenantRow["effective_state"] } => {
     switch (action) {

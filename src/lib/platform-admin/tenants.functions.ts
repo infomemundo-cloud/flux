@@ -146,11 +146,14 @@ function computeNewTrial(
     case "reactivate":
       return new Date(now + 7 * DAY).toISOString();
     case "extend_7d": {
-      const base = current ? new Date(current).getTime() : now;
+      // Empilha sobre trial VIVO; expirada/suspensa ganha dias a partir de
+      // HOJE (extend que parece no-op é defeito — caso real 2026-10-06:
+      // extend_7d com from_state=suspended manteve a org suspensa).
+      const base = Math.max(now, current ? new Date(current).getTime() : now);
       return new Date(base + 7 * DAY).toISOString();
     }
     case "extend_30d": {
-      const base = current ? new Date(current).getTime() : now;
+      const base = Math.max(now, current ? new Date(current).getTime() : now);
       return new Date(base + 30 * DAY).toISOString();
     }
   }
