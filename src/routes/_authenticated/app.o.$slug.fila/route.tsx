@@ -27,6 +27,7 @@ import { resolveContactName } from "@/lib/demandas/resolve-contact-name";
 import { ContactAvatar } from "@/components/contact-avatar";
 import { FilaHeaderToolbar, type FilaTab } from "./-components/fila-header-toolbar";
 import { AccountAccessBanner } from "@/components/account-access-banner";
+import { getAccountAccess } from "@/lib/billing/account-access";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/fila")({
   head: () => ({ meta: [{ title: "Fila — Fluxo" }] }),
@@ -252,6 +253,15 @@ function FilaPage() {
     queryFn: () => connFn({ data: { orgId: org!.id } }),
   });
   const waStatus = conn?.status ?? "disconnected";
+// Estado de acesso da conta (Fase 3) — MESMA queryKey do AccountAccessBanner:
+// cache compartilhado, 1 fetch serve banner + gate do botão "+".
+const accessFn = useServerFn(getAccountAccess);
+const { data: access } = useQuery({
+  queryKey: ["account-access", org?.id],
+  enabled: !!org?.id,
+  retry: false,
+  queryFn: () => accessFn({ data: { orgId: org!.id } }),
+});
 
   // Fase 3 (§38): card persistente de setup — aparece quando a org está
   // desconectada e o usuário tem papel de gestão (owner/admin). Independente
@@ -384,7 +394,21 @@ function FilaPage() {
                   canMarkAll={!!org}
                   markingAll={markAll.isPending}
                   onMarkAllRead={() => markAll.mutate()}
-                  onNewDemanda={() => setShowNew(true)}
+                  onNewDemanda={() => {
+                  // ◆ FASE 3 — GATE DE CRIAÇÃO NA UI ◆ grace/suspended nem abrem o modal:
+                  // toast imediato explica o bloqueio. Autoridade segue no createDemanda
+                  // (servidor); isto é só UX. Se o cache ainda carregou (access undefined),
+                  // abre o modal e o servidor barra no submit — segunda linha de defesa.
+                  if (access && access.access_level !== "full") {
+                    toast.error(
+                      access.access_level === "readonly"
+                        ? "Sua conta está em período de carência. Você pode responder às demandas existentes, mas não é possível criar novas demandas até a renovação do plano."
+                        : "Sua conta foi suspensa por inadimplência. Regularize o pagamento para liberar a criação de demandas. O histórico continua disponível para consulta.",
+                    );
+                    return;
+                  }
+                  setShowNew(true);
+                }}
                 />
               </div>
 

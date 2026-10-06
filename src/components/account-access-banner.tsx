@@ -51,7 +51,7 @@ export function AccountAccessBanner({
       <Band tone="amber" icon={<TriangleAlert className="h-3.5 w-3.5 shrink-0" />}>
         <b>Período de carência</b>
         {days_left != null && days_left > 0 ? ` (${days_left} ${days_left === 1 ? "dia" : "dias"} restante${days_left === 1 ? "" : "s"})` : ""}
-        . Você pode consultar todo o histórico, mas o envio está bloqueado.
+        . Você continua respondendo às demandas existentes, mas não recebe mensagens novas nem cria demandas.
         <Cta slug={slug} label="Renovar plano" />
       </Band>
     );
@@ -60,8 +60,8 @@ export function AccountAccessBanner({
   // suspended
   return (
     <Band tone="red" icon={<Ban className="h-3.5 w-3.5 shrink-0" />}>
-      <b>Conta suspensa.</b> Regularize o pagamento para liberar o envio. O histórico continua
-      disponível para consulta.
+      <b>Conta suspensa.</b> Regularize o pagamento para liberar envio, recebimento e criação de
+      demandas. O histórico continua disponível para consulta.
       <Cta slug={slug} label="Regularizar" />
     </Band>
   );
