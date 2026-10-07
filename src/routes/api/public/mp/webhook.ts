@@ -11,13 +11,15 @@
  *  3. live_mode × env (mismatch → 200 early, economiza CPU)
  *  4. HMAC (só se passou nos 3 acima)
  *  5. dedupe + insert em billing_events
- *  6. 200 <22s (SLA do MP)
+ *  6. disparo inline do processador (fire-and-forget)
+ *  7. 200 <22s (SLA do MP)
  *
  * Decisões fechadas (D17):
  *  - Secret única compartilhada entre test/prod (MP_WEBHOOK_SECRET).
  *  - data.id vem do body (não da query).
  *  - Dedupe por payload.id (notification_id).
  *  - Mismatch = 200 silencioso (evita retries + vazamento entre ambientes).
+ *  - Trigger híbrido: inline no receiver + cron 15min da 4.6 como rede de segurança.
  */
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -26,6 +28,7 @@ import {
   validateEnvLiveMode,
   verifyMpManifestHmac,
 } from "@/lib/billing/mp-webhook";
+import { processBillingEvent } from "@/lib/billing/mp-processor";
 
 export const Route = createFileRoute("/api/public/mp/webhook")({
   server: {
@@ -105,9 +108,11 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
         const { supabaseAdmin } = await import(
           "@/integrations/supabase/client.server"
         );
-        const { error } = await supabaseAdmin
+        const { data: inserted, error } = await supabaseAdmin
           .from("billing_events")
-          .insert(record);
+          .insert(record as never) // cast: gap do supabase gen types com jsonb Record
+          .select("id")
+          .maybeSingle();
 
         if (error) {
           // 23505 = unique violation (retry do MP) — tratar como OK
@@ -133,6 +138,19 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
             action: record.action,
             ms: Date.now() - t0,
           });
+
+          // Inline fire-and-forget (não bloqueia o 200; o cron 4.6 é a rede de
+          // segurança). O processador é idempotente + claim condicional, então
+          // inline e cron em paralelo não corrompem estado.
+          if (inserted?.id) {
+            const eventId = inserted.id as string;
+            void processBillingEvent(eventId).catch((err) =>
+              console.error("[mp-webhook] inline_process_error", {
+                eventId,
+                err,
+              }),
+            );
+          }
         }
 
         // 6) 200 <22s (SLA do MP)
