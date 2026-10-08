@@ -97,7 +97,10 @@ function Config() {
           <MacrosTab orgId={org.id} />
         </TabsContent>
         <TabsContent value="financeiro" className="mt-5 space-y-6">
-          <FinanceiroTab />
+          <FinanceiroTab
+            orgId={org.id}
+            isOwner={org.role === "owner"}
+        />
         </TabsContent>
       </Tabs>
     </div>

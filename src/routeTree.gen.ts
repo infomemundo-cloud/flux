@@ -22,6 +22,8 @@ import { Route as Platform_adminConviteTokenRouteImport } from './routes/platfor
 import { Route as AuthenticatedAppOSlugRouteImport } from './routes/_authenticated/app.o.$slug'
 import { Route as AuthenticatedAppOnboardingSlugRouteRouteImport } from './routes/_authenticated/app.onboarding.$slug/route'
 import { Route as ApiPublicIngestTokenRouteImport } from './routes/api/public/ingest.$token'
+import { Route as ApiPublicMpCheckoutCallbackRouteImport } from './routes/api/public/mp/checkout-callback'
+import { Route as ApiPublicMpWebhookRouteImport } from './routes/api/public/mp/webhook'
 import { Route as Platform_adminProtectedFlagsFlagsRouteImport } from './routes/platform_admin/_protected/_flags/flags'
 import { Route as Platform_adminProtectedTenantsTenantsRouteImport } from './routes/platform_admin/_protected/_tenants/tenants'
 import { Route as Platform_adminProtectedTiersTiersRouteImport } from './routes/platform_admin/_protected/_tiers/tiers'
@@ -37,6 +39,7 @@ import { Route as Platform_adminProtectedFlagsFlagsIndexRouteImport } from './ro
 import { Route as Platform_adminProtectedTenantsTenantsIndexRouteImport } from './routes/platform_admin/_protected/_tenants/tenants.index'
 import { Route as Platform_adminProtectedTiersTiersIndexRouteImport } from './routes/platform_admin/_protected/_tiers/tiers.index'
 import { Route as Platform_adminProtectedWebhooksWebhooksIndexRouteImport } from './routes/platform_admin/_protected/_webhooks/webhooks.index'
+import { Route as AuthenticatedAppOSlugBillingSuccessRouteRouteImport } from './routes/_authenticated/app.o.$slug.billing.success/route'
 import { Route as AuthenticatedAppOSlugFilaDemandasIdRouteRouteImport } from './routes/_authenticated/app.o.$slug.fila.demandas.$id/route'
 
 const IndexRoute = IndexRouteImport.update({
@@ -106,6 +109,17 @@ const AuthenticatedAppOnboardingSlugRouteRoute =
 const ApiPublicIngestTokenRoute = ApiPublicIngestTokenRouteImport.update({
   id: '/api/public/ingest/$token',
   path: '/api/public/ingest/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicMpCheckoutCallbackRoute =
+  ApiPublicMpCheckoutCallbackRouteImport.update({
+    id: '/api/public/mp/checkout-callback',
+    path: '/api/public/mp/checkout-callback',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicMpWebhookRoute = ApiPublicMpWebhookRouteImport.update({
+  id: '/api/public/mp/webhook',
+  path: '/api/public/mp/webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
 const Platform_adminProtectedFlagsFlagsRoute =
@@ -198,6 +212,12 @@ const Platform_adminProtectedWebhooksWebhooksIndexRoute =
     path: '/',
     getParentRoute: () => Platform_adminProtectedWebhooksWebhooksRoute,
   } as any)
+const AuthenticatedAppOSlugBillingSuccessRouteRoute =
+  AuthenticatedAppOSlugBillingSuccessRouteRouteImport.update({
+    id: '/billing/success',
+    path: '/billing/success',
+    getParentRoute: () => AuthenticatedAppOSlugRoute,
+  } as any)
 const AuthenticatedAppOSlugFilaDemandasIdRouteRoute =
   AuthenticatedAppOSlugFilaDemandasIdRouteRouteImport.update({
     id: '/demandas/$id',
@@ -218,6 +238,8 @@ export interface FileRoutesByFullPath {
   '/app/onboarding/$slug': typeof AuthenticatedAppOnboardingSlugRouteRoute
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
+  '/api/public/mp/checkout-callback': typeof ApiPublicMpCheckoutCallbackRoute
+  '/api/public/mp/webhook': typeof ApiPublicMpWebhookRoute
   '/platform_admin/flags': typeof Platform_adminProtectedFlagsFlagsRouteWithChildren
   '/platform_admin/tenants': typeof Platform_adminProtectedTenantsTenantsRouteWithChildren
   '/platform_admin/tiers': typeof Platform_adminProtectedTiersTiersRouteWithChildren
@@ -233,6 +255,7 @@ export interface FileRoutesByFullPath {
   '/platform_admin/tenants/': typeof Platform_adminProtectedTenantsTenantsIndexRoute
   '/platform_admin/tiers/': typeof Platform_adminProtectedTiersTiersIndexRoute
   '/platform_admin/webhooks/': typeof Platform_adminProtectedWebhooksWebhooksIndexRoute
+  '/app/o/$slug/billing/success': typeof AuthenticatedAppOSlugBillingSuccessRouteRoute
   '/app/o/$slug/fila/demandas/$id': typeof AuthenticatedAppOSlugFilaDemandasIdRouteRoute
 }
 export interface FileRoutesByTo {
@@ -246,6 +269,8 @@ export interface FileRoutesByTo {
   '/app/onboarding/$slug': typeof AuthenticatedAppOnboardingSlugRouteRoute
   '/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
+  '/api/public/mp/checkout-callback': typeof ApiPublicMpCheckoutCallbackRoute
+  '/api/public/mp/webhook': typeof ApiPublicMpWebhookRoute
   '/platform_admin/users/$userId': typeof Platform_adminProtectedUsersUserIdRoute
   '/platform_admin/users': typeof Platform_adminProtectedUsersIndexRoute
   '/app/o/$slug/configuracoes': typeof AuthenticatedAppOSlugConfiguracoesRouteRoute
@@ -257,6 +282,7 @@ export interface FileRoutesByTo {
   '/platform_admin/tenants': typeof Platform_adminProtectedTenantsTenantsIndexRoute
   '/platform_admin/tiers': typeof Platform_adminProtectedTiersTiersIndexRoute
   '/platform_admin/webhooks': typeof Platform_adminProtectedWebhooksWebhooksIndexRoute
+  '/app/o/$slug/billing/success': typeof AuthenticatedAppOSlugBillingSuccessRouteRoute
   '/app/o/$slug/fila/demandas/$id': typeof AuthenticatedAppOSlugFilaDemandasIdRouteRoute
 }
 export interface FileRoutesById {
@@ -274,6 +300,8 @@ export interface FileRoutesById {
   '/_authenticated/app/onboarding/$slug': typeof AuthenticatedAppOnboardingSlugRouteRoute
   '/_authenticated/app/o/$slug': typeof AuthenticatedAppOSlugRouteWithChildren
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
+  '/api/public/mp/checkout-callback': typeof ApiPublicMpCheckoutCallbackRoute
+  '/api/public/mp/webhook': typeof ApiPublicMpWebhookRoute
   '/platform_admin/_protected/_flags/flags': typeof Platform_adminProtectedFlagsFlagsRouteWithChildren
   '/platform_admin/_protected/_tenants/tenants': typeof Platform_adminProtectedTenantsTenantsRouteWithChildren
   '/platform_admin/_protected/_tiers/tiers': typeof Platform_adminProtectedTiersTiersRouteWithChildren
@@ -289,6 +317,7 @@ export interface FileRoutesById {
   '/platform_admin/_protected/_tenants/tenants/': typeof Platform_adminProtectedTenantsTenantsIndexRoute
   '/platform_admin/_protected/_tiers/tiers/': typeof Platform_adminProtectedTiersTiersIndexRoute
   '/platform_admin/_protected/_webhooks/webhooks/': typeof Platform_adminProtectedWebhooksWebhooksIndexRoute
+  '/_authenticated/app/o/$slug/billing/success': typeof AuthenticatedAppOSlugBillingSuccessRouteRoute
   '/_authenticated/app/o/$slug/fila/demandas/$id': typeof AuthenticatedAppOSlugFilaDemandasIdRouteRoute
 }
 export interface FileRouteTypes {
@@ -306,6 +335,8 @@ export interface FileRouteTypes {
     | '/app/onboarding/$slug'
     | '/app/o/$slug'
     | '/api/public/ingest/$token'
+    | '/api/public/mp/checkout-callback'
+    | '/api/public/mp/webhook'
     | '/platform_admin/flags'
     | '/platform_admin/tenants'
     | '/platform_admin/tiers'
@@ -321,6 +352,7 @@ export interface FileRouteTypes {
     | '/platform_admin/tenants/'
     | '/platform_admin/tiers/'
     | '/platform_admin/webhooks/'
+    | '/app/o/$slug/billing/success'
     | '/app/o/$slug/fila/demandas/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -334,6 +366,8 @@ export interface FileRouteTypes {
     | '/app/onboarding/$slug'
     | '/app/o/$slug'
     | '/api/public/ingest/$token'
+    | '/api/public/mp/checkout-callback'
+    | '/api/public/mp/webhook'
     | '/platform_admin/users/$userId'
     | '/platform_admin/users'
     | '/app/o/$slug/configuracoes'
@@ -345,6 +379,7 @@ export interface FileRouteTypes {
     | '/platform_admin/tenants'
     | '/platform_admin/tiers'
     | '/platform_admin/webhooks'
+    | '/app/o/$slug/billing/success'
     | '/app/o/$slug/fila/demandas/$id'
   id:
     | '__root__'
@@ -361,6 +396,8 @@ export interface FileRouteTypes {
     | '/_authenticated/app/onboarding/$slug'
     | '/_authenticated/app/o/$slug'
     | '/api/public/ingest/$token'
+    | '/api/public/mp/checkout-callback'
+    | '/api/public/mp/webhook'
     | '/platform_admin/_protected/_flags/flags'
     | '/platform_admin/_protected/_tenants/tenants'
     | '/platform_admin/_protected/_tiers/tiers'
@@ -376,6 +413,7 @@ export interface FileRouteTypes {
     | '/platform_admin/_protected/_tenants/tenants/'
     | '/platform_admin/_protected/_tiers/tiers/'
     | '/platform_admin/_protected/_webhooks/webhooks/'
+    | '/_authenticated/app/o/$slug/billing/success'
     | '/_authenticated/app/o/$slug/fila/demandas/$id'
   fileRoutesById: FileRoutesById
 }
@@ -388,6 +426,8 @@ export interface RootRouteChildren {
   Platform_adminLoginRoute: typeof Platform_adminLoginRoute
   Platform_adminConviteTokenRoute: typeof Platform_adminConviteTokenRoute
   ApiPublicIngestTokenRoute: typeof ApiPublicIngestTokenRoute
+  ApiPublicMpCheckoutCallbackRoute: typeof ApiPublicMpCheckoutCallbackRoute
+  ApiPublicMpWebhookRoute: typeof ApiPublicMpWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -481,6 +521,20 @@ declare module '@tanstack/react-router' {
       path: '/api/public/ingest/$token'
       fullPath: '/api/public/ingest/$token'
       preLoaderRoute: typeof ApiPublicIngestTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/mp/checkout-callback': {
+      id: '/api/public/mp/checkout-callback'
+      path: '/api/public/mp/checkout-callback'
+      fullPath: '/api/public/mp/checkout-callback'
+      preLoaderRoute: typeof ApiPublicMpCheckoutCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/mp/webhook': {
+      id: '/api/public/mp/webhook'
+      path: '/api/public/mp/webhook'
+      fullPath: '/api/public/mp/webhook'
+      preLoaderRoute: typeof ApiPublicMpWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/platform_admin/_protected/_flags/flags': {
@@ -588,6 +642,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof Platform_adminProtectedWebhooksWebhooksIndexRouteImport
       parentRoute: typeof Platform_adminProtectedWebhooksWebhooksRoute
     }
+    '/_authenticated/app/o/$slug/billing/success': {
+      id: '/_authenticated/app/o/$slug/billing/success'
+      path: '/billing/success'
+      fullPath: '/app/o/$slug/billing/success'
+      preLoaderRoute: typeof AuthenticatedAppOSlugBillingSuccessRouteRouteImport
+      parentRoute: typeof AuthenticatedAppOSlugRoute
+    }
     '/_authenticated/app/o/$slug/fila/demandas/$id': {
       id: '/_authenticated/app/o/$slug/fila/demandas/$id'
       path: '/demandas/$id'
@@ -619,6 +680,7 @@ interface AuthenticatedAppOSlugRouteChildren {
   AuthenticatedAppOSlugAlertasRoute: typeof AuthenticatedAppOSlugAlertasRoute
   AuthenticatedAppOSlugDashboardRoute: typeof AuthenticatedAppOSlugDashboardRoute
   AuthenticatedAppOSlugEquipeRoute: typeof AuthenticatedAppOSlugEquipeRoute
+  AuthenticatedAppOSlugBillingSuccessRouteRoute: typeof AuthenticatedAppOSlugBillingSuccessRouteRoute
 }
 
 const AuthenticatedAppOSlugRouteChildren: AuthenticatedAppOSlugRouteChildren = {
@@ -629,6 +691,8 @@ const AuthenticatedAppOSlugRouteChildren: AuthenticatedAppOSlugRouteChildren = {
   AuthenticatedAppOSlugAlertasRoute: AuthenticatedAppOSlugAlertasRoute,
   AuthenticatedAppOSlugDashboardRoute: AuthenticatedAppOSlugDashboardRoute,
   AuthenticatedAppOSlugEquipeRoute: AuthenticatedAppOSlugEquipeRoute,
+  AuthenticatedAppOSlugBillingSuccessRouteRoute:
+    AuthenticatedAppOSlugBillingSuccessRouteRoute,
 }
 
 const AuthenticatedAppOSlugRouteWithChildren =
@@ -778,6 +842,8 @@ const rootRouteChildren: RootRouteChildren = {
   Platform_adminLoginRoute: Platform_adminLoginRoute,
   Platform_adminConviteTokenRoute: Platform_adminConviteTokenRoute,
   ApiPublicIngestTokenRoute: ApiPublicIngestTokenRoute,
+  ApiPublicMpCheckoutCallbackRoute: ApiPublicMpCheckoutCallbackRoute,
+  ApiPublicMpWebhookRoute: ApiPublicMpWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
