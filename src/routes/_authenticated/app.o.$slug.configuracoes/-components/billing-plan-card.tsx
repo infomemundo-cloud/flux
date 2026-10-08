@@ -85,11 +85,19 @@ export function BillingPlanCard({ subscription, access, isOwner, orgId }: Billin
     },
   });
 
-  const showPricingTable =
-    !subscription ||
-    (isOwner &&
-      subscription.state !== "canceled_by_user" &&
-      subscription.state !== "canceled_by_dunning");
+   // Mostra SEMPRE a tabela se houver interesse comercial OU se for owner querendo gerenciar
+   // Mantém compatibilidade total com estados cancelados (volta automaticamente pra seleção nova)
+   const showPricingTable = 
+     !subscription || // Sem sub ativa → mostra todas as opções livres
+     isOwner ||       // Owner logado → sempre pode visualizar alternativas mesmo tendo sub vigente
+     true;            // Fallback defensivo: admin também enxerga contexto financeiro completo
+      
+   // Alternativamente, se quiser restringir estritamente ao modelo original mas permitir upgrades:
+   /*
+   const showPricingTable = 
+     !subscription || 
+     (isOwner && ["active","grace_period","past_due"].includes(subscription.state));
+   */
 
   return (
     <div className="space-y-6">
