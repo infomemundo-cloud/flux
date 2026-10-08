@@ -69,7 +69,7 @@ async function assertOwnerOrAdmin(orgId: string, userId: string): Promise<void> 
   }
 }
 
-// ---------- Server Function: createCheckoutSession ----------
+// ---------- Server Function: createCheckoutSession (SIMPLIFICADA PARA INIT_POINT) ----------
 export const createCheckoutSession = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => CreateInputSchema.parse(d))
@@ -80,10 +80,10 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
     // 1) Guard RBAC: apenas owner/admin pode assinar
     await assertOwnerOrAdmin(orgId, userId);
 
-    // 2) Determinar live_mode (default false = teste; prod exige env explícita)
+    // 2) Determinar live_mode (default false = teste)
     const liveMode = process.env.MP_ENV === "prod";
 
-    // 3) Resolver mp_plan_id canônico do tier
+    // 3) Resolver mp_plan_id canônico do tier (hardcoded validado pelo seed)
     const planId = getPlanId(tierCode, liveMode);
     if (!planId) {
       throw new Error(
@@ -92,87 +92,20 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
       );
     }
 
-    // 4) Obter token correto
-    const token = mpTokenFor(liveMode);
-    if (!token) {
-      throw new Error(`Token MP indisponível para ambiente ${liveMode ? "prod" : "test"}.`);
-    }
+    // 4) Construir URL de checkout hospedado do MP diretamente
+    // Formato oficial documentado: https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id={ID}
+    const baseUrl = "https://www.mercadopago.com.br";
+    const initPoint = `${baseUrl}/subscriptions/checkout?preapproval_plan_id=${encodeURIComponent(planId)}`;
 
-    // 5) Criar preapproval no MP via POST /preapproval
-    // Nota: endpoint de ASSINATURAS usa SLASH (/preapproval), diferente de PLANOS (UNDERSCORE).
-    // Confirmado pela doc oficial KB: POST https://api.mercadopago.com/preapproval
-    const payload = {
-      preapproval_plan_id: planId,
-      external_reference: orgId, // D16: permite resolução determinística da org pelo callback
-      reason: `Fluxo — Assinatura ${tierCode}`,
-      auto_recurring: true, // herda configuração do plano associado
-      back_url: liveMode
-        ? "https://flxapp.cloud/api/public/mp/checkout-callback"
-        : "http://localhost:8081/api/public/mp/checkout-callback",
-    };
-
-    let result: { id?: string; init_point?: string };
-    try {
-      const res = await fetch("https://api.mercadopago.com/preapproval", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-      result = await res.json();
-      if (!res.ok) {
-        throw new MpApiError(res.status, `mp_create_preapproval_${res.status}`, result);
-      }
-    } catch (err) {
-      console.error("[mp-checkout] create_preapproval_failed", {
-        orgId,
-        tierCode,
-        liveMode,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      throw new Error("Falha ao criar sessão de checkout. Tente novamente.");
-    }
-
-    if (!result.id || !result.init_point) {
-      throw new Error("Resposta inválida do Mercado Pago ao criar assinatura.");
-    }
-
-    // 6) Persistir subscription localmente (estado inicial 'pending' até confirmação do MP)
-    // Nota: estado final será aplicado pelo processor inline/callback público quando o MP confirmar.
-    const { error: insertErr } = await supabaseAdmin.from("subscriptions").insert({
-      org_id: orgId,
-      plan_code: tierCode,
-      state: "active", // inicia como active; transições futuras vêm do webhook/callback
-      mp_preapproval_id: result.id,
-      mp_preapproval_plan_id: planId,
-      mp_external_reference: orgId,
-      cancel_requested_by_user: false,
-      current_period_start: new Date().toISOString(),
-      // current_period_end fica NULL até primeira cobrança bem-sucedida
-    } as never);
-
-    if (insertErr) {
-      console.error("[mp-checkout] subscription_insert_failed", {
-        orgId,
-        tierCode,
-        mpPreapprovalId: result.id,
-        error: insertErr.message,
-      });
-      // Não aborta aqui — o evento já foi criado no MP; o callback público vai reconciliar.
-      // Logamos para alerta operacional mas permitimos o fluxo continuar.
-    }
-
-    console.log("[mp-checkout] session_created", {
+    console.log("[mp-checkout] session_created_via_init_point", {
       orgId,
       tierCode,
       liveMode,
-      mpPreapprovalId: result.id,
-      ms: Date.now(),
+      planId,
+      initPoint,
     });
 
-    return { initPoint: result.init_point };
+    return { initPoint };
   });
 
 // ---------- Server Function: cancelSubscription ----------
