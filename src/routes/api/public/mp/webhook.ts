@@ -1,10 +1,10 @@
 /**
  * Fase 4.3/4.5 — Webhook Receiver Mercado Pago (Assinaturas Recorrentes).
  * 
- * ARQUITETURA MADURA E ESCALÁVEL:
+ * ARQUITETURA MADURA E ESCALÁVEL (2026-10-09):
  * 1. Roteamento Inteligente por Query Param (?env=test|prod):
  *    - Permite receber webhooks de TESTE em infraestrutura de PRODUÇÃO sem conflito.
- *    - Seleciona automaticamente o SEGREDО e o TOKEN correto baseado no 'env' da URL.
+ *    - Seleciona automaticamente o SEGREDО correto baseado no 'env' da URL.
  *    - Elimina o erro "env_mismatch" visto nos logs ao alinhar validação com a origem real.
  * 
  * 2. Extração Robusta de Dados:
@@ -21,7 +21,6 @@
  *    - MP_WEBHOOK_SECRET_TEST / MP_WEBHOOK_SECRET_PROD (selecionados dinamicamente aqui)
  */
 import { createFileRoute } from "@tanstack/react-router";
-import crypto from "crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { verifyMpSignature } from "@/lib/billing/mp-webhook";
 import { processBillingEvent } from "@/lib/billing/mp-processor";
@@ -40,8 +39,6 @@ function getEnvConfig(requestUrl: string) {
     secret: effectiveEnv === "prod" 
       ? process.env.MP_WEBHOOK_SECRET_PROD 
       : process.env.MP_WEBHOOK_SECRET_TEST,
-    // Token não é usado aqui diretamente, mas o processor usará MP_ACCESS_TOKEN_{ENV}
-    // baseado no live_mode do evento, que agora será aceito corretamente.
   };
 }
 
@@ -102,12 +99,9 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
           }
 
           // 6. Normalizar Payload para Consistência do Processor
-          // Garante que o processor encontre data.id e type/topic independentemente da origem
           if (!body.data) body.data = {};
           if (!body.data.id) body.data.id = resourceId;
           if (!body.type && !body.topic) body.type = topic;
-          
-          // Alias action/event para uniformidade
           if (!body.action && body.event) body.action = body.event;
           if (!body.action) body.action = "updated"; // Default seguro
 
@@ -149,7 +143,6 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
           }
 
           // 9. Deduplicação & Persistência Atômica
-          // ID sintético garante idempotência mesmo se o MP reenviar a mesma notificação
           const syntheticEventId = `${xRequestId}_${resourceId}`;
           
           const { data: inserted, error: insertErr } = await supabaseAdmin
@@ -198,7 +191,6 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
                   eventId: inserted.id, 
                   err: procErr instanceof Error ? procErr.message : String(procErr) 
                 });
-                // O processor marca 'failed' internamente. Cron 4.6 pode reprocessar.
               });
           }
 
