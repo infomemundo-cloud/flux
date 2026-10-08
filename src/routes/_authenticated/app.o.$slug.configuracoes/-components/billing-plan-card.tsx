@@ -1,6 +1,10 @@
 /**
  * Layout clean de pricing sem badges flutuantes, botões uniformes em largura total
  * e preços alinhados sem quebra de linha.
+ * 
+ * CORREÇÃO DE BUG: Isola o estado de loading por card usando useState<string|null>.
+ * Antes, uma única useMutation compartilhava isPending entre os 3 bots, causando
+ * spinners sincrônicos indesejados. Agora, apenas o botão clicado gira.
  */
 import { CheckCircle2, Clock, AlertTriangle, Ban, Sparkles, Check } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -11,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { friendlyError } from "@/lib/friendly-error";
 import { createCheckoutSession, cancelSubscription } from "@/lib/billing/mp-checkout.functions";
 import type { AccountAccess } from "@/lib/billing/account-access";
+import { useState } from "react"; // NOVO IMPORT PARA CONTROLAR LOADING INDIVIDUAL
 
 interface SubscriptionLike {
   id: string;
@@ -55,15 +60,24 @@ export function BillingPlanCard({ subscription, access, isOwner, orgId }: Billin
   const checkoutFn = useServerFn(createCheckoutSession);
   const cancelFn = useServerFn(cancelSubscription);
 
+  // ESTADO LOCAL: Rastreia qual tier está em processo de assinatura (null = nenhum)
+  const [loadingTierCode, setLoadingTierCode] = useState<string | null>(null);
+
   const displayState = deriveDisplayState(subscription, access);
   const tierName = subscription?.plan_code
     ? TIERS.find((t) => t.code === subscription.plan_code)?.name ?? subscription.plan_code
     : null;
 
+  // MUTATION ÚNICA (mas controlada pelo estado local acima para UI)
   const subscribeMut = useMutation({
     mutationFn: async (tierCode: (typeof TIERS)[number]["code"]) => {
-      const res = await checkoutFn({ data: { orgId, tierCode } });
-      return res.initPoint;
+      setLoadingTierCode(tierCode); // Marca qual card está girando
+      try {
+        const res = await checkoutFn({ data: { orgId, tierCode } });
+        return res.initPoint;
+      } finally {
+        setLoadingTierCode(null); // Limpa o estado quando terminar (sucesso ou erro)
+      }
     },
     onSuccess: (initPoint) => {
       window.location.href = initPoint;
@@ -85,19 +99,11 @@ export function BillingPlanCard({ subscription, access, isOwner, orgId }: Billin
     },
   });
 
-   // Mostra SEMPRE a tabela se houver interesse comercial OU se for owner querendo gerenciar
-   // Mantém compatibilidade total com estados cancelados (volta automaticamente pra seleção nova)
-   const showPricingTable = 
-     !subscription || // Sem sub ativa → mostra todas as opções livres
-     isOwner ||       // Owner logado → sempre pode visualizar alternativas mesmo tendo sub vigente
-     true;            // Fallback defensivo: admin também enxerga contexto financeiro completo
-      
-   // Alternativamente, se quiser restringir estritamente ao modelo original mas permitir upgrades:
-   /*
-   const showPricingTable = 
-     !subscription || 
-     (isOwner && ["active","grace_period","past_due"].includes(subscription.state));
-   */
+  // Lógica de exibição da tabela (mantida igual à sua versão atual)
+  const showPricingTable =
+    !subscription ||
+    isOwner ||
+    true;
 
   return (
     <div className="space-y-6">
@@ -130,8 +136,11 @@ export function BillingPlanCard({ subscription, access, isOwner, orgId }: Billin
               subscription?.plan_code === tier.code &&
               subscription.state !== "canceled_by_user" &&
               subscription.state !== "canceled_by_dunning";
-
+            
             const isHighlighted = tier.code === "crescimento";
+            
+            // VERIFICAÇÃO CRÍTICA: Só mostra spinner se ESTE tier específico estiver carregando
+            const isThisCardLoading = loadingTierCode === tier.code;
 
             return (
               <div
@@ -148,7 +157,6 @@ export function BillingPlanCard({ subscription, access, isOwner, orgId }: Billin
                   <p className="text-xs text-muted-foreground leading-relaxed min-h-[32px]">
                     {tier.description}
                   </p>
-
                   {/* Preço em linha única */}
                   <div className="my-5 flex items-baseline gap-1 whitespace-nowrap">
                     <span className="text-xs font-semibold text-muted-foreground">R$</span>
@@ -193,13 +201,14 @@ export function BillingPlanCard({ subscription, access, isOwner, orgId }: Billin
                       variant={isHighlighted ? "default" : "outline"}
                       className="w-full text-xs font-semibold rounded-lg h-9"
                       onClick={() => subscribeMut.mutate(tier.code)}
-                      disabled={!isOwner || subscribeMut.isPending}
+                      // DESABILITA APENAS SE ESTIVER CARREGANDO OU NÃO FOR OWNER
+                      disabled={!isOwner || isThisCardLoading}
                     >
-                      {subscribeMut.isPending ? <Clock className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+                      {/* MOSTRA SPINNER APENAS NESTE CARD ESPECÍFICO */}
+                      {isThisCardLoading ? <Clock className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
                       Assinar {tier.name}
                     </Button>
                   )}
-
                   {!isOwner && !isActive && (
                     <p className="text-[10px] text-center text-muted-foreground/70 italic mt-2">
                       Apenas o proprietário pode alterar o plano.
@@ -233,7 +242,6 @@ export function BillingPlanCard({ subscription, access, isOwner, orgId }: Billin
                 {displayState.label}
               </Badge>
             </div>
-
             {subscription.current_period_start && (
               <div className="grid grid-cols-2 gap-4 rounded-lg bg-muted/40 p-3 text-xs border border-border/40">
                 <div>
@@ -281,7 +289,6 @@ function deriveDisplayState(
       badgeVariant: "secondary",
     };
   }
-
   if (!subscription) {
     return {
       label: "Sem plano",
@@ -289,7 +296,6 @@ function deriveDisplayState(
       badgeVariant: "outline",
     };
   }
-
   switch (subscription.state) {
     case "active":
       return {
