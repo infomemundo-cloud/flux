@@ -2,44 +2,76 @@
  * Fase 4.3/4.5 — Webhook Receiver Mercado Pago (Assinaturas Recorrentes).
  * 
  * ARQUITETURA MADURA E ESCALÁVEL (2026-10-09):
- * 1. Roteamento Inteligente por Query Param (?env=test|prod):
+ * 1. Segredo Único: Usa MP_WEBHOOK_SECRET (configurado na Vercel) para ambos os ambientes.
+ *    Elimina o erro "missing_secret_for_env" causado pela busca de variáveis inexistentes.
+ * 
+ * 2. Roteamento Inteligente por Query Param (?env=test|prod):
  *    - Permite receber webhooks de TESTE em infraestrutura de PRODUÇÃO sem conflito.
- *    - Seleciona automaticamente o SEGREDО correto baseado no 'env' da URL.
- *    - Elimina o erro "env_mismatch" visto nos logs ao alinhar validação com a origem real.
+ *    - Se ?env=test, aceita live_mode=true OU false (contas de teste variam).
+ *    - Se ?env=prod, exige live_mode=true (produção real).
  * 
- * 2. Extração Robusta de Dados:
- *    - Prioriza Query Params (data.id, type) sobre Body JSON (padrão MP para notificações leves).
+ * 3. Validação HMAC Correta (Doc Oficial MP):
+ *    - Manifest: id:{data_id};request-id:{x_request_id};ts:{ts};
+ *    - Separador: ponto-e-vírgula (;) com trailing semicolon obrigatório.
+ *    - Data ID: usado exatamente como recebido (sem lowercase forçado).
+ * 
+ * 4. Extração Robusta de Dados:
+ *    - Prioriza Query Params (data.id, type) sobre Body JSON.
  *    - Normaliza payload antes do insert para garantir consistência no processor.
- * 
- * 3. Segurança (§17):
- *    - Validação HMAC estrita usando o segredo específico do ambiente detectado.
- *    - Deduplicação via unique constraint (mp_event_id).
- *    - Resposta imediata 200 OK para evitar retries infinitos do MP (< 22s timeout).
- * 
- * 4. Variáveis de Ambiente Suportadas:
- *    - MP_ACCESS_TOKEN_TEST / MP_ACCESS_TOKEN_PROD (usados pelo processor downstream)
- *    - MP_WEBHOOK_SECRET_TEST / MP_WEBHOOK_SECRET_PROD (selecionados dinamicamente aqui)
  */
 import { createFileRoute } from "@tanstack/react-router";
+import crypto from "crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { verifyMpSignature } from "@/lib/billing/mp-webhook";
 import { processBillingEvent } from "@/lib/billing/mp-processor";
 
-// ---------- Configuração Dinâmica de Credenciais ----------
-function getEnvConfig(requestUrl: string) {
-  const url = new URL(requestUrl);
-  // Fonte de verdade: query param ?env=test ou ?env=prod
-  // Fallback: variável de servidor MP_ENV (para compatibilidade retroativa)
-  const queryEnv = url.searchParams.get("env");
-  const serverEnv = process.env.MP_ENV === "prod" ? "prod" : "test";
-  const effectiveEnv = (queryEnv === "prod" || queryEnv === "test") ? queryEnv : serverEnv;
+// ---------- Configuração de Credenciais (Segredo Único) ----------
+function getWebhookSecret(): string | undefined {
+  // Usa a variável única configurada na Vercel (MP_WEBHOOK_SECRET)
+  // Isso resolve o erro "missing_secret_for_env" pois não depende de sufixos _PROD/_TEST
+  return process.env.MP_WEBHOOK_SECRET;
+}
 
-  return {
-    env: effectiveEnv,
-    secret: effectiveEnv === "prod" 
-      ? process.env.MP_WEBHOOK_SECRET_PROD 
-      : process.env.MP_WEBHOOK_SECRET_TEST,
-  };
+// ---------- Helper: Validação HMAC (Inline para garantir formato correto) ----------
+function verifyMpSignature(
+  xSignature: string,
+  xRequestId: string,
+  dataId: string,
+  secret: string,
+): boolean {
+  try {
+    // Parse header: "ts=1704908010,v1=618c85..."
+    const parts = xSignature.split(",");
+    let ts = "";
+    let v1 = "";
+    for (const part of parts) {
+      const [key, value] = part.split("=").map((s) => s.trim());
+      if (key === "ts") ts = value;
+      if (key === "v1") v1 = value;
+    }
+
+    if (!ts || !v1) return false;
+
+    // Manifest EXATO conforme doc oficial MP:
+    // https://www.mercadopago.com.br/developers/pt/docs/your-integrations/notifications/webhooks
+    // Formato: id:{data.id};request-id:{x-request-id};ts:{ts};
+    const manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`;
+
+    const computedHash = crypto
+      .createHmac("sha256", secret)
+      .update(manifest)
+      .digest("hex");
+
+    // Comparação segura contra timing attacks
+    if (computedHash.length !== v1.length) return false;
+    
+    return crypto.timingSafeEqual(
+      Buffer.from(computedHash, "hex"),
+      Buffer.from(v1, "hex"),
+    );
+  } catch (err) {
+    console.error("[mp-webhook] hmac_calculation_error", err);
+    return false;
+  }
 }
 
 export const Route = createFileRoute("/api/public/mp/webhook")({
@@ -49,11 +81,12 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
         const startTime = Date.now();
         
         try {
-          // 1. Detectar Ambiente e Carregar Segredo Correspondente
-          const config = getEnvConfig(request.url);
-          
-          if (!config.secret) {
-            console.error("[mp-webhook] missing_secret_for_env", { env: config.env });
+          // 1. Carregar Segredo Único
+          const secret = getWebhookSecret();
+          if (!secret) {
+            console.error("[mp-webhook] missing_webhook_secret", { 
+              hint: "Configure MP_WEBHOOK_SECRET na Vercel" 
+            });
             return new Response("Server configuration error: missing webhook secret", { status: 500 });
           }
 
@@ -69,7 +102,8 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
           // 3. Extrair Dados da Query String (Prioridade Máxima - Padrão MP)
           const url = new URL(request.url);
           const dataIdFromQuery = url.searchParams.get("data.id");
-          const typeFromQuery = url.searchParams.get("type"); // Ex: subscription_preapproval
+          const typeFromQuery = url.searchParams.get("type");
+          const envFromQuery = url.searchParams.get("env"); // test ou prod
 
           // 4. Ler Body JSON (Fallback para payloads completos)
           let body: Record<string, any> = {};
@@ -79,8 +113,9 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
               body = JSON.parse(text);
             }
           } catch (parseErr) {
-            // Não aborta — notificações MP frequentemente vêm só com query params + headers
-            console.debug("[mp-webhook] empty_or_invalid_body", { error: parseErr instanceof Error ? parseErr.message : String(parseErr) });
+            console.debug("[mp-webhook] empty_or_invalid_body", { 
+              error: parseErr instanceof Error ? parseErr.message : String(parseErr) 
+            });
           }
 
           // 5. Resolver Resource ID e Topic (Query > Body > Defaults)
@@ -98,49 +133,49 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
             return new Response("Missing resource identifier (data.id)", { status: 400 });
           }
 
-          // 6. Normalizar Payload para Consistência do Processor
-          if (!body.data) body.data = {};
-          if (!body.data.id) body.data.id = resourceId;
-          if (!body.type && !body.topic) body.type = topic;
-          if (!body.action && body.event) body.action = body.event;
-          if (!body.action) body.action = "updated"; // Default seguro
-
-          // 7. Validar HMAC (Segurança §17) com Segredo Específico do Ambiente
-          const isValid = await verifyMpSignature(
-            xSignature, 
-            xRequestId, 
-            resourceId, 
-            config.secret
-          );
+          // 6. Validar HMAC (Segurança §17)
+          const isValid = verifyMpSignature(xSignature, xRequestId, resourceId, secret);
 
           if (!isValid) {
             console.warn("[mp-webhook] hmac_verification_failed", { 
-              env: config.env, 
               resourceId,
-              requestId: xRequestId 
+              requestId: xRequestId,
+              manifestPreview: `id:${resourceId};request-id:${xRequestId};...`
             });
             // Retorna 200 para parar retries do MP, mas não processa (segurança)
             return new Response("Invalid signature", { status: 200 }); 
           }
 
-          // 8. Filtro de Ambiente Inteligente (RESOLVE O BUG env_mismatch)
+          // 7. Filtro de Ambiente Inteligente (RESOLVE O BUG env_mismatch)
           const eventLiveMode = Boolean(body.live_mode);
           
           // Lógica Escalável:
-          // - Se a URL diz ?env=test, aceitamos live_mode=true OU false (contas de teste podem variar).
-          // - Se a URL diz ?env=prod, exigimos live_mode=true (produção real).
-          // Isso permite testar fluxos completos em infra de prod sem vazar dados reais.
-          const isTestEndpoint = config.env === "test";
+          // - Se a URL diz ?env=test (ou servidor é test), aceitamos live_mode=true OU false.
+          //   Isso permite testar fluxos completos em infra de prod sem vazar dados reais.
+          // - Se a URL diz ?env=prod E servidor é prod, exigimos live_mode=true.
+          const serverEnv = process.env.MP_ENV === "prod" ? "prod" : "test";
+          const effectiveEnv = (envFromQuery === "prod" || envFromQuery === "test") 
+            ? envFromQuery 
+            : serverEnv;
+            
+          const isTestEndpoint = effectiveEnv === "test";
           const shouldProcess = isTestEndpoint ? true : (eventLiveMode === true);
 
           if (!shouldProcess) {
             console.log("[mp-webhook] ignored_due_to_env_policy", { 
-              endpointEnv: config.env, 
+              effectiveEnv, 
               eventLiveMode,
               resourceId 
             });
             return new Response("Ignored due to environment policy", { status: 200 });
           }
+
+          // 8. Normalizar Payload para Consistência do Processor
+          if (!body.data) body.data = {};
+          if (!body.data.id) body.data.id = resourceId;
+          if (!body.type && !body.topic) body.type = topic;
+          if (!body.action && body.event) body.action = body.event;
+          if (!body.action) body.action = "updated";
 
           // 9. Deduplicação & Persistência Atômica
           const syntheticEventId = `${xRequestId}_${resourceId}`;
@@ -152,14 +187,13 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
               topic,
               action: body.action,
               live_mode: eventLiveMode,
-              payload: body, // Payload normalizado
+              payload: body,
               status: "received",
             } as never)
             .select("id")
             .single();
 
           if (insertErr) {
-            // Duplicate key (23505) = já processamos este evento anteriormente
             if (insertErr.code === "23505") {
               console.log("[mp-webhook] duplicate_event_skipped", { syntheticEventId });
               return new Response("Already processed", { status: 200 });
@@ -170,11 +204,10 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
               code: insertErr.code,
               resourceId 
             });
-            // Erro de DB crítico → 500 força retry do MP (resiliência)
             return new Response("Internal database error", { status: 500 });
           }
 
-          // 10. Processamento Inline Fire-and-Forget (Não bloqueia resposta HTTP)
+          // 10. Processamento Inline Fire-and-Forget
           if (inserted?.id) {
             void processBillingEvent(inserted.id as string)
               .then(() => {
@@ -182,7 +215,7 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
                   eventId: inserted.id, 
                   resourceId,
                   topic,
-                  env: config.env,
+                  env: effectiveEnv,
                   durationMs: Date.now() - startTime
                 });
               })
