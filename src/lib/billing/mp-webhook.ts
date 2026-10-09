@@ -1,15 +1,16 @@
 /**
  * src/lib/billing/mp-webhook.ts
  * 
- * Validação HMAC de webhooks do Mercado Pago.
+ * FORMATO CONFIRMADO PELO AGENTE MP (2026-10-09):
+ * Manifest com ESPAÇOS (não ponto-e-vírgula):
+ *   id:{data.id} request-id:{x-request-id} ts:{ts}
  * 
- * FORMATO CORRETO DO MANIFEST (confirmado pelos exemplos de código oficiais):
- * id:{data.id};request-id:{x-request-id};ts:{ts};
- * - Separador: PONTO-E-VÍRGULA (;)
- * - Trailing semicolon: OBRIGATÓRIO
- * - data.id: LOWERCASE se alfanumérico
- * 
- * Ref: https://www.mercadopago.com.br/developers/pt/docs/your-integrations/notifications/webhooks
+ * Regras:
+ * - data.id sempre lowercase (inofensivo para numéricos)
+ * - Trechos ausentes REMOVIDOS (não vazios)
+ * - data.id vem da QUERY STRING (não do body)
+ * - payload.id = notification_id (dedupe)
+ * - data.id = resource_id (manifest + GET)
  */
 import crypto from "node:crypto";
 
@@ -48,21 +49,37 @@ export function parseXSignature(header: string | null): {
 }
 
 /**
- * Monta o manifest do HMAC no formato EXATO dos exemplos oficiais do MP:
- * id:{data.id};request-id:{x-request-id};ts:{ts};
+ * Monta o manifest com ESPAÇOS (formato confirmado pelo Agente MP).
+ * Trechos ausentes são REMOVIDOS (não ficam vazios).
+ * data.id sempre lowercase.
  */
 export function buildManifest(input: {
   dataId?: string;
   requestId?: string;
   ts: string;
 }): string {
-  const dataIdLower = input.dataId ? input.dataId.toLowerCase() : "";
-  return `id:${dataIdLower};request-id:${input.requestId ?? ""};ts:${input.ts};`;
+  const chunks: string[] = [];
+  
+  // data.id lowercase (inofensivo para numéricos, obrigatório para alfanuméricos)
+  if (input.dataId) {
+    chunks.push(`id:${input.dataId.toLowerCase()}`);
+  }
+  
+  // request-id: remover trecho inteiro se ausente
+  if (input.requestId) {
+    chunks.push(`request-id:${input.requestId}`);
+  }
+  
+  // ts: sempre presente (obrigatório pelo header x-signature)
+  chunks.push(`ts:${input.ts}`);
+  
+  // JUNTA COM ESPAÇO (não ponto-e-vírgula!)
+  return chunks.join(" ");
 }
 
 /**
- * Valida o HMAC-SHA256 — retorna boolean (interface simples para webhook.ts).
- * SÍNCRONA (crypto é síncrono em Node.js).
+ * Valida HMAC-SHA256 — SÍNCRONA (crypto é síncrono em Node.js).
+ * Exportada como verifyMpSignature para uso direto no webhook.ts.
  */
 export function verifyMpSignature(
   xSignature: string,
@@ -109,9 +126,6 @@ export function verifyMpSignature(
     if (!isValid) {
       console.warn("[mp-webhook-verify] hmac_mismatch", {
         dataId,
-        dataIdLower: dataId.toLowerCase(),
-        xRequestId,
-        ts,
         manifest,
         expectedPrefix: computedHash.slice(0, 16),
         receivedPrefix: v1.slice(0, 16),
@@ -126,7 +140,7 @@ export function verifyMpSignature(
 }
 
 /**
- * Compatibilidade retroativa — wrapper sobre verifyMpSignature.
+ * Compatibilidade retroativa.
  */
 export function verifyMpManifestHmac(params: {
   secret: string | undefined;
