@@ -2,11 +2,11 @@
  * Fase 4.3/4.5 — Webhook Receiver Mercado Pago (Assinaturas Recorrentes).
  * 
  * CORREÇÕES CRÍTICAS (2026-10-09):
- * 1. Usa MP_WEBHOOK_SECRET (única) em vez de _TEST/_PROD (resolve missing_secret).
- * 2. verifyMpSignature agora é SÍNCRONA (não async) - remove await desnecessário.
- * 3. Manifest HMAC usa ESPAÇOS (doc oficial MP), não ponto-e-vírgula.
- * 4. Loga qual branch de saída foi tomado (hmac_fail, env_mismatch, etc).
- * 5. Persiste eventos ignorados no banco (status='ignored') para auditoria.
+ * 1. Usa MP_WEBHOOK_SECRET (única) — resolve missing_secret_for_env.
+ * 2. verifyMpSignature é SÍNCRONA (sem await) — resolve parseXSignature is not defined.
+ * 3. Manifest HMAC usa PONTO-E-VÍRGULA (;) — conforme exemplos oficiais do MP.
+ * 4. Persiste eventos ignorados no banco (status='ignored') para auditoria.
+ * 5. Gate de ambiente permissivo: ?env=test aceita live_mode true/false.
  */
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -18,7 +18,7 @@ async function insertIgnoredEvent(
   body: Record<string, any>,
   resourceId: string,
   xRequestId: string,
-  reason: string
+  reason: string,
 ) {
   try {
     const mpEventId = String(body?.id ?? `${xRequestId}_${resourceId}`);
@@ -47,7 +47,7 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
       POST: async ({ request }) => {
         const startTime = Date.now();
         const url = new URL(request.url);
-        
+
         // Log inicial para diagnóstico
         console.log("[mp-webhook] request_received", {
           envParam: url.searchParams.get("env"),
@@ -57,7 +57,7 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
         });
 
         try {
-          // 1. Carregar Segredo Único (resolve missing_secret_for_env)
+          // 1. Carregar Segredo Único
           const secret = process.env.MP_WEBHOOK_SECRET;
           if (!secret) {
             console.error("[mp-webhook] missing_webhook_secret_var");
@@ -67,24 +67,26 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
           // 2. Ler Headers
           const xSignature = request.headers.get("x-signature");
           const xRequestId = request.headers.get("x-request-id");
-          
+
           if (!xSignature || !xRequestId) {
             console.warn("[mp-webhook] missing_headers");
             return new Response("Missing headers", { status: 400 });
           }
 
-          // 3. Extrair Dados
+          // 3. Extrair Dados da Query String (Prioridade Máxima)
           const dataIdFromQuery = url.searchParams.get("data.id");
           const typeFromQuery = url.searchParams.get("type");
 
+          // 4. Ler Body JSON (Fallback)
           let body: Record<string, any> = {};
           try {
             const text = await request.text();
             if (text) body = JSON.parse(text);
           } catch (e) {
-            console.debug("[mp-webhook] invalid_json_body");
+            console.debug("[mp-webhook] empty_or_invalid_body");
           }
 
+          // 5. Resolver Resource ID e Topic
           const dataIdFromBody = body?.data?.id;
           const resourceId = (dataIdFromQuery || dataIdFromBody || "").toString().trim();
           const topic = (typeFromQuery || body?.type || body?.topic || "unknown").toString().trim();
@@ -101,7 +103,7 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
           if (!body.type && !body.topic) body.type = topic;
           if (!body.action) body.action = body.event || "updated";
 
-          // 4. Validar HMAC (SÍNCRONA agora - sem await)
+          // 6. Validar HMAC (SÍNCRONA — sem await!)
           const isValid = verifyMpSignature(xSignature, xRequestId, resourceId, secret);
 
           if (!isValid) {
@@ -109,19 +111,19 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
               resourceId,
               envParam: url.searchParams.get("env"),
             });
-            // PERSISTIR COMO IGNORADO PARA AUDITORIA
             await insertIgnoredEvent(body, resourceId, xRequestId, "hmac_invalid");
             return new Response("Invalid signature", { status: 200 });
           }
 
-          // 5. Filtro de Ambiente Inteligente
+          // 7. Filtro de Ambiente Inteligente
           const eventLiveMode = Boolean(body.live_mode);
           const queryEnv = url.searchParams.get("env");
           const serverEnv = process.env.MP_ENV === "prod" ? "prod" : "test";
-          const effectiveEnv = (queryEnv === "prod" || queryEnv === "test") ? queryEnv : serverEnv;
-          
+          const effectiveEnv =
+            queryEnv === "prod" || queryEnv === "test" ? queryEnv : serverEnv;
+
           const isTestEndpoint = effectiveEnv === "test";
-          const shouldProcess = isTestEndpoint ? true : (eventLiveMode === true);
+          const shouldProcess = isTestEndpoint ? true : eventLiveMode === true;
 
           if (!shouldProcess) {
             console.log("[mp-webhook] env_policy_rejected_branch", {
@@ -129,14 +131,18 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
               eventLiveMode,
               resourceId,
             });
-            // PERSISTIR COMO IGNORADO PARA AUDITORIA
-            await insertIgnoredEvent(body, resourceId, xRequestId, `env_policy_rejected:${effectiveEnv}/live:${eventLiveMode}`);
+            await insertIgnoredEvent(
+              body,
+              resourceId,
+              xRequestId,
+              `env_policy_rejected:${effectiveEnv}/live:${eventLiveMode}`,
+            );
             return new Response("Ignored due to env policy", { status: 200 });
           }
 
-          // 6. Persistir Evento Válido
+          // 8. Persistir Evento Válido
           const syntheticEventId = `${xRequestId}_${resourceId}`;
-          
+
           const { data: inserted, error: insertErr } = await supabaseAdmin
             .from("billing_events")
             .insert({
@@ -159,7 +165,7 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
             return new Response("DB Error", { status: 500 });
           }
 
-          // 7. Processar Inline
+          // 9. Processar Inline Fire-and-Forget
           if (inserted?.id) {
             void processBillingEvent(inserted.id as string)
               .then(() => {
@@ -177,11 +183,13 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
               });
           }
 
-          return new Response(JSON.stringify({ received: true, id: syntheticEventId }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
-
+          return new Response(
+            JSON.stringify({ received: true, id: syntheticEventId }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
         } catch (fatalErr) {
           console.error("[mp-webhook] critical_fatal_error", {
             error: fatalErr instanceof Error ? fatalErr.message : String(fatalErr),
