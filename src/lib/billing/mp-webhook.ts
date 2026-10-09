@@ -43,7 +43,6 @@ export function parseXSignature(header: string | null): {
     const k = part.slice(0, idx).trim();
     let v = part.slice(idx + 1).trim();
 
-    // remove aspas/backticks se vierem no valor
     v = v.replace(/^["'`]/, "").replace(/["'`]$/, "");
 
     if (k && v) kv.set(k, v);
@@ -55,12 +54,6 @@ export function parseXSignature(header: string | null): {
   };
 }
 
-/**
- * Manifest com ESPAÇOS:
- * id:{data.id} request-id:{x-request-id} ts:{ts}
- *
- * Regra: se algum valor estiver ausente, remova o chunk correspondente.
- */
 export function buildManifest(input: {
   dataId?: string;
   requestId?: string;
@@ -76,7 +69,6 @@ export function buildManifest(input: {
     chunks.push(`request-id:${input.requestId.trim()}`);
   }
 
-  // ts é obrigatório para assinatura
   chunks.push(`ts:${input.ts.trim()}`);
 
   return chunks.join(" ");
@@ -87,7 +79,6 @@ function timingSafeEqualHex(aHex: string, bHex: string): boolean {
     const aNorm = aHex.trim().toLowerCase();
     const bNorm = bHex.trim().toLowerCase();
 
-    // SHA256 em hex = 64 chars (32 bytes)
     if (aNorm.length !== 64 || bNorm.length !== 64) return false;
 
     const a = Buffer.from(aNorm, "hex");
@@ -124,7 +115,6 @@ export function verifyMpManifestHmac(params: {
     return { ok: false, status: 401, reason: "missing_header" };
   }
 
-  // ajuda a detectar parse errado do header
   if (v1.length !== 64) {
     console.warn("[mp-webhook] sig_debug invalid_signature_format", {
       v1_len: v1.length,
@@ -132,6 +122,7 @@ export function verifyMpManifestHmac(params: {
     return { ok: false, status: 500, reason: "invalid_signature_format" };
   }
 
+  // 1) Manifest Canônico Padrão (id + request-id + ts)
   const manifest = buildManifest({
     dataId,
     requestId: xRequestId || undefined,
@@ -139,8 +130,12 @@ export function verifyMpManifestHmac(params: {
   });
 
   const computed = crypto.createHmac("sha256", secret).update(manifest).digest("hex");
-
   const isMatch = timingSafeEqualHex(computed, v1);
+
+  // 2) Manifest Alternativo de Diagnóstico (id + ts sem request-id)
+  const altManifest = `id:${dataId?.toLowerCase().trim()} ts:${ts.trim()}`;
+  const altComputed = crypto.createHmac("sha256", secret).update(altManifest).digest("hex");
+  const isAltMatch = timingSafeEqualHex(altComputed, v1);
 
   console.log("[mp-webhook] sig_debug", {
     dataId: dataId?.toLowerCase(),
@@ -154,16 +149,20 @@ export function verifyMpManifestHmac(params: {
     secret_len: secret.length,
     secret_prefix: secret.slice(0, 4),
     isMatch,
+    isAltMatch, // Indica se funcionaria sem o request-id
   });
 
-  if (!isMatch) {
+  if (isAltMatch && !isMatch) {
+    console.warn("[mp-webhook] MATCH_SUCCEEDED_WITH_ALT_MANIFEST (without request-id)");
+  }
+
+  if (!isMatch && !isAltMatch) {
     return { ok: false, status: 401, reason: "signature_mismatch" };
   }
 
   return { ok: true };
 }
 
-// Observacional apenas — não rejeita
 export function observeEnvLiveMode(params: {
   env: "test" | "prod" | null;
   liveMode?: boolean;

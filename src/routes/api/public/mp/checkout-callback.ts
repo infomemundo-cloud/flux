@@ -1,9 +1,5 @@
 /**
- * Fase 4.5 — Checkout callback público (back_url handler).
- * 
- * ATUALIZAÇÃO 2026-10-09:
- * - Usa MP_ACCESS_TOKEN único (não mais MP_ACCESS_TOKEN_TEST/PROD separados)
- * - live_mode derivado do pull.status (não heurística de ID)
+ * Checkout callback público (back_url handler).
  */
 import { createFileRoute } from "@tanstack/react-router";
 import { getPreapproval, MpApiError } from "@/lib/billing/mp-api";
@@ -24,7 +20,6 @@ export const Route = createFileRoute("/api/public/mp/checkout-callback")({
         }
 
         try {
-          // Usa o token único (MP_ACCESS_TOKEN)
           const liveMode = process.env.MP_ENV === "prod";
           let pull;
 
@@ -32,7 +27,6 @@ export const Route = createFileRoute("/api/public/mp/checkout-callback")({
             pull = await getPreapproval(preapprovalId, liveMode);
           } catch (err) {
             if (err instanceof MpApiError && err.status === 404) {
-              // Tenta o outro ambiente como fallback
               try {
                 pull = await getPreapproval(preapprovalId, !liveMode);
               } catch (fallbackErr) {
@@ -65,19 +59,6 @@ export const Route = createFileRoute("/api/public/mp/checkout-callback")({
               error: orgErr?.message,
             });
             return new Response("Organization not found", { status: 404 });
-          }
-
-          const { count: memberCount, error: memberErr } = await supabaseAdmin
-            .from("memberships")
-            .select("*", { count: "exact", head: true })
-            .eq("org_id", orgId);
-
-          if (memberErr || !memberCount || memberCount === 0) {
-            console.warn("[mp-callback] no_members_for_org", {
-              orgId,
-              slug: org.slug,
-              count: memberCount,
-            });
           }
 
           const topic = "subscription_preapproval";
@@ -130,15 +111,6 @@ export const Route = createFileRoute("/api/public/mp/checkout-callback")({
 
           const redirectTo = `/app/o/${encodeURIComponent(org.slug)}/billing/success?preapproval_id=${encodeURIComponent(preapprovalId)}&status=${encodeURIComponent(mpStatus)}&live_mode=${liveMode}`;
 
-          console.log("[mp-callback] redirected", {
-            preapprovalId,
-            orgSlug: org.slug,
-            mpStatus,
-            pullStatus: pull.status,
-            liveMode,
-            ms: Date.now(),
-          });
-
           return new Response(null, {
             status: 302,
             headers: { Location: redirectTo },
@@ -148,7 +120,6 @@ export const Route = createFileRoute("/api/public/mp/checkout-callback")({
             preapprovalId,
             mpStatus,
             error: err instanceof Error ? err.message : String(err),
-            stack: err instanceof Error ? err.stack : undefined,
           });
 
           return new Response(null, {

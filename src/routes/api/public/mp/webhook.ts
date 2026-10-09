@@ -1,3 +1,6 @@
+/**
+ * Rota pública de Ingestão de Webhooks Mercado Pago
+ */
 import { createFileRoute } from "@tanstack/react-router";
 import type { MpWebhookPayload } from "@/lib/billing/mp-webhook";
 import {
@@ -44,7 +47,7 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
         const t0 = Date.now();
         const url = new URL(request.url);
 
-        // Observacional (não bloqueia)
+        // 1) Contexto da URL
         const envParam = url.searchParams.get("env");
         const env: "test" | "prod" | null =
           envParam === "test" || envParam === "prod" ? envParam : null;
@@ -52,27 +55,23 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
         const secret = process.env.MP_WEBHOOK_SECRET;
         if (!secret) {
           console.error("[mp-webhook] missing_webhook_secret_var");
-          // Em produção isso é erro de configuração mesmo
           return new Response(null, { status: 500 });
         }
 
-        // Headers
+        // 2) Headers de Assinatura
         const xSignature = request.headers.get("x-signature");
-        const xRequestId = request.headers.get("x-request-id"); // pode vir null
+        const xRequestId = request.headers.get("x-request-id");
 
-        // Se não tem assinatura, não dá para validar
         if (!xSignature) {
-          // confirme para não gerar retry infinito por “config do seu lado”
           return new Response(null, { status: 200 });
         }
 
-        // Body (uma única leitura)
+        // 3) Leitura e Parse do Body
         const raw = await request.text();
         let payload: MpWebhookPayload;
         try {
           payload = JSON.parse(raw) as MpWebhookPayload;
         } catch {
-          // payload inválido: confirme e audite
           await insertIgnored({
             payload: { type: "invalid_json" } as MpWebhookPayload,
             liveMode: undefined,
@@ -85,9 +84,18 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
         const liveMode =
           typeof payload.live_mode === "boolean" ? payload.live_mode : undefined;
 
+        // LOG FORENSE DA IDENTIDADE DO EMISSOR
+        console.log("[mp-webhook] payload_identity", {
+          application_id: payload?.application_id,
+          user_id: payload?.user_id,
+          live_mode: liveMode,
+          action: payload?.action,
+          topic: payload?.topic ?? payload?.type,
+        });
+
         observeEnvLiveMode({ env, liveMode });
 
-        // data.id SEMPRE da query (não use body para HMAC)
+        // 4) Resolução do dataId exclusivo da URL
         const rawQueryId =
           url.searchParams.get("data.id") || url.searchParams.get("id");
         const dataId = rawQueryId ? rawQueryId.toLowerCase().trim() : undefined;
@@ -102,13 +110,13 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
           return new Response(null, { status: 200 });
         }
 
-        // Política: teste nunca deve virar tempestade de retry
-        const isTest = liveMode === false;
+        const isTest = liveMode === false || env === "test";
 
+        // 5) Verificação do HMAC
         const hmac = verifyMpManifestHmac({
           secret,
           xSignature,
-          xRequestId, // pode ser null; o manifest remove request-id se faltar
+          xRequestId,
           dataId,
         });
 
@@ -126,11 +134,10 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
             fallbackId: `${xRequestId ?? "noreqid"}_${dataId}`,
           });
 
-          // teste: confirma 200; produção: 401/500 conforme retorno do validator
           return new Response(null, { status: isTest ? 200 : hmac.status });
         }
 
-        // OK: grava como received
+        // 6) Inserção do Evento Válido
         const record = {
           mp_event_id:
             String(payload.id ?? "").trim() || `${xRequestId ?? "noreqid"}_${dataId}`,
@@ -156,7 +163,6 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
             console.error("[mp-webhook] insert_error", { error: error.message });
           }
 
-          // Sempre confirme 200 para evitar retries
           return new Response(null, { status: 200 });
         }
 
@@ -168,7 +174,7 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
           ms: Date.now() - t0,
         });
 
-        // Processor assíncrono
+        // 7) Invocação Assíncrona do Processador
         if (inserted?.id) {
           const { processBillingEvent } = await import("@/lib/billing/mp-processor");
           processBillingEvent(inserted.id).catch((err) =>
