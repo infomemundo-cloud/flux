@@ -1,26 +1,18 @@
 /**
- * src/lib/billing/mp-webhook.ts
- * 
- * FORMATO CONFIRMADO PELO AGENTE MP (2026-10-09):
- * Manifest com ESPAÇOS (não ponto-e-vírgula):
- *   id:{data.id} request-id:{x-request-id} ts:{ts}
- * 
- * Regras:
- * - data.id sempre lowercase (inofensivo para numéricos)
- * - Trechos ausentes REMOVIDOS (não vazios)
- * - data.id vem da QUERY STRING (não do body)
- * - payload.id = notification_id (dedupe)
- * - data.id = resource_id (manifest + GET)
+ * Fase 4.5 — Helper de validação HMAC do Mercado Pago com Log Forense
  */
 import crypto from "node:crypto";
 
 export type MpWebhookPayload = {
-  id?: string | number;
+  id?: string | number; // notification_id
   topic?: string;
   action?: string;
   type?: string;
   live_mode?: boolean;
-  data?: { id?: string | number; [key: string]: unknown };
+  data?: {
+    id?: string | number;
+    [key: string]: unknown;
+  };
   [key: string]: unknown;
 };
 
@@ -29,9 +21,6 @@ export type HmacResult =
   | { ok: false; status: 401; reason: "missing_header" | "signature_mismatch" }
   | { ok: false; status: 500; reason: "missing_secret" };
 
-/**
- * Parse do header x-signature: "ts=1704908010,v1=abcdef..."
- */
 export function parseXSignature(header: string | null): {
   ts?: string;
   v1?: string;
@@ -49,9 +38,9 @@ export function parseXSignature(header: string | null): {
 }
 
 /**
- * Monta o manifest com ESPAÇOS (formato confirmado pelo Agente MP).
- * Trechos ausentes são REMOVIDOS (não ficam vazios).
- * data.id sempre lowercase.
+ * Monta o manifest exatamente no padrão exigido pelo MP:
+ * id:{data.id} request-id:{x-request-id} ts:{ts}
+ * Separado por ESPAÇOS.
  */
 export function buildManifest(input: {
   dataId?: string;
@@ -59,111 +48,98 @@ export function buildManifest(input: {
   ts: string;
 }): string {
   const chunks: string[] = [];
-  
-  // data.id lowercase (inofensivo para numéricos, obrigatório para alfanuméricos)
-  if (input.dataId) {
-    chunks.push(`id:${input.dataId.toLowerCase()}`);
-  }
-  
-  // request-id: remover trecho inteiro se ausente
-  if (input.requestId) {
-    chunks.push(`request-id:${input.requestId}`);
-  }
-  
-  // ts: sempre presente (obrigatório pelo header x-signature)
+  if (input.dataId) chunks.push(`id:${input.dataId}`);
+  if (input.requestId) chunks.push(`request-id:${input.requestId}`);
   chunks.push(`ts:${input.ts}`);
-  
-  // JUNTA COM ESPAÇO (não ponto-e-vírgula!)
   return chunks.join(" ");
 }
 
-/**
- * Valida HMAC-SHA256 — SÍNCRONA (crypto é síncrono em Node.js).
- * Exportada como verifyMpSignature para uso direto no webhook.ts.
- */
-export function verifyMpSignature(
-  xSignature: string,
-  xRequestId: string,
-  dataId: string,
-  secret: string,
-): boolean {
-  if (!secret) {
-    console.error("[mp-webhook-verify] missing_secret");
-    return false;
-  }
-
-  const { ts, v1 } = parseXSignature(xSignature);
-  if (!ts || !v1) {
-    console.warn("[mp-webhook-verify] invalid_signature_header", { xSignature });
-    return false;
-  }
-
-  const manifest = buildManifest({
-    dataId,
-    requestId: xRequestId || undefined,
-    ts,
-  });
-
-  const computedHash = crypto
-    .createHmac("sha256", secret)
-    .update(manifest)
-    .digest("hex");
-
-  if (computedHash.length !== v1.length) {
-    console.warn("[mp-webhook-verify] hash_length_mismatch", {
-      computedLen: computedHash.length,
-      receivedLen: v1.length,
-    });
-    return false;
-  }
-
+function timingSafeEqualHex(aHex: string, bHex: string): boolean {
   try {
-    const isValid = crypto.timingSafeEqual(
-      Buffer.from(computedHash, "hex"),
-      Buffer.from(v1, "hex"),
-    );
-
-    if (!isValid) {
-      console.warn("[mp-webhook-verify] hmac_mismatch", {
-        dataId,
-        manifest,
-        expectedPrefix: computedHash.slice(0, 16),
-        receivedPrefix: v1.slice(0, 16),
-      });
-    }
-
-    return isValid;
-  } catch (err) {
-    console.error("[mp-webhook-verify] timing_safe_equal_error", err);
+    const a = Buffer.from(aHex, "hex");
+    const b = Buffer.from(bHex, "hex");
+    if (a.length !== b.length || a.length === 0) return false;
+    return crypto.timingSafeEqual(a, b);
+  } catch {
     return false;
   }
 }
 
-/**
- * Compatibilidade retroativa.
- */
 export function verifyMpManifestHmac(params: {
   secret: string | undefined;
   xSignature: string | null;
   xRequestId: string | null;
   dataId: string | undefined;
+  dataIdOrigin: "query" | "body" | "none";
 }): HmacResult {
-  const { secret, xSignature, xRequestId, dataId } = params;
-  if (!secret) return { ok: false, status: 500, reason: "missing_secret" };
+  const { secret, xSignature, xRequestId, dataId, dataIdOrigin } = params;
 
-  const result = verifyMpSignature(
-    xSignature || "",
-    xRequestId || "",
-    dataId || "",
-    secret,
-  );
+  if (!secret) {
+    console.error("[mp-webhook] sig_debug secret_missing", { secret_len: 0 });
+    return { ok: false, status: 500, reason: "missing_secret" };
+  }
 
-  return result ? { ok: true } : { ok: false, status: 401, reason: "signature_mismatch" };
+  const { ts, v1 } = parseXSignature(xSignature);
+  if (!ts || !v1) {
+    console.warn("[mp-webhook] sig_debug missing_header", {
+      xSignature,
+      xRequestId,
+    });
+    return { ok: false, status: 401, reason: "missing_header" };
+  }
+
+  const dataIdLower = dataId ? dataId.toLowerCase() : undefined;
+  const manifest = buildManifest({
+    dataId: dataIdLower,
+    requestId: xRequestId || undefined,
+    ts,
+  });
+
+  const computed = crypto
+    .createHmac("sha256", secret)
+    .update(manifest)
+    .digest("hex");
+
+  const isMatch = timingSafeEqualHex(computed, v1);
+
+  // LOG FORENSE CENTRAL (Sem vazar a secret completa)
+  console.log("[mp-webhook] sig_debug", {
+    dataIdOrigin,
+    dataId,
+    ts,
+    xRequestId,
+    manifest,
+    v1_recv: v1.slice(0, 8),
+    v1_calc: computed.slice(0, 8),
+    secret_len: secret.length,
+    secret_prefix: secret.slice(0, 4),
+    isMatch,
+  });
+
+  if (!isMatch) {
+    return { ok: false, status: 401, reason: "signature_mismatch" };
+  }
+
+  return { ok: true };
+}
+
+export function validateEnvLiveMode(params: {
+  env: "test" | "prod" | null;
+  liveMode: boolean;
+}): { ok: true } | { ok: false; status: 200; reason: "env_mismatch" } {
+  const { env, liveMode } = params;
+  if (env === "prod" && liveMode !== true) {
+    return { ok: false, status: 200, reason: "env_mismatch" };
+  }
+  if (env === "test" && liveMode !== false) {
+    return { ok: false, status: 200, reason: "env_mismatch" };
+  }
+  return { ok: true };
 }
 
 export function extractBillingEventRecord(
   payload: MpWebhookPayload,
-  liveMode: boolean,
+  liveMode: boolean
 ) {
   return {
     mp_event_id: String(payload.id ?? "").trim(),

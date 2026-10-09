@@ -1,201 +1,128 @@
 /**
- * Fase 4.3/4.5 — Webhook Receiver Mercado Pago (Assinaturas Recorrentes).
- * 
- * CORREÇÕES CRÍTICAS (2026-10-09):
- * 1. Usa MP_WEBHOOK_SECRET (única) — resolve missing_secret_for_env.
- * 2. verifyMpSignature é SÍNCRONA (sem await) — resolve parseXSignature is not defined.
- * 3. Manifest HMAC usa PONTO-E-VÍRGULA (;) — conforme exemplos oficiais do MP.
- * 4. Persiste eventos ignorados no banco (status='ignored') para auditoria.
- * 5. Gate de ambiente permissivo: ?env=test aceita live_mode true/false.
+ * Rota pública de Ingestão de Webhooks Mercado Pago
  */
 import { createFileRoute } from "@tanstack/react-router";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { verifyMpSignature } from "@/lib/billing/mp-webhook";
-import { processBillingEvent } from "@/lib/billing/mp-processor";
-
-// ---------- Helper: Persistir evento ignorado para auditoria ----------
-async function insertIgnoredEvent(
-  body: Record<string, any>,
-  resourceId: string,
-  xRequestId: string,
-  reason: string,
-) {
-  try {
-    const mpEventId = String(body?.id ?? `${xRequestId}_${resourceId}`);
-    await supabaseAdmin.from("billing_events").insert({
-      mp_event_id: mpEventId,
-      topic: String(body?.type ?? body?.topic ?? "unknown"),
-      action: String(body?.action ?? "updated"),
-      live_mode: Boolean(body?.live_mode),
-      payload: body,
-      status: "ignored",
-      error: reason,
-      processed_at: new Date().toISOString(),
-    } as never);
-    console.log("[mp-webhook] ignored_event_persisted", { mpEventId, reason });
-  } catch (err) {
-    console.error("[mp-webhook] failed_to_persist_ignored", {
-      reason,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-}
+import {
+  extractBillingEventRecord,
+  type MpWebhookPayload,
+  validateEnvLiveMode,
+  verifyMpManifestHmac,
+} from "@/lib/billing/mp-webhook";
 
 export const Route = createFileRoute("/api/public/mp/webhook")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const startTime = Date.now();
+        const t0 = Date.now();
         const url = new URL(request.url);
 
-        // Log inicial para diagnóstico
-        console.log("[mp-webhook] request_received", {
-          envParam: url.searchParams.get("env"),
-          typeParam: url.searchParams.get("type"),
-          dataIdParam: url.searchParams.get("data.id"),
-          hasSecret: !!process.env.MP_WEBHOOK_SECRET,
+        // 1) env gate
+        const envParam = url.searchParams.get("env");
+        const env: "test" | "prod" | null =
+          envParam === "test" || envParam === "prod" ? envParam : null;
+
+        if (!env) {
+          console.warn("[mp-webhook] invalid_env", { envParam });
+          return new Response(null, { status: 400 });
+        }
+
+        // 2) Parse do Body
+        const raw = await request.text();
+        let payload: MpWebhookPayload;
+        try {
+          payload = JSON.parse(raw) as MpWebhookPayload;
+        } catch {
+          console.warn("[mp-webhook] invalid_json");
+          return new Response(null, { status: 400 });
+        }
+
+        // 3) Validação Env x LiveMode
+        const liveMode = Boolean(payload?.live_mode);
+        const envCheck = validateEnvLiveMode({ env, liveMode });
+        if (!envCheck.ok) {
+          console.warn("[mp-webhook] env_mismatch", {
+            env,
+            liveMode,
+            notificationId: payload?.id,
+          });
+          return new Response(null, { status: 200 });
+        }
+
+        // 4) Resolução do data.id (Prioridade: URL query param > body payload.data.id)
+        const dataIdFromQuery = url.searchParams.get("data.id") || url.searchParams.get("id");
+        const dataIdFromBody = payload?.data?.id != null ? String(payload.data.id) : undefined;
+        
+        const dataId = dataIdFromQuery || dataIdFromBody;
+        const dataIdOrigin: "query" | "body" | "none" = dataIdFromQuery
+          ? "query"
+          : dataIdFromBody
+          ? "body"
+          : "none";
+
+        // 5) Validação do HMAC
+        const secret = process.env.MP_WEBHOOK_SECRET;
+        const xSignature = request.headers.get("x-signature");
+        const xRequestId = request.headers.get("x-request-id");
+
+        const hmacResult = verifyMpManifestHmac({
+          secret,
+          xSignature,
+          xRequestId,
+          dataId,
+          dataIdOrigin,
         });
 
-        try {
-          // 1. Carregar Segredo Único
-          const secret = process.env.MP_WEBHOOK_SECRET;
-          if (!secret) {
-            console.error("[mp-webhook] missing_webhook_secret_var");
-            return new Response("Server configuration error", { status: 500 });
-          }
+        const record = extractBillingEventRecord(payload, liveMode);
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-          // 2. Ler Headers
-          const xSignature = request.headers.get("x-signature");
-          const xRequestId = request.headers.get("x-request-id");
-
-          if (!xSignature || !xRequestId) {
-            console.warn("[mp-webhook] missing_headers");
-            return new Response("Missing headers", { status: 400 });
-          }
-
-          // 3. Extrair Dados da Query String (Prioridade Máxima)
-          const dataIdFromQuery = url.searchParams.get("data.id");
-          const typeFromQuery = url.searchParams.get("type");
-
-          // 4. Ler Body JSON (Fallback)
-          let body: Record<string, any> = {};
-          try {
-            const text = await request.text();
-            if (text) body = JSON.parse(text);
-          } catch (e) {
-            console.debug("[mp-webhook] empty_or_invalid_body");
-          }
-
-          // 5. Resolver Resource ID e Topic
-          const dataIdFromBody = body?.data?.id;
-          const resourceId = (dataIdFromQuery || dataIdFromBody || "").toString().trim();
-          const topic = (typeFromQuery || body?.type || body?.topic || "unknown").toString().trim();
-
-          if (!resourceId) {
-            console.error("[mp-webhook] missing_resource_id");
-            await insertIgnoredEvent(body, "unknown", xRequestId, "missing_resource_id");
-            return new Response("Missing resource ID", { status: 400 });
-          }
-
-          // Normalizar payload
-          if (!body.data) body.data = {};
-          if (!body.data.id) body.data.id = resourceId;
-          if (!body.type && !body.topic) body.type = topic;
-          if (!body.action) body.action = body.event || "updated";
-
-          // 6. Validar HMAC (SÍNCRONA — sem await!)
-          const isValid = verifyMpSignature(xSignature, xRequestId, resourceId, secret);
-
-          if (!isValid) {
-            console.warn("[mp-webhook] hmac_verification_failed_branch", {
-              resourceId,
-              envParam: url.searchParams.get("env"),
-            });
-            await insertIgnoredEvent(body, resourceId, xRequestId, "hmac_invalid");
-            return new Response("Invalid signature", { status: 200 });
-          }
-
-          // 7. Filtro de Ambiente Inteligente
-          const eventLiveMode = Boolean(body.live_mode);
-          const queryEnv = url.searchParams.get("env");
-          const serverEnv = process.env.MP_ENV === "prod" ? "prod" : "test";
-          const effectiveEnv =
-            queryEnv === "prod" || queryEnv === "test" ? queryEnv : serverEnv;
-
-          const isTestEndpoint = effectiveEnv === "test";
-          const shouldProcess = isTestEndpoint ? true : eventLiveMode === true;
-
-          if (!shouldProcess) {
-            console.log("[mp-webhook] env_policy_rejected_branch", {
-              effectiveEnv,
-              eventLiveMode,
-              resourceId,
-            });
-            await insertIgnoredEvent(
-              body,
-              resourceId,
-              xRequestId,
-              `env_policy_rejected:${effectiveEnv}/live:${eventLiveMode}`,
-            );
-            return new Response("Ignored due to env policy", { status: 200 });
-          }
-
-          // 8. Persistir Evento Válido
-          const syntheticEventId = `${xRequestId}_${resourceId}`;
-
-          const { data: inserted, error: insertErr } = await supabaseAdmin
-            .from("billing_events")
-            .insert({
-              mp_event_id: syntheticEventId,
-              topic,
-              action: body.action,
-              live_mode: eventLiveMode,
-              payload: body,
-              status: "received",
-            } as never)
-            .select("id")
-            .single();
-
-          if (insertErr) {
-            if (insertErr.code === "23505") {
-              console.log("[mp-webhook] duplicate_event_skipped", { syntheticEventId });
-              return new Response("Already processed", { status: 200 });
-            }
-            console.error("[mp-webhook] db_insert_error", { error: insertErr.message });
-            return new Response("DB Error", { status: 500 });
-          }
-
-          // 9. Processar Inline Fire-and-Forget
-          if (inserted?.id) {
-            void processBillingEvent(inserted.id as string)
-              .then(() => {
-                console.log("[mp-webhook] processed_successfully", {
-                  eventId: inserted.id,
-                  resourceId,
-                  durationMs: Date.now() - startTime,
-                });
-              })
-              .catch((err) => {
-                console.error("[mp-webhook] processing_error", {
-                  eventId: inserted.id,
-                  err: err instanceof Error ? err.message : String(err),
-                });
-              });
-          }
-
-          return new Response(
-            JSON.stringify({ received: true, id: syntheticEventId }),
-            {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            },
-          );
-        } catch (fatalErr) {
-          console.error("[mp-webhook] critical_fatal_error", {
-            error: fatalErr instanceof Error ? fatalErr.message : String(fatalErr),
+        if (!hmacResult.ok) {
+          console.warn("[mp-webhook] hmac_failed", {
+            reason: hmacResult.reason,
+            notificationId: payload?.id,
           });
-          return new Response("Internal Server Error", { status: 500 });
+
+          // Grava evento como ignored para auditoria
+          await supabaseAdmin.from("billing_events").insert({
+            ...record,
+            status: "ignored",
+            error: `hmac_${hmacResult.reason}`,
+          });
+
+          return new Response(null, { status: hmacResult.status });
         }
+
+        // 6) Fluxo Normal: Inserção como 'received'
+        const { data: inserted, error } = await supabaseAdmin
+          .from("billing_events")
+          .insert(record)
+          .select("id")
+          .single();
+
+        if (error) {
+          const isDuplicate =
+            error.code === "23505" || /duplicate/i.test(error.message ?? "");
+          if (isDuplicate) {
+            console.log("[mp-webhook] duplicate", { notificationId: payload?.id });
+          } else {
+            console.error("[mp-webhook] insert_error", { error: error.message });
+          }
+        } else {
+          console.log("[mp-webhook] ingested", {
+            env,
+            notificationId: payload?.id,
+            ms: Date.now() - t0,
+          });
+
+          // Disparo inline do processor
+          if (inserted?.id) {
+            const { processBillingEvent } = await import("@/lib/billing/mp-processor");
+            processBillingEvent(inserted.id).catch((err) => {
+              console.error("[mp-webhook] inline_processor_error", { err });
+            });
+          }
+        }
+
+        return new Response(null, { status: 200 });
       },
     },
   },
