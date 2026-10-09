@@ -1,22 +1,8 @@
 /**
  * Fase 4.5 — Server Functions de Checkout MP (create + cancel).
- *
- * Responsabilidades:
- *  - createCheckoutSession: cria preapproval MP usando o mp_plan_id canônico
- *    do tier solicitado; retorna init_point pro frontend redirecionar ao checkout hospedado.
- *  - cancelSubscription: seta flag cancel_requested_by_user=true ANTES do PUT
- *    /preapproval/{id} (decisão C5); depois solicita cancelamento no MP.
- *
- * Segurança (§17 defesa em profundidade):
- *  - Guard de RBAC: apenas owner/admin pode iniciar/cancelar assinatura.
- *  - Mapeamento tierCode → mp_plan_id hardcoded (IDs validados pelo seed TESTE/PROD).
- *  - external_reference = orgId (D16: resolução determinística da org pelo callback público).
- *  - Token escolhido por live_mode implícito (MP_ENV env var ou default test).
- *
- * Compatibilidade:
- *  - Roda como serverFn TanStack Start (Vercel Node runtime).
- *  - Não depende de sessão ativa do usuário no momento do redirect do MP
- *    (isso é responsabilidade exclusiva do endpoint público checkout-callback.ts).
+ * 
+ * ATUALIZAÇÃO 2026-10-09: PLAN_IDS_TEST atualizado com os 3 novos planos
+ * criados na aplicação 46866664961523154 (vendedor de teste).
  */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
@@ -25,17 +11,15 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { MpApiError, mpTokenFor } from "./mp-api";
 
 // ---------- Mapeamento canônico tierCode → mp_plan_id ----------
-// IDs validados empiricamente contra GET /preapproval_plan/search?status=active&q=<code>
-// (seed executado com sucesso em TESTE 2026-08-10; PROD ainda não rodado).
+// IDs dos planos criados na aplicação 46866664961523154 (vendedor de teste)
+// em 2026-10-09 via POST /preapproval_plan
 const PLAN_IDS_TEST: Record<string, string> = {
-  operacao: "c250f2f531ed48b790da1eefd8594072",
-  crescimento: "161662c154254707bcd6b3f432309141",
-  escala: "5361a3da3e354c6ebf31f57bc28274a0",
+  operacao: "2ae043b092704c96b1e67b4238295c43",
+  crescimento: "67b0eca317cc4e00a03ba0654bd7ff64",
+  escala: "5899e7efc405436995ef18cfea544747",
 };
 
-// Para produção, substituir pelos IDs reais após rodar:
-//   MP_ENV=prod node --env-file=.env scripts/mp-tiers-seed.mjs
-// E atualizar este objeto com os novos mp_plan_ids retornados.
+// Para produção, substituir pelos IDs reais após rodar o seed em PROD
 const PLAN_IDS_PROD: Record<string, string> = {
   // TODO: preencher após seed em produção
 };
@@ -69,7 +53,7 @@ async function assertOwnerOrAdmin(orgId: string, userId: string): Promise<void> 
   }
 }
 
-// ---------- Server Function: createCheckoutSession (SIMPLIFICADA PARA INIT_POINT) ----------
+// ---------- Server Function: createCheckoutSession ----------
 export const createCheckoutSession = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => CreateInputSchema.parse(d))
@@ -77,14 +61,11 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
     const { orgId, tierCode } = data;
     const userId = context.userId!;
 
-    // 1) Guard RBAC: apenas owner/admin pode assinar
     await assertOwnerOrAdmin(orgId, userId);
 
-    // 2) Determinar live_mode (default false = teste)
     const liveMode = process.env.MP_ENV === "prod";
-
-    // 3) Resolver mp_plan_id canônico do tier (hardcoded validado pelo seed)
     const planId = getPlanId(tierCode, liveMode);
+
     if (!planId) {
       throw new Error(
         `Plano '${tierCode}' não configurado para ambiente ${liveMode ? "produção" : "teste"}. ` +
@@ -92,8 +73,6 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
       );
     }
 
-    // 4) Construir URL de checkout hospedado do MP diretamente
-    // Formato oficial documentado: https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id={ID}
     const baseUrl = "https://www.mercadopago.com.br";
     const initPoint = `${baseUrl}/subscriptions/checkout?preapproval_plan_id=${encodeURIComponent(planId)}`;
 
@@ -116,7 +95,6 @@ export const cancelSubscription = createServerFn({ method: "POST" })
     const { subscriptionId } = data;
     const userId = context.userId!;
 
-    // 1) Carregar subscription existente + validar ownership
     const { data: sub, error: subErr } = await supabaseAdmin
       .from("subscriptions")
       .select("id, org_id, mp_preapproval_id, state")
@@ -127,17 +105,13 @@ export const cancelSubscription = createServerFn({ method: "POST" })
       throw new Error("Assinatura não encontrada.");
     }
 
-    // 2) Guard RBAC: apenas owner/admin da org pode cancelar
     await assertOwnerOrAdmin(sub.org_id, userId);
 
-    // 3) Validar que tem mp_preapproval_id válido
     if (!sub.mp_preapproval_id) {
       throw new Error("Assinatura sem vínculo com Mercado Pago. Contate suporte.");
     }
 
-    // 4) DECISÃO C5: setar flag cancel_requested_by_user=true ANTES do PUT no MP
-    // Isso garante que, quando o webhook chegar com status='cancelled', a transição
-    // caia em canceled_by_user (não canceled_by_dunning).
+    // DECISÃO C5: setar flag cancel_requested_by_user=true ANTES do PUT no MP
     const { error: flagErr } = await supabaseAdmin
       .from("subscriptions")
       .update({ cancel_requested_by_user: true } as never)
@@ -151,9 +125,9 @@ export const cancelSubscription = createServerFn({ method: "POST" })
       throw new Error("Falha ao registrar solicitação de cancelamento. Tente novamente.");
     }
 
-    // 5) Solicitar cancelamento no MP via PUT /preapproval/{id}
     const liveMode = process.env.MP_ENV === "prod";
     const token = mpTokenFor(liveMode);
+
     if (!token) {
       throw new Error(`Token MP indisponível para ambiente ${liveMode ? "prod" : "test"}.`);
     }
@@ -200,7 +174,7 @@ export const cancelSubscription = createServerFn({ method: "POST" })
     return { success: true };
   });
 
-// ---------- Server Function: getCurrentSubscription (leitura para UI) ----------
+// ---------- Server Function: getCurrentSubscription ----------
 const GetCurrentInputSchema = z.object({
   orgId: z.string().uuid(),
 });
@@ -220,7 +194,6 @@ export const getCurrentSubscription = createServerFn({ method: "GET" })
     const { orgId } = data;
     const userId = context.userId!;
 
-    // Guard RBAC: qualquer membro pode VER sua assinatura (não só owner/admin)
     const { data: membership } = await supabaseAdmin
       .from("memberships")
       .select("role")
@@ -230,8 +203,6 @@ export const getCurrentSubscription = createServerFn({ method: "GET" })
 
     if (!membership) throw new Error("Sem acesso a esta organização.");
 
-    // Busca a subscription mais recente em estado vivo (active/grace/past_due)
-    // Se houver cancelada, retorna null (UI mostra CTAs de assinatura novamente)
     const { data: sub, error } = await supabaseAdmin
       .from("subscriptions")
       .select(
