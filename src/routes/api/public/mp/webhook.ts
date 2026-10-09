@@ -3,12 +3,12 @@
  * 
  * CORREÇÕES CRÍTICAS (2026-10-09):
  * 1. Usa MP_WEBHOOK_SECRET (única) em vez de _TEST/_PROD (resolve missing_secret).
- * 2. Loga qual branch de saída foi tomado (hmac_fail, env_mismatch, etc).
- * 3. Persiste eventos ignorados no banco (status='ignored') para auditoria.
- * 4. Manifest HMAC correto (ponto-e-vírgula) via verifyMpSignature atualizado.
+ * 2. verifyMpSignature agora é SÍNCRONA (não async) - remove await desnecessário.
+ * 3. Manifest HMAC usa ESPAÇOS (doc oficial MP), não ponto-e-vírgula.
+ * 4. Loga qual branch de saída foi tomado (hmac_fail, env_mismatch, etc).
+ * 5. Persiste eventos ignorados no banco (status='ignored') para auditoria.
  */
 import { createFileRoute } from "@tanstack/react-router";
-import crypto from "crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { verifyMpSignature } from "@/lib/billing/mp-webhook";
 import { processBillingEvent } from "@/lib/billing/mp-processor";
@@ -101,8 +101,8 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
           if (!body.type && !body.topic) body.type = topic;
           if (!body.action) body.action = body.event || "updated";
 
-          // 4. Validar HMAC
-          const isValid = await verifyMpSignature(xSignature, xRequestId, resourceId, secret);
+          // 4. Validar HMAC (SÍNCRONA agora - sem await)
+          const isValid = verifyMpSignature(xSignature, xRequestId, resourceId, secret);
 
           if (!isValid) {
             console.warn("[mp-webhook] hmac_verification_failed_branch", {
