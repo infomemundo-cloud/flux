@@ -1,50 +1,39 @@
 /**
  * src/lib/billing/mp-webhook.ts
  * 
- * Validação HMAC de webhooks do Mercado Pago conforme documentação oficial:
- * https://www.mercadopago.com.br/developers/pt/docs/your-integrations/notifications/webhooks
- * 
- * CORREÇÕES CRÍTICAS (2026-10-09):
- * 1. Manifest usa ponto-e-vírgula (;) como separador (doc oficial).
- * 2. Não força lowercase no dataId (IDs do MP são case-sensitive).
- * 3. Exporta verifyMpSignature compatível com o novo webhook.ts.
+ * CORREÇÃO CRÍTICA HMAC (2026-10-09):
+ * 1. Manifest usa ponto-e-vírgula (;) como separador (doc oficial MP).
+ * 2. Trailing semicolon obrigatório no final do manifest.
+ * 3. data.id forçado para lowercase (exigência doc oficial para IDs alfanuméricos).
  */
-import crypto from "crypto";
+import crypto from "node:crypto";
 
-export type MpWebhookPayload = {
-  id?: string | number;
-  topic?: string;
-  action?: string;
-  type?: string;
-  live_mode?: boolean;
-  data?: { id?: string | number;[key: string]: unknown };
-  [key: string]: unknown;
-};
+// ... (mantenha os types existentes MpWebhookPayload, HmacResult, etc.) ...
 
 /**
- * Extrai ts e v1 do header x-signature.
- * Formato: "ts=1704908010,v1=618c85345248dd820d5fd456117c2ab2ef8eda45a0282ff693eac24131a5e839"
+ * Monta o manifest do HMAC seguindo EXATAMENTE a doc oficial do MP:
+ * https://www.mercadopago.com.br/developers/pt/docs/your-integrations/notifications/webhooks
+ * 
+ * Formato: id:{data.id};request-id:{x-request-id};ts:{ts};
+ * - Separador: ponto-e-vírgula (;)
+ * - Trailing semicolon: obrigatório
+ * - data.id: lowercase se alfanumérico
  */
-function parseSignatureHeader(xSignature: string): { ts: string; v1: string } | null {
-  try {
-    const parts = xSignature.split(",");
-    let ts = "";
-    let v1 = "";
-    for (const part of parts) {
-      const [key, value] = part.split("=").map((s) => s.trim());
-      if (key === "ts") ts = value;
-      if (key === "v1") v1 = value;
-    }
-    if (!ts || !v1) return null;
-    return { ts, v1 };
-  } catch {
-    return null;
-  }
+export function buildManifest(input: {
+  dataId?: string;
+  requestId?: string;
+  ts: string;
+}): string {
+  // Força lowercase no dataId conforme exigência da doc oficial
+  const dataIdLower = input.dataId ? input.dataId.toLowerCase() : undefined;
+  
+  // Constrói manifest com ponto-e-vírgula e trailing semicolon
+  return `id:${dataIdLower ?? ""};request-id:${input.requestId ?? ""};ts:${input.ts};`;
 }
 
 /**
- * Valida a assinatura HMAC de um webhook do Mercado Pago.
- * Manifest OFICIAL: id:{data_id};request-id:{x_request_id};ts:{ts};
+ * Valida o HMAC-SHA256 do MP usando o formato correto de manifest.
+ * Exportada como verifyMpSignature para compatibilidade com webhook.ts
  */
 export async function verifyMpSignature(
   xSignature: string,
@@ -57,22 +46,25 @@ export async function verifyMpSignature(
     return false;
   }
 
-  const parsed = parseSignatureHeader(xSignature);
-  if (!parsed) {
-    console.warn("[mp-webhook-verify] invalid_signature_header_format", { xSignature });
+  const { ts, v1 } = parseXSignature(xSignature);
+  if (!ts || !v1) {
+    console.warn("[mp-webhook-verify] invalid_signature_header", { xSignature });
     return false;
   }
 
-  const { ts, v1 } = parsed;
-
-  // Manifest EXATO conforme doc oficial MP (ponto-e-vírgula + trailing semicolon)
-  const manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`;
+  // Usa o novo buildManifest com formato correto (;) e lowercase
+  const manifest = buildManifest({
+    dataId,
+    requestId: xRequestId || undefined,
+    ts,
+  });
 
   const computedHash = crypto
     .createHmac("sha256", secret)
     .update(manifest)
     .digest("hex");
 
+  // Comparação timing-safe
   if (computedHash.length !== v1.length) {
     console.warn("[mp-webhook-verify] hash_length_mismatch", {
       computedLen: computedHash.length,
@@ -89,46 +81,44 @@ export async function verifyMpSignature(
   if (!isValid) {
     console.warn("[mp-webhook-verify] hmac_mismatch", {
       dataId,
+      dataIdLower: dataId.toLowerCase(),
       xRequestId,
       ts,
+      manifestPreview: manifest.slice(0, 80),
       expectedPrefix: computedHash.slice(0, 8),
       receivedPrefix: v1.slice(0, 8),
-      manifestPreview: manifest.slice(0, 60),
     });
   }
 
   return isValid;
 }
 
-// Mantém exports antigos para compatibilidade se outros arquivos usarem
+// Mantém a função antiga para compatibilidade retroativa se outros arquivos usarem
 export function verifyMpManifestHmac(params: {
   secret: string | undefined;
   xSignature: string | null;
   xRequestId: string | null;
   dataId: string | undefined;
-}): { ok: boolean; status?: number; reason?: string } {
+}): HmacResult {
   const { secret, xSignature, xRequestId, dataId } = params;
-  if (!secret || !xSignature || !dataId) {
-    return { ok: false, status: 500, reason: "missing_params" };
-  }
-  const parsed = parseSignatureHeader(xSignature);
-  if (!parsed?.ts || !parsed?.v1) {
-    return { ok: false, status: 401, reason: "missing_header" };
-  }
-  const manifest = `id:${dataId};request-id:${xRequestId || ""};ts:${parsed.ts};`;
+  if (!secret) return { ok: false, status: 500, reason: "missing_secret" };
+  
+  const { ts, v1 } = parseXSignature(xSignature);
+  if (!ts || !v1) return { ok: false, status: 401, reason: "missing_header" };
+
+  // Usa o mesmo manifesto corrigido
+  const manifest = buildManifest({
+    dataId,
+    requestId: xRequestId || undefined,
+    ts,
+  });
+
   const computed = crypto.createHmac("sha256", secret).update(manifest).digest("hex");
-  if (computed.length !== parsed.v1.length) return { ok: false, status: 401, reason: "signature_mismatch" };
-  const valid = crypto.timingSafeEqual(Buffer.from(computed, "hex"), Buffer.from(parsed.v1, "hex"));
+  
+  if (computed.length !== v1.length) return { ok: false, status: 401, reason: "signature_mismatch" };
+  
+  const valid = crypto.timingSafeEqual(Buffer.from(computed, "hex"), Buffer.from(v1, "hex"));
   return valid ? { ok: true } : { ok: false, status: 401, reason: "signature_mismatch" };
 }
 
-export function extractBillingEventRecord(payload: MpWebhookPayload, liveMode: boolean) {
-  return {
-    mp_event_id: String(payload.id ?? "").trim(),
-    topic: String(payload.topic ?? payload.type ?? ""),
-    action: String(payload.action ?? ""),
-    live_mode: liveMode,
-    payload: payload as unknown as Record<string, unknown>,
-    status: "received" as const,
-  };
-}
+// ... (mantenha extractBillingEventRecord e validateEnvLiveMode existentes) ...
