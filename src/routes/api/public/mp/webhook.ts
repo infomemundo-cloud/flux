@@ -48,10 +48,11 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
           return new Response(null, { status: 200 });
         }
 
-        // 4) Resolução do data.id (Prioridade: URL query param > body payload.data.id)
-        const dataIdFromQuery = url.searchParams.get("data.id") || url.searchParams.get("id");
-        const dataIdFromBody = payload?.data?.id != null ? String(payload.data.id) : undefined;
-        
+        // 4) Resolução do data.id com Lowercase obrigatório para o HMAC
+        const rawQueryId = url.searchParams.get("data.id") || url.searchParams.get("id");
+        const dataIdFromQuery = rawQueryId ? rawQueryId.toLowerCase().trim() : undefined;
+        const dataIdFromBody = payload?.data?.id != null ? String(payload.data.id).toLowerCase().trim() : undefined;
+
         const dataId = dataIdFromQuery || dataIdFromBody;
         const dataIdOrigin: "query" | "body" | "none" = dataIdFromQuery
           ? "query"
