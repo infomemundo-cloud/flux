@@ -1,13 +1,3 @@
-/**
- * Fase 4.5 — Helper de validação HMAC do Mercado Pago
- * 
- * ATUALIZAÇÃO 2026-10-09:
- * - Manifest com ESPAÇOS (confirmado pelo agente MP)
- * - data.id lowercase
- * - validateEnvLiveMode torna-se observacional (não rejeita)
- * - Motivo: token APP_USR- de usuário de teste faz webhooks chegarem em ?env=prod
- *   mas com live_mode=false. Rejeitar por gate derrubava eventos legítimos.
- */
 import crypto from "node:crypto";
 
 export type MpWebhookPayload = {
@@ -16,6 +6,8 @@ export type MpWebhookPayload = {
   action?: string;
   type?: string;
   live_mode?: boolean;
+  application_id?: number;
+  user_id?: number;
   data?: {
     id?: string | number;
     [key: string]: unknown;
@@ -25,28 +17,49 @@ export type MpWebhookPayload = {
 
 export type HmacResult =
   | { ok: true }
-  | { ok: false; status: 401; reason: "missing_header" | "signature_mismatch" }
-  | { ok: false; status: 500; reason: "missing_secret" };
+  | {
+      ok: false;
+      status: 401;
+      reason: "missing_header" | "signature_mismatch";
+    }
+  | {
+      ok: false;
+      status: 500;
+      reason: "missing_secret" | "invalid_signature_format";
+    };
 
 export function parseXSignature(header: string | null): {
   ts?: string;
   v1?: string;
 } {
   if (!header) return {};
+
   const kv = new Map<string, string>();
+
   for (const part of header.split(",").map((p) => p.trim())) {
     const idx = part.indexOf("=");
     if (idx === -1) continue;
+
     const k = part.slice(0, idx).trim();
-    const v = part.slice(idx + 1).trim();
+    let v = part.slice(idx + 1).trim();
+
+    // remove aspas/backticks se vierem no valor
+    v = v.replace(/^["'`]/, "").replace(/["'`]$/, "");
+
     if (k && v) kv.set(k, v);
   }
-  return { ts: kv.get("ts"), v1: kv.get("v1") };
+
+  return {
+    ts: kv.get("ts")?.trim(),
+    v1: kv.get("v1")?.trim().toLowerCase(),
+  };
 }
 
 /**
- * Manifest com ESPAÇOS (formato confirmado pelo agente MP):
+ * Manifest com ESPAÇOS:
  * id:{data.id} request-id:{x-request-id} ts:{ts}
+ *
+ * Regra: se algum valor estiver ausente, remova o chunk correspondente.
  */
 export function buildManifest(input: {
   dataId?: string;
@@ -54,23 +67,32 @@ export function buildManifest(input: {
   ts: string;
 }): string {
   const chunks: string[] = [];
+
   if (input.dataId && input.dataId.trim()) {
     chunks.push(`id:${input.dataId.trim().toLowerCase()}`);
   }
+
   if (input.requestId && input.requestId.trim()) {
     chunks.push(`request-id:${input.requestId.trim()}`);
   }
-  if (input.ts && input.ts.trim()) {
-    chunks.push(`ts:${input.ts.trim()}`);
-  }
+
+  // ts é obrigatório para assinatura
+  chunks.push(`ts:${input.ts.trim()}`);
+
   return chunks.join(" ");
 }
 
 function timingSafeEqualHex(aHex: string, bHex: string): boolean {
   try {
-    const a = Buffer.from(aHex, "utf8");
-    const b = Buffer.from(bHex, "utf8");
-    if (a.length !== b.length || a.length === 0) return false;
+    const aNorm = aHex.trim().toLowerCase();
+    const bNorm = bHex.trim().toLowerCase();
+
+    // SHA256 em hex = 64 chars (32 bytes)
+    if (aNorm.length !== 64 || bNorm.length !== 64) return false;
+
+    const a = Buffer.from(aNorm, "hex");
+    const b = Buffer.from(bNorm, "hex");
+
     return crypto.timingSafeEqual(a, b);
   } catch {
     return false;
@@ -91,9 +113,23 @@ export function verifyMpManifestHmac(params: {
   }
 
   const { ts, v1 } = parseXSignature(xSignature);
+
   if (!ts || !v1) {
-    console.warn("[mp-webhook] sig_debug missing_header", { xSignature, xRequestId });
+    console.warn("[mp-webhook] sig_debug missing_header", {
+      hasXSignature: Boolean(xSignature),
+      hasXRequestId: Boolean(xRequestId),
+      hasTs: Boolean(ts),
+      hasV1: Boolean(v1),
+    });
     return { ok: false, status: 401, reason: "missing_header" };
+  }
+
+  // ajuda a detectar parse errado do header
+  if (v1.length !== 64) {
+    console.warn("[mp-webhook] sig_debug invalid_signature_format", {
+      v1_len: v1.length,
+    });
+    return { ok: false, status: 500, reason: "invalid_signature_format" };
   }
 
   const manifest = buildManifest({
@@ -102,10 +138,7 @@ export function verifyMpManifestHmac(params: {
     ts,
   });
 
-  const computed = crypto
-    .createHmac("sha256", secret)
-    .update(manifest)
-    .digest("hex");
+  const computed = crypto.createHmac("sha256", secret).update(manifest).digest("hex");
 
   const isMatch = timingSafeEqualHex(computed, v1);
 
@@ -114,8 +147,10 @@ export function verifyMpManifestHmac(params: {
     ts,
     xRequestId,
     manifest,
-    v1_recv: v1.slice(0, 8),
-    v1_calc: computed.slice(0, 8),
+    v1_recv_len: v1.length,
+    v1_calc_len: computed.length,
+    v1_recv_prefix: v1.slice(0, 8),
+    v1_calc_prefix: computed.slice(0, 8),
     secret_len: secret.length,
     secret_prefix: secret.slice(0, 4),
     isMatch,
@@ -128,17 +163,15 @@ export function verifyMpManifestHmac(params: {
   return { ok: true };
 }
 
-/**
- * OBSERVACIONAL apenas — não rejeita eventos.
- * Token APP_USR- de usuário de teste faz webhooks chegarem em ?env=prod
- * mas com live_mode=false. Rejeitar derrubava eventos legítimos.
- * live_mode é a fonte de verdade do ambiente.
- */
+// Observacional apenas — não rejeita
 export function observeEnvLiveMode(params: {
   env: "test" | "prod" | null;
-  liveMode: boolean;
+  liveMode?: boolean;
 }): { coherent: boolean } {
   const { env, liveMode } = params;
+
+  if (typeof liveMode !== "boolean") return { coherent: true };
+
   const coherent =
     env === "prod" ? liveMode === true : env === "test" ? liveMode === false : true;
 
@@ -152,11 +185,14 @@ export function observeEnvLiveMode(params: {
 export function extractBillingEventRecord(
   payload: MpWebhookPayload,
   liveMode: boolean,
+  fallbackId?: string,
 ) {
+  const mpEventId = String(payload.id ?? "").trim() || fallbackId || "";
+
   return {
-    mp_event_id: String(payload.id ?? "").trim(),
-    topic: String(payload.topic ?? payload.type ?? ""),
-    action: String(payload.action ?? ""),
+    mp_event_id: mpEventId,
+    topic: String(payload.topic ?? payload.type ?? "").trim() || "unknown",
+    action: String(payload.action ?? "").trim() || "updated",
     live_mode: liveMode,
     payload: payload as unknown as Record<string, unknown>,
     status: "received" as const,
