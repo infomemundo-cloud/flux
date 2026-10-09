@@ -16,7 +16,7 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
         const t0 = Date.now();
         const url = new URL(request.url);
 
-        // 1) env gate
+        // 1) Env gate
         const envParam = url.searchParams.get("env");
         const env: "test" | "prod" | null =
           envParam === "test" || envParam === "prod" ? envParam : null;
@@ -48,17 +48,10 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
           return new Response(null, { status: 200 });
         }
 
-        // 4) Resolução do data.id com Lowercase obrigatório para o HMAC
+        // 4) Resolução do data.id
+        // Para o HMAC, usa-se ESTRITAMENTE a query string da URL sem fallback para o body
         const rawQueryId = url.searchParams.get("data.id") || url.searchParams.get("id");
         const dataIdFromQuery = rawQueryId ? rawQueryId.toLowerCase().trim() : undefined;
-        const dataIdFromBody = payload?.data?.id != null ? String(payload.data.id).toLowerCase().trim() : undefined;
-
-        const dataId = dataIdFromQuery || dataIdFromBody;
-        const dataIdOrigin: "query" | "body" | "none" = dataIdFromQuery
-          ? "query"
-          : dataIdFromBody
-          ? "body"
-          : "none";
 
         // 5) Validação do HMAC
         const secret = process.env.MP_WEBHOOK_SECRET;
@@ -69,8 +62,7 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
           secret,
           xSignature,
           xRequestId,
-          dataId,
-          dataIdOrigin,
+          dataId: dataIdFromQuery,
         });
 
         const record = extractBillingEventRecord(payload, liveMode);
@@ -80,16 +72,19 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
           console.warn("[mp-webhook] hmac_failed", {
             reason: hmacResult.reason,
             notificationId: payload?.id,
+            env,
           });
 
-          // Grava evento como ignored para auditoria
+          // Grava evento como 'ignored' para fins de auditoria
           await supabaseAdmin.from("billing_events").insert({
             ...record,
             status: "ignored",
             error: `hmac_${hmacResult.reason}`,
           });
 
-          return new Response(null, { status: hmacResult.status });
+          // Em ambiente de teste (?env=test), responde 200 para evitar tempestades de retries do MP
+          const httpStatus = env === "test" ? 200 : hmacResult.status;
+          return new Response(null, { status: httpStatus });
         }
 
         // 6) Fluxo Normal: Inserção como 'received'

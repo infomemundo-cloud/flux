@@ -40,7 +40,7 @@ export function parseXSignature(header: string | null): {
 /**
  * Monta o manifest exatamente no padrão exigido pelo MP:
  * id:{data.id} request-id:{x-request-id} ts:{ts}
- * Separado por ESPAÇOS.
+ * Separado por ESPAÇOS e omitindo partes ausentes.
  */
 export function buildManifest(input: {
   dataId?: string;
@@ -48,16 +48,26 @@ export function buildManifest(input: {
   ts: string;
 }): string {
   const chunks: string[] = [];
-  if (input.dataId) chunks.push(`id:${input.dataId}`);
-  if (input.requestId) chunks.push(`request-id:${input.requestId}`);
-  chunks.push(`ts:${input.ts}`);
+  
+  if (input.dataId && input.dataId.trim()) {
+    chunks.push(`id:${input.dataId.trim().toLowerCase()}`);
+  }
+  
+  if (input.requestId && input.requestId.trim()) {
+    chunks.push(`request-id:${input.requestId.trim()}`);
+  }
+  
+  if (input.ts && input.ts.trim()) {
+    chunks.push(`ts:${input.ts.trim()}`);
+  }
+  
   return chunks.join(" ");
 }
 
 function timingSafeEqualHex(aHex: string, bHex: string): boolean {
   try {
-    const a = Buffer.from(aHex, "hex");
-    const b = Buffer.from(bHex, "hex");
+    const a = Buffer.from(aHex, "utf8");
+    const b = Buffer.from(bHex, "utf8");
     if (a.length !== b.length || a.length === 0) return false;
     return crypto.timingSafeEqual(a, b);
   } catch {
@@ -70,9 +80,8 @@ export function verifyMpManifestHmac(params: {
   xSignature: string | null;
   xRequestId: string | null;
   dataId: string | undefined;
-  dataIdOrigin: "query" | "body" | "none";
 }): HmacResult {
-  const { secret, xSignature, xRequestId, dataId, dataIdOrigin } = params;
+  const { secret, xSignature, xRequestId, dataId } = params;
 
   if (!secret) {
     console.error("[mp-webhook] sig_debug secret_missing", { secret_len: 0 });
@@ -88,9 +97,8 @@ export function verifyMpManifestHmac(params: {
     return { ok: false, status: 401, reason: "missing_header" };
   }
 
-  const dataIdLower = dataId ? dataId.toLowerCase() : undefined;
   const manifest = buildManifest({
-    dataId: dataIdLower,
+    dataId,
     requestId: xRequestId || undefined,
     ts,
   });
@@ -102,9 +110,8 @@ export function verifyMpManifestHmac(params: {
 
   const isMatch = timingSafeEqualHex(computed, v1);
 
-  // LOG FORENSE CENTRAL (Sem vazar a secret completa)
+  // LOG FORENSE CENTRAL
   console.log("[mp-webhook] sig_debug", {
-    dataIdOrigin,
     dataId,
     ts,
     xRequestId,
