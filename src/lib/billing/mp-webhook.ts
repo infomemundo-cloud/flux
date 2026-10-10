@@ -61,10 +61,6 @@ export function parseXSignature(header: string | null): {
 /**
  * Manifest CORRETO (confirmado via teste forense):
  * id:{data.id};request-id:{x-request-id};ts:{ts};
- * 
- * Separador: ponto-e-vírgula (;)
- * Trailing semicolon: obrigatório
- * data.id: lowercase
  */
 export function buildManifest(input: {
   dataId?: string;
