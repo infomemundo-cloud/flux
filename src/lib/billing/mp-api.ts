@@ -8,9 +8,10 @@
 const MP_BASE = "https://api.mercadopago.com";
 
 export function mpTokenFor(liveMode: boolean): string | undefined {
-  return liveMode
+  const specific = liveMode
     ? process.env.MP_ACCESS_TOKEN_PROD
     : process.env.MP_ACCESS_TOKEN_TEST;
+  return specific ?? process.env.MP_ACCESS_TOKEN;
 }
 
 export interface PreapprovalPull {
