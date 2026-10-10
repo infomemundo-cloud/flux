@@ -1,16 +1,24 @@
 /**
- * Fase 4.4 — Processador de billing events (state machine D17).
+ * Fase 4.5/4.6 — Processador de eventos de billing (Mercado Pago).
  *
- * Pipeline (D17): (2) pull recurso completo → (3) resolver subscription →
- * (4) transição → (5) mark processed. O webhook é gatilho; a verdade é o pull.
+ * Pipeline: billing_events(status=received) → pull no MP → resolve org →
+ * transição D17 → upsert em subscriptions → mark processed.
  *
- * Trigger híbrido (decisão 2026-10-08): inline no receiver (latência mínima)
- * + cron 15min da 4.6 (rede de segurança). Claim sem estado `processing`:
- * mark final é condicional em `status='received'` + transições idempotentes.
+ * ALINHAMENTO 2026-10-10 (pós-HMAC verde):
+ * 1. Fluxo init_point (checkout hospedado do plano) NÃO carrega orgId no
+ *    preapproval. Resolução de org em dois ramos:
+ *    a) external_reference UUID (fluxo API/prod futuro) → direto;
+ *    b) fallback: billing_checkout_intents (mp_plan_id + status=pending,
+ *       janela de 2h, mais recente) → intent consumido no bind.
+ * 2. subscription_authorized_payment: pull em /authorized_payments/{id} e
+ *    ancora via preapproval_id; sem subscription ainda → "retry" (cron 4.6
+ *    ou sweep imediato após o preapproval processar).
+ * 3. live_mode do evento escolhe o token (mpTokenFor) — coerente com webhook.
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   getPreapproval,
+  mpTokenFor,
   MpApiError,
   type PreapprovalPull,
 } from "./mp-api";
@@ -27,7 +35,6 @@ interface EventRow {
   status: string;
 }
 
-// ---------- transição PURA (testável sem I/O) ----------
 export interface SubscriptionPatch {
   state:
     | "active"
@@ -38,168 +45,294 @@ export interface SubscriptionPatch {
   current_period_end?: string | null;
 }
 
-/**
- * D17 — subscription_preapproval. `cancelRequestedByUser` vem da LINHA
- * existente (flag setado pela UI no cancelamento manual, 4.5). Retorna null
- * quando não deve transicionar (pending / status desconhecido → retry).
- */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Anti-drift: espelho reverso de PLAN_IDS_TEST (mp-checkout.functions.ts). */
+const PLAN_ID_TO_TIER: Record<string, string> = {
+  "2ae043b092704c96b1e67b4238295c43": "operacao",
+  "67b0eca317cc4e00a03ba0654bd7ff64": "crescimento",
+  "5899e7efc405436995ef18cfea544747": "escala",
+};
+
+// ---------- transição PURA D17 (testável sem I/O) ----------
 export function applyPreapprovalTransition(
-  pull: PreapprovalPull,
+  mpStatus: string,
   cancelRequestedByUser: boolean,
 ): SubscriptionPatch | null {
-  switch (pull.status) {
+  switch (mpStatus) {
     case "authorized":
-      return {
-        state: "active",
-        current_period_start: pull.date_created ?? null,
-        current_period_end: pull.next_payment_date ?? null,
-      };
+      return { state: "active" };
     case "paused":
       return { state: "grace_period" };
     case "cancelled":
       return {
-        state: cancelRequestedByUser
-          ? "canceled_by_user"
-          : "canceled_by_dunning",
+        state: cancelRequestedByUser ? "canceled_by_user" : "canceled_by_dunning",
       };
-    case "pending":
     default:
-      return null; // transitório/desconhecido → não inventa estado
+      return null; // pending/unknown → sem transição (retry)
   }
 }
 
-// ---------- resolver subscription existente (D16/D17) ----------
-const SUB_SELECT =
-  "id, org_id, plan_code, state, cancel_requested_by_user, mp_preapproval_id";
+// ---------- resolução de org (external_reference UUID ou intent) ----------
+export async function resolveOrgForPreapproval(pull: {
+  external_reference?: unknown;
+  preapproval_plan_id?: unknown;
+}): Promise<{
+  orgId: string | null;
+  source: "external_reference" | "intent" | null;
+  intentId?: string;
+}> {
+  const ext = String(pull?.external_reference ?? "").trim();
+  if (UUID_RE.test(ext)) return { orgId: ext, source: "external_reference" };
 
-async function resolveSubscription(pull: PreapprovalPull) {
-  // caminho principal: preapproval_id (determinístico)
-  const { data: byPreapproval } = await supabaseAdmin
-    .from("subscriptions")
-    .select(SUB_SELECT)
-    .eq("mp_preapproval_id", pull.id)
-    .maybeSingle();
-  if (byPreapproval) return byPreapproval;
-
-  // fallback: external_reference = org_id (só subscriptions "vivas")
-  if (pull.external_reference) {
-    const { data: byExternal } = await supabaseAdmin
-      .from("subscriptions")
-      .select(SUB_SELECT)
-      .eq("mp_external_reference", pull.external_reference)
-      .in("state", ["active", "grace_period", "past_due"])
+  const planId = String(pull?.preapproval_plan_id ?? "").trim();
+  if (planId) {
+    const since = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const { data } = await supabaseAdmin
+      .from("billing_checkout_intents")
+      .select("id, org_id")
+      .eq("mp_plan_id", planId)
+      .eq("status", "pending")
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
-    return byExternal;
+    if (data?.org_id) {
+      return { orgId: data.org_id as string, source: "intent", intentId: data.id as string };
+    }
   }
-  return null;
+  return { orgId: null, source: null };
 }
 
-// ---------- mark (claim condicional) ----------
-async function markEvent(
-  id: string,
-  outcome: ProcessOutcome,
-  info: string | null,
-) {
-  if (outcome === "retry") {
-    // deixa status='received'; o cron re-puxa. Não polui `error` (sugere falha).
-    console.log("[mp-processor] retry", { id, info });
-    return;
+async function consumeIntent(intentId: string | undefined, preapprovalId: string) {
+  if (!intentId) return;
+  const { error } = await supabaseAdmin
+    .from("billing_checkout_intents")
+    .update({
+      status: "consumed",
+      mp_preapproval_id: preapprovalId,
+      consumed_at: new Date().toISOString(),
+    } as never)
+    .eq("id", intentId);
+  if (error) {
+    console.warn("[mp-processor] intent_consume_error", {
+      intentId,
+      error: error.message,
+    });
   }
-  const status = outcome; // processed | ignored | failed
+}
+
+// ---------- helpers DB ----------
+async function markEvent(eventId: string, status: string, errorMsg?: string | null) {
   const { error } = await supabaseAdmin
     .from("billing_events")
     .update({
       status,
-      error: outcome === "processed" ? null : info,
-      processed_at: outcome === "processed" ? new Date().toISOString() : null,
-    })
-    .eq("id", id)
-    .eq("status", "received"); // claim: só transiciona de received
+      error: errorMsg ?? null,
+      processed_at: new Date().toISOString(),
+    } as never)
+    .eq("id", eventId);
   if (error) {
-    console.error("[mp-processor] mark_error", { id, error: error.message });
+    console.error("[mp-processor] mark_event_error", {
+      eventId,
+      status,
+      error: error.message,
+    });
   }
 }
 
-// ---------- handlers por tópico ----------
-async function processSubscriptionPreapproval(
-  event: EventRow,
-): Promise<ProcessOutcome> {
-  const dataId = String(
-    (event.payload as { data?: { id?: unknown } })?.data?.id ?? "",
-  ).trim();
-  if (!dataId) {
-    await markEvent(event.id, "failed", "missing_data_id");
-    return "failed";
-  }
+type Pull = PreapprovalPull & Record<string, any>;
 
-  // (2) pull do recurso completo — ANTES de transicionar (D17)
-  let pull: PreapprovalPull;
-  try {
-    pull = await getPreapproval(dataId, event.live_mode);
-  } catch (err) {
-    if (err instanceof MpApiError && err.status === 404) {
-      await markEvent(event.id, "ignored", "resource_not_found");
-      return "ignored";
-    }
-    // rede/5xx/missing_token → retry (cron tenta de novo)
-    await markEvent(
-      event.id,
-      "retry",
-      err instanceof MpApiError ? err.message : "pull_error",
-    );
-    return "retry";
-  }
+async function pullAuthorizedPayment(
+  id: string,
+  liveMode: boolean,
+): Promise<Record<string, any> | null> {
+  const token = mpTokenFor(liveMode);
+  if (!token) throw new Error("missing_mp_token");
+  const res = await fetch(
+    `https://api.mercadopago.com/authorized_payments/${encodeURIComponent(id)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`authorized_payments_pull_${res.status}`);
+  return (await res.json()) as Record<string, any>;
+}
 
-  // (3) resolver subscription existente (criação é 4.5)
-  const sub = await resolveSubscription(pull);
-  if (!sub) {
-    await markEvent(event.id, "ignored", "no_subscription");
+// ---------- handler: subscription_preapproval ----------
+async function handlePreapproval(ev: EventRow): Promise<ProcessOutcome> {
+  const resourceId = String((ev.payload as any)?.data?.id ?? "").trim();
+  if (!resourceId) {
+    await markEvent(ev.id, "ignored", "missing_resource_id");
     return "ignored";
   }
 
-  // (4) transição pura
-  const patch = applyPreapprovalTransition(
-    pull,
-    Boolean(sub.cancel_requested_by_user),
-  );
+  let pull: Pull;
+  try {
+    pull = (await getPreapproval(resourceId, ev.live_mode)) as Pull;
+  } catch (err) {
+    if (err instanceof MpApiError && err.status === 404) {
+      try {
+        pull = (await getPreapproval(resourceId, !ev.live_mode)) as Pull;
+      } catch {
+        await markEvent(ev.id, "ignored", "preapproval_not_found_both_envs");
+        return "ignored";
+      }
+    } else {
+      throw err; // sobe para o caller (failed/retry)
+    }
+  }
+
+  const { orgId, source, intentId } = await resolveOrgForPreapproval(pull);
+  if (!orgId) {
+    await markEvent(ev.id, "ignored", "org_unresolved_no_intent");
+    return "ignored";
+  }
+
+  const { data: existing } = await supabaseAdmin
+    .from("subscriptions")
+    .select("id, state, cancel_requested_by_user, plan_code")
+    .eq("mp_preapproval_id", resourceId)
+    .maybeSingle();
+
+  const cancelFlag = Boolean((existing as any)?.cancel_requested_by_user);
+  const patch = applyPreapprovalTransition(String(pull.status ?? ""), cancelFlag);
+
   if (!patch) {
-    await markEvent(event.id, "retry", `not_ready:${pull.status}`);
+    console.log("[mp-processor] preapproval_pending_no_transition", {
+      resourceId,
+      status: pull.status,
+    });
     return "retry";
   }
 
-  // persistir (idempotente; updated_at via trigger set_updated_at)
-  const update: Record<string, unknown> = { state: patch.state };
-  if (patch.current_period_start !== undefined)
-    update.current_period_start = patch.current_period_start;
-  if (patch.current_period_end !== undefined)
-    update.current_period_end = patch.current_period_end;
+  const planCode =
+    PLAN_ID_TO_TIER[String(pull.preapproval_plan_id ?? "")] ??
+    (existing as any)?.plan_code ??
+    null;
 
-  const { error: updErr } = await supabaseAdmin
-  .from("subscriptions")
-  .update(update as never) // cast: gap do supabase gen types com Partial<Row>
-  .eq("id", sub.id);
-  if (updErr) {
-    await markEvent(event.id, "failed", `sub_update:${updErr.message}`);
-    return "failed";
+  if (existing) {
+    const { error } = await supabaseAdmin
+      .from("subscriptions")
+      .update({
+        state: patch.state,
+        current_period_start:
+          patch.current_period_start ?? (pull as any).current_period_start ?? null,
+        current_period_end:
+          patch.current_period_end ?? (pull as any).current_period_end ?? null,
+        updated_at: new Date().toISOString(),
+      } as never)
+      .eq("id", (existing as any).id);
+    if (error) throw new Error(`subscription_update:${error.message}`);
+  } else {
+    if (!planCode) {
+      await markEvent(ev.id, "ignored", "plan_code_unresolved");
+      return "ignored";
+    }
+    const { error } = await supabaseAdmin
+      .from("subscriptions")
+      .insert({
+        org_id: orgId,
+        plan_code: planCode,
+        state: patch.state,
+        mp_preapproval_id: resourceId,
+        current_period_start: (pull as any).current_period_start ?? null,
+        current_period_end: (pull as any).current_period_end ?? null,
+        cancel_requested_by_user: false,
+      } as never);
+    if (error) throw new Error(`subscription_insert:${error.message}`);
   }
 
-  // (5) mark processed
-  await markEvent(event.id, "processed", null);
+  await consumeIntent(intentId, resourceId);
+
+  console.log("[mp-processor] subscription_upserted", {
+    orgId,
+    preapprovalId: resourceId,
+    state: patch.state,
+    source,
+    mpStatus: pull.status,
+  });
+
+  // Sweep imediato: ancora authorized_payments pendentes deste preapproval
+  const { data: pendingAps } = await supabaseAdmin
+    .from("billing_events")
+    .select("id")
+    .eq("status", "received")
+    .eq("topic", "subscription_authorized_payment")
+    .filter("payload->data->>id", "neq", "")
+    .limit(10);
+  for (const p of pendingAps ?? []) {
+    await processBillingEvent(p.id).catch((e) =>
+      console.warn("[mp-processor] sweep_error", { eventId: p.id, err: String(e) }),
+    );
+  }
+
+  await markEvent(ev.id, "processed", null);
   return "processed";
 }
 
-async function processOne(event: EventRow): Promise<ProcessOutcome> {
-  switch (event.topic) {
-    case "subscription_preapproval":
-      return processSubscriptionPreapproval(event);
-    // próximos: subscription_authorized_payment, payment (iteração 4.4b)
-    default:
-      await markEvent(event.id, "ignored", `unsupported_topic:${event.topic}`);
-      return "ignored";
+// ---------- handler: subscription_authorized_payment ----------
+async function handleAuthorizedPayment(ev: EventRow): Promise<ProcessOutcome> {
+  const apId = String((ev.payload as any)?.data?.id ?? "").trim();
+  if (!apId) {
+    await markEvent(ev.id, "ignored", "missing_resource_id");
+    return "ignored";
   }
+
+  const ap = await pullAuthorizedPayment(apId, ev.live_mode);
+  if (!ap) {
+    await markEvent(ev.id, "ignored", "authorized_payment_not_found");
+    return "ignored";
+  }
+
+  const preapprovalId = String(ap.preapproval_id ?? "").trim();
+  if (!preapprovalId) {
+    await markEvent(ev.id, "ignored", "authorized_payment_without_preapproval");
+    return "ignored";
+  }
+
+  const { data: sub } = await supabaseAdmin
+    .from("subscriptions")
+    .select("id, state")
+    .eq("mp_preapproval_id", preapprovalId)
+    .maybeSingle();
+
+  if (!sub) {
+    // Evento preapproval ainda não processado → retry (cron 4.6 ou sweep)
+    console.log("[mp-processor] authorized_payment_waiting_subscription", {
+      apId,
+      preapprovalId,
+    });
+    return "retry";
+  }
+
+  if (ap.status === "approved" && (sub as any).state !== "active") {
+    const { error } = await supabaseAdmin
+      .from("subscriptions")
+      .update({ state: "active", updated_at: new Date().toISOString() } as never)
+      .eq("id", (sub as any).id);
+    if (error) throw new Error(`subscription_reactivate:${error.message}`);
+  }
+
+  console.log("[mp-processor] authorized_payment_linked", {
+    apId,
+    preapprovalId,
+    apStatus: ap.status,
+  });
+  await markEvent(ev.id, "processed", null);
+  return "processed";
 }
 
-// ---------- API pública do processador ----------
+// ---------- roteador por tópico ----------
+async function processOne(ev: EventRow): Promise<ProcessOutcome> {
+  if (ev.topic === "subscription_preapproval") return handlePreapproval(ev);
+  if (ev.topic === "subscription_authorized_payment")
+    return handleAuthorizedPayment(ev);
+  await markEvent(ev.id, "ignored", `unsupported_topic:${ev.topic}`);
+  return "ignored";
+}
+
+// ---------- API pública ----------
 export async function processBillingEvent(
   eventId: string,
 ): Promise<ProcessOutcome> {
@@ -208,6 +341,7 @@ export async function processBillingEvent(
     .select("id, mp_event_id, topic, action, live_mode, payload, status")
     .eq("id", eventId)
     .maybeSingle();
+
   if (error || !event) {
     console.warn("[mp-processor] event_not_found", {
       eventId,
@@ -216,6 +350,7 @@ export async function processBillingEvent(
     return "ignored";
   }
   if ((event as EventRow).status !== "received") return "ignored"; // já pego
+
   try {
     return await processOne(event as EventRow);
   } catch (err) {
@@ -237,6 +372,7 @@ export async function processPendingEvents(limit = 50) {
     .eq("status", "received")
     .order("created_at", { ascending: true })
     .limit(limit);
+
   const tally = { processed: 0, ignored: 0, failed: 0, retry: 0 };
   if (error || !events) {
     console.error("[mp-processor] pending_query_error", error?.message);

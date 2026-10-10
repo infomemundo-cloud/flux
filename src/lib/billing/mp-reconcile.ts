@@ -41,7 +41,6 @@ export interface ReconcileResult {
  * Reconciliação síncrona: dado um pull do MP + flag local, decide qual estado
  * aplicar na subscription. Retorna null quando não deve transicionar ainda
  * (status transitório/pending/desconhecido), permitindo retry controlado.
- *
  * IMPORTANTE: esta função é PURA — não faz I/O, não acessa banco, não chama API.
  * O caller responsável por resolver pull + flag + persistir o patch.
  */
@@ -49,17 +48,20 @@ export function reconcileCheckout(
   input: ReconcileInput,
 ): ReconcileResult {
   const { pull, cancelRequestedByUser } = input;
-
-  // Delega a transição pura pra função compartilhada com o processor da 4.4
-  const patch = applyPreapprovalTransition(pull, cancelRequestedByUser);
-
+  
+  // CORREÇÃO: passar pull.status (string) em vez de pull (objeto)
+  // A assinatura de applyPreapprovalTransition mudou para (mpStatus: string, cancelRequestedByUser: boolean)
+  const patch = applyPreapprovalTransition(
+    String(pull.status ?? ""),
+    cancelRequestedByUser
+  );
+  
   if (!patch) {
     return {
       patch: null,
       reason: `not_ready:${pull.status}`, // ex: "not_ready:pending"
     };
   }
-
   return {
     patch,
     reason: pull.status, // ex: "authorized", "paused", "cancelled"
