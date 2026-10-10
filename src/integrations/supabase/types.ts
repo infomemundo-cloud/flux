@@ -75,6 +75,54 @@ export type Database = {
         }
         Relationships: []
       }
+      billing_checkout_intents: {
+        Row: {
+          consumed_at: string | null
+          created_at: string
+          id: string
+          mp_plan_id: string
+          mp_preapproval_id: string | null
+          org_id: string
+          status: string
+          tier_code: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          created_at?: string
+          id?: string
+          mp_plan_id: string
+          mp_preapproval_id?: string | null
+          org_id: string
+          status?: string
+          tier_code: string
+        }
+        Update: {
+          consumed_at?: string | null
+          created_at?: string
+          id?: string
+          mp_plan_id?: string
+          mp_preapproval_id?: string | null
+          org_id?: string
+          status?: string
+          tier_code?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "billing_checkout_intents_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "org_access_effective"
+            referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "billing_checkout_intents_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       billing_events: {
         Row: {
           action: string | null

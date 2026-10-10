@@ -73,6 +73,24 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
       initPoint,
     });
 
+    // 5) Registrar intenção de checkout (permite resolver org no webhook,
+    //    já que o init_point do plano não carrega external_reference=orgId)
+    const { error: intentErr } = await supabaseAdmin
+      .from("billing_checkout_intents")
+      .insert({
+        org_id: orgId,
+        tier_code: tierCode,
+        mp_plan_id: planId,
+        status: "pending",
+      } as never);
+    if (intentErr) {
+      console.warn("[mp-checkout] intent_insert_error", {
+        orgId,
+        tierCode,
+        error: intentErr.message,
+      });
+    }
+
     return { initPoint };
   });
 

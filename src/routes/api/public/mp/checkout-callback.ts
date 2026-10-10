@@ -1,9 +1,19 @@
 /**
- * Checkout callback público (back_url handler).
+ * Fase 4.5 — Checkout callback público (back_url handler).
+ *
+ * ALINHAMENTO 2026-10-10:
+ * - Resolução de org via resolveOrgForPreapproval (external_reference UUID
+ *   OU billing_checkout_intents), mesmo resolver do processor (DRY).
+ * - live_mode definido pelo ambiente que respondeu ao pull (test → prod).
+ * - Mantém decisão C1: endpoint público, reconciliação determinística por
+ *   pull no MP, nunca por query params.
  */
 import { createFileRoute } from "@tanstack/react-router";
 import { getPreapproval, MpApiError } from "@/lib/billing/mp-api";
-import { processBillingEvent } from "@/lib/billing/mp-processor";
+import {
+  processBillingEvent,
+  resolveOrgForPreapproval,
+} from "@/lib/billing/mp-processor";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 export const Route = createFileRoute("/api/public/mp/checkout-callback")({
@@ -20,31 +30,30 @@ export const Route = createFileRoute("/api/public/mp/checkout-callback")({
         }
 
         try {
-          const liveMode = process.env.MP_ENV === "prod";
-          let pull;
-
+          // 1) Pull determinístico no MP (fonte da verdade), test → prod
+          let pull: any = null;
+          let liveMode = false;
           try {
-            pull = await getPreapproval(preapprovalId, liveMode);
-          } catch (err) {
-            if (err instanceof MpApiError && err.status === 404) {
-              try {
-                pull = await getPreapproval(preapprovalId, !liveMode);
-              } catch (fallbackErr) {
-                throw fallbackErr;
-              }
+            pull = await getPreapproval(preapprovalId, false);
+            liveMode = false;
+          } catch (firstErr) {
+            if (firstErr instanceof MpApiError && firstErr.status === 404) {
+              pull = await getPreapproval(preapprovalId, true);
+              liveMode = true;
             } else {
-              throw err;
+              throw firstErr;
             }
           }
 
-          const orgId = String(pull.external_reference ?? "").trim();
-
+          // 2) Resolver org (UUID direto ou intent de checkout)
+          const { orgId, source } = await resolveOrgForPreapproval(pull);
           if (!orgId) {
-            console.error("[mp-callback] missing_external_reference", {
+            console.error("[mp-callback] org_unresolved", {
               preapprovalId,
-              pullStatus: pull.status,
+              externalReference: pull?.external_reference,
+              planId: pull?.preapproval_plan_id,
             });
-            return new Response("Invalid preapproval data", { status: 400 });
+            return new Response("Organization not resolved", { status: 404 });
           }
 
           const { data: org, error: orgErr } = await supabaseAdmin
@@ -61,8 +70,9 @@ export const Route = createFileRoute("/api/public/mp/checkout-callback")({
             return new Response("Organization not found", { status: 404 });
           }
 
+          // 3) Evento sintético + processamento inline
           const topic = "subscription_preapproval";
-          const action = mapMpStatusToAction(mpStatus, pull.status);
+          const action = mapMpStatusToAction(mpStatus, String(pull.status ?? ""));
 
           const syntheticPayload = {
             id: `cb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -72,6 +82,7 @@ export const Route = createFileRoute("/api/public/mp/checkout-callback")({
             live_mode: liveMode,
             data: { id: preapprovalId },
             _source: "checkout_callback",
+            _org_source: source,
             _original_mp_status: mpStatus,
             _pull_status: pull.status,
           };
@@ -91,7 +102,8 @@ export const Route = createFileRoute("/api/public/mp/checkout-callback")({
 
           if (insertErr) {
             const isDuplicate =
-              insertErr.code === "23505" || /duplicate/i.test(insertErr.message ?? "");
+              insertErr.code === "23505" ||
+              /duplicate/i.test(insertErr.message ?? "");
             if (!isDuplicate) {
               console.error("[mp-callback] insert_error", {
                 error: insertErr.message,
@@ -109,23 +121,35 @@ export const Route = createFileRoute("/api/public/mp/checkout-callback")({
             );
           }
 
-          const redirectTo = `/app/o/${encodeURIComponent(org.slug)}/billing/success?preapproval_id=${encodeURIComponent(preapprovalId)}&status=${encodeURIComponent(mpStatus)}&live_mode=${liveMode}`;
+          // 4) Redirect 302 pra rota privada final
+          const redirectTo =
+            `/app/o/${encodeURIComponent(org.slug)}/billing/success` +
+            `?preapproval_id=${encodeURIComponent(preapprovalId)}` +
+            `&status=${encodeURIComponent(mpStatus)}` +
+            `&live_mode=${liveMode}`;
 
-          return new Response(null, {
-            status: 302,
-            headers: { Location: redirectTo },
+          console.log("[mp-callback] redirected", {
+            preapprovalId,
+            orgSlug: org.slug,
+            orgSource: source,
+            mpStatus,
+            pullStatus: pull.status,
+            liveMode,
           });
+
+          return new Response(null, { status: 302, headers: { Location: redirectTo } });
         } catch (err) {
           console.error("[mp-callback] critical_error", {
             preapprovalId,
             mpStatus,
             error: err instanceof Error ? err.message : String(err),
           });
-
           return new Response(null, {
             status: 302,
             headers: {
-              Location: `/app/billing/error?reason=callback_failure&preapproval_id=${encodeURIComponent(preapprovalId ?? "")}`,
+              Location:
+                `/app/billing/error?reason=callback_failure` +
+                `&preapproval_id=${encodeURIComponent(preapprovalId ?? "")}`,
             },
           });
         }
@@ -134,6 +158,7 @@ export const Route = createFileRoute("/api/public/mp/checkout-callback")({
   },
 });
 
+/** Mapeia status do MP (pull.status优先, query como fallback) para action D17. */
 function mapMpStatusToAction(queryStatus: string, pullStatus: string): string {
   switch (pullStatus) {
     case "authorized":
