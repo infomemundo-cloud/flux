@@ -167,11 +167,17 @@ export const Route = createFileRoute("/api/public/mp/webhook")({
 
         if (inserted?.id) {
           const { processBillingEvent } = await import("@/lib/billing/mp-processor");
-          processBillingEvent(inserted.id).catch((err) =>
-            console.error("[mp-webhook] inline_processor_error", { err }),
-          );
+          try {
+            const outcome = await processBillingEvent(inserted.id);
+            console.log("[mp-webhook] inline_processor_done", {
+              eventId: inserted.id,
+              outcome,
+              ms: Date.now() - t0,
+            });
+          } catch (err) {
+            console.error("[mp-webhook] inline_processor_error", { err });
+          }
         }
-
         return new Response(null, { status: 200 });
       },
     },

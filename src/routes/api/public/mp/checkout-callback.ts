@@ -112,13 +112,17 @@ export const Route = createFileRoute("/api/public/mp/checkout-callback")({
               });
             }
           } else if (inserted?.id) {
-            const eventId = inserted.id as string;
-            void processBillingEvent(eventId).catch((procErr) =>
+          // 9) Processar inline AGUARDADO (serverless congela promises soltas após o response)
+          const eventId = inserted.id as string;
+            try {
+              const outcome = await processBillingEvent(eventId);
+              console.log("[mp-callback] inline_process_done", { eventId, outcome });
+            } catch (procErr) {
               console.error("[mp-callback] inline_process_error", {
                 eventId,
                 err: procErr,
-              }),
-            );
+              });
+            }
           }
 
           // 4) Redirect 302 pra rota privada final
