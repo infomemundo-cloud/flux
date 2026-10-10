@@ -1,3 +1,13 @@
+/**
+ * Fase 4.5 — Helper de validação HMAC do Mercado Pago
+ * 
+ * FORMATO CONFIRMADO (2026-10-09, via teste forense):
+ * id:{data.id};request-id:{x-request-id};ts:{ts};
+ * - Separador: PONTO-E-VÍRGULA (;)
+ * - Trailing semicolon: OBRIGATÓRIO
+ * - data.id: lowercase
+ * - Chave interpretada como UTF-8 (não hex decodificado)
+ */
 import crypto from "node:crypto";
 
 export type MpWebhookPayload = {
@@ -33,57 +43,47 @@ export function parseXSignature(header: string | null): {
   v1?: string;
 } {
   if (!header) return {};
-
   const kv = new Map<string, string>();
-
   for (const part of header.split(",").map((p) => p.trim())) {
     const idx = part.indexOf("=");
     if (idx === -1) continue;
-
     const k = part.slice(0, idx).trim();
     let v = part.slice(idx + 1).trim();
-
     v = v.replace(/^["'`]/, "").replace(/["'`]$/, "");
-
     if (k && v) kv.set(k, v);
   }
-
   return {
     ts: kv.get("ts")?.trim(),
     v1: kv.get("v1")?.trim().toLowerCase(),
   };
 }
 
+/**
+ * Manifest CORRETO (confirmado via teste forense):
+ * id:{data.id};request-id:{x-request-id};ts:{ts};
+ * 
+ * Separador: ponto-e-vírgula (;)
+ * Trailing semicolon: obrigatório
+ * data.id: lowercase
+ */
 export function buildManifest(input: {
   dataId?: string;
   requestId?: string;
   ts: string;
 }): string {
-  const chunks: string[] = [];
-
-  if (input.dataId && input.dataId.trim()) {
-    chunks.push(`id:${input.dataId.trim().toLowerCase()}`);
-  }
-
-  if (input.requestId && input.requestId.trim()) {
-    chunks.push(`request-id:${input.requestId.trim()}`);
-  }
-
-  chunks.push(`ts:${input.ts.trim()}`);
-
-  return chunks.join(" ");
+  const id = input.dataId ? input.dataId.trim().toLowerCase() : "";
+  const rid = input.requestId ? input.requestId.trim() : "";
+  const ts = input.ts ? input.ts.trim() : "";
+  return `id:${id};request-id:${rid};ts:${ts};`;
 }
 
 function timingSafeEqualHex(aHex: string, bHex: string): boolean {
   try {
     const aNorm = aHex.trim().toLowerCase();
     const bNorm = bHex.trim().toLowerCase();
-
     if (aNorm.length !== 64 || bNorm.length !== 64) return false;
-
     const a = Buffer.from(aNorm, "hex");
     const b = Buffer.from(bNorm, "hex");
-
     return crypto.timingSafeEqual(a, b);
   } catch {
     return false;
@@ -104,7 +104,6 @@ export function verifyMpManifestHmac(params: {
   }
 
   const { ts, v1 } = parseXSignature(xSignature);
-
   if (!ts || !v1) {
     console.warn("[mp-webhook] sig_debug missing_header", {
       hasXSignature: Boolean(xSignature),
@@ -122,20 +121,18 @@ export function verifyMpManifestHmac(params: {
     return { ok: false, status: 500, reason: "invalid_signature_format" };
   }
 
-  // 1) Manifest Canônico Padrão (id + request-id + ts)
   const manifest = buildManifest({
     dataId,
     requestId: xRequestId || undefined,
     ts,
   });
 
-  const computed = crypto.createHmac("sha256", secret).update(manifest).digest("hex");
-  const isMatch = timingSafeEqualHex(computed, v1);
+  const computed = crypto
+    .createHmac("sha256", secret)
+    .update(manifest)
+    .digest("hex");
 
-  // 2) Manifest Alternativo de Diagnóstico (id + ts sem request-id)
-  const altManifest = `id:${dataId?.toLowerCase().trim()} ts:${ts.trim()}`;
-  const altComputed = crypto.createHmac("sha256", secret).update(altManifest).digest("hex");
-  const isAltMatch = timingSafeEqualHex(altComputed, v1);
+  const isMatch = timingSafeEqualHex(computed, v1);
 
   console.log("[mp-webhook] sig_debug", {
     dataId: dataId?.toLowerCase(),
@@ -149,14 +146,9 @@ export function verifyMpManifestHmac(params: {
     secret_len: secret.length,
     secret_prefix: secret.slice(0, 4),
     isMatch,
-    isAltMatch, // Indica se funcionaria sem o request-id
   });
 
-  if (isAltMatch && !isMatch) {
-    console.warn("[mp-webhook] MATCH_SUCCEEDED_WITH_ALT_MANIFEST (without request-id)");
-  }
-
-  if (!isMatch && !isAltMatch) {
+  if (!isMatch) {
     return { ok: false, status: 401, reason: "signature_mismatch" };
   }
 
@@ -168,16 +160,12 @@ export function observeEnvLiveMode(params: {
   liveMode?: boolean;
 }): { coherent: boolean } {
   const { env, liveMode } = params;
-
   if (typeof liveMode !== "boolean") return { coherent: true };
-
   const coherent =
     env === "prod" ? liveMode === true : env === "test" ? liveMode === false : true;
-
   if (!coherent) {
     console.warn("[mp-webhook] env_livemode_warn (não bloqueante)", { env, liveMode });
   }
-
   return { coherent };
 }
 
@@ -187,7 +175,6 @@ export function extractBillingEventRecord(
   fallbackId?: string,
 ) {
   const mpEventId = String(payload.id ?? "").trim() || fallbackId || "";
-
   return {
     mp_event_id: mpEventId,
     topic: String(payload.topic ?? payload.type ?? "").trim() || "unknown",
