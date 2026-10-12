@@ -1,20 +1,20 @@
 /**
  * Fase 4.5 — Reconciliação síncrona do checkout MP (back_url handler).
- *
  * Função PURA branchada pelos 4 ramos de status da D17:
  *   authorized → active (+period_start/end)
  *   paused     → grace_period
  *   cancelled  → canceled_by_user (se flag setado) senão canceled_by_dunning
  *   pending    → null (retry/no-op)
- *
+ * 
  * Consumida por:
- *   1) Processor inline da 4.4 (via applyPreapprovalTransition reutilizada);
- *   2) Callback público da 4.5 (GET /preapproval/{id} → resolve org → upsert subscription).
- *
+ * - Processor inline da 4.4 (via applyPreapprovalTransition reutilizada);
+ * - Callback público da 4.5 (GET /preapproval/{id} → resolve org → upsert subscription).
+ * 
  * Decisão C4 (DRY): esta função NÃO reimplementa a lógica de transição — delega
  * para applyPreapprovalTransition exportada de mp-processor.ts. Isso garante
  * consistência absoluta entre webhook receiver e back_url handler.
  */
+
 import {
   type PreapprovalPull,
 } from "./mp-api";
@@ -41,6 +41,7 @@ export interface ReconcileResult {
  * Reconciliação síncrona: dado um pull do MP + flag local, decide qual estado
  * aplicar na subscription. Retorna null quando não deve transicionar ainda
  * (status transitório/pending/desconhecido), permitindo retry controlado.
+ * 
  * IMPORTANTE: esta função é PURA — não faz I/O, não acessa banco, não chama API.
  * O caller responsável por resolver pull + flag + persistir o patch.
  */
@@ -48,20 +49,18 @@ export function reconcileCheckout(
   input: ReconcileInput,
 ): ReconcileResult {
   const { pull, cancelRequestedByUser } = input;
-  
-  // CORREÇÃO: passar pull.status (string) em vez de pull (objeto)
-  // A assinatura de applyPreapprovalTransition mudou para (mpStatus: string, cancelRequestedByUser: boolean)
-  const patch = applyPreapprovalTransition(
-    String(pull.status ?? ""),
-    cancelRequestedByUser
-  );
-  
+
+  // CORREÇÃO 2026-10-12: passar pull (objeto) em vez de pull.status (string)
+  // A assinatura de applyPreapprovalTransition é (pull: PreapprovalPull, cancelRequestedByUser: boolean)
+  const patch = applyPreapprovalTransition(pull, cancelRequestedByUser);
+
   if (!patch) {
     return {
       patch: null,
       reason: `not_ready:${pull.status}`, // ex: "not_ready:pending"
     };
   }
+
   return {
     patch,
     reason: pull.status, // ex: "authorized", "paused", "cancelled"

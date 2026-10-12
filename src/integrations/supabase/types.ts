@@ -126,6 +126,7 @@ export type Database = {
       billing_events: {
         Row: {
           action: string | null
+          attempts: number
           created_at: string
           error: string | null
           id: string
@@ -139,6 +140,7 @@ export type Database = {
         }
         Insert: {
           action?: string | null
+          attempts?: number
           created_at?: string
           error?: string | null
           id?: string
@@ -152,6 +154,7 @@ export type Database = {
         }
         Update: {
           action?: string | null
+          attempts?: number
           created_at?: string
           error?: string | null
           id?: string
