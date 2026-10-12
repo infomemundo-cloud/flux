@@ -196,7 +196,7 @@ function mapMpStatusToAction(queryStatus: string, pullStatus: string): string {
           return "authorized";
         case "rejected":
         case "cancelled":
-        case "canceled":s
+        case "canceled":
           return "cancelled";
         case "pending":
           return "pending";
