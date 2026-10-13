@@ -11,6 +11,14 @@
  * 3. applyPreapprovalTransition recebe o pull inteiro (status + períodos).
  * 4. retry NÃO grava status='retry': mantém 'received' + attempts++ (zumbi-gate).
  * 5. Claim condicional .eq('status','received') restaurado no mark final.
+ *
+ * ITEM 2 DA FASE 4.6 (Inadimplência - 2026-10-13):
+ * 6. GAP G1 CORRIGIDO: `paused` no Preapproval agora mapeia para `past_due` 
+ *    (inadimplência real), não mais para `grace_period`. Isso permite bloqueio 
+ *    imediato conforme política SaaS padrão quando o MP suspende por falha recorrente.
+ * 7. GAP G2 CORRIGIDO: `rejected`/`cancelled` no Authorized Payment agora 
+ *    transicionam a subscription viva para `past_due`, em vez de serem ignorados 
+ *    silenciosamente. Estados intermediários (`in_process`) apenas logam.
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
@@ -33,8 +41,9 @@ interface EventRow {
   attempts: number;
 }
 
+// ✅ ATUALIZAÇÃO GAP G1/G2: Adicionado 'past_due' à união de tipos permitidos
 export interface SubscriptionPatch {
-  state: "active" | "grace_period" | "canceled_by_user" | "canceled_by_dunning";
+  state: "active" | "grace_period" | "past_due" | "canceled_by_user" | "canceled_by_dunning";
   current_period_start?: string | null;
   current_period_end?: string | null;
 }
@@ -65,8 +74,14 @@ export function applyPreapprovalTransition(
         current_period_start: pull.date_created ?? null,
         current_period_end: pull.next_payment_date ?? null,
       };
+    
+    // ✅ GAP G1 CORRIGIDO: 
+    // Antes mapeava 'paused' -> 'grace_period'.
+    // Agora mapeia 'paused' -> 'past_due', pois o MP pausa principalmente 
+    // por falha recorrente de cobrança ou inadimplência administrativa.
     case "paused":
-      return { state: "grace_period" };
+      return { state: "past_due" };
+
     case "cancelled":
       return {
         state: cancelRequestedByUser ? "canceled_by_user" : "canceled_by_dunning",
@@ -406,6 +421,7 @@ async function handleAuthorizedPayment(ev: EventRow): Promise<ProcessOutcome> {
     return "retry";
   }
 
+  // Lógica Original: Reativação se aprovado
   if (ap.status === "approved" && (sub as any).state !== "active") {
     const { error } = await supabaseAdmin
       .from("subscriptions")
@@ -415,6 +431,49 @@ async function handleAuthorizedPayment(ev: EventRow): Promise<ProcessOutcome> {
       await markEvent(ev.id, "failed", `sub_reactivate:${error.message}`, ev.attempts);
       return "failed";
     }
+  }
+
+  // ✅ GAP G2 CORRIGIDO: Tratamento de Falha de Pagamento
+  // Se o pagamento foi recusado ou cancelado pelo gateway, a assinatura 
+  // deve entrar em inadimplência (past_due), desde que ainda esteja viva.
+  else if (["rejected", "cancelled", "canceled"].includes(ap.status)) {
+    // Só transiciona se a sub estiver em estado vivo (evita sobrescrever cancelamento manual)
+    if (["active", "grace_period", "past_due"].includes((sub as any).state)) {
+      const { error } = await supabaseAdmin
+        .from("subscriptions")
+        .update({ 
+          state: "past_due", 
+          updated_at: new Date().toISOString() 
+        } as never)
+        .eq("id", (sub as any).id);
+      
+      if (error) {
+        await markEvent(ev.id, "failed", `sub_past_due:${error.message}`, ev.attempts);
+        return "failed";
+      }
+      
+      console.warn("[mp-processor] authorized_payment_rejected_transitioned", {
+        apId,
+        preapprovalId,
+        apStatus: ap.status,
+        newState: "past_due",
+        reason: "payment_failure"
+      });
+    } else {
+      console.log("[mp-processor] authorized_payment_rejected_ignored_state", {
+        apId, 
+        currentSubState: (sub as any).state
+      });
+    }
+  }
+  
+  // Estados intermediários (in_process/pending): apenas logar, aguardar próximo webhook
+  else if (["in_process", "pending"].includes(ap.status)) {
+    console.log("[mp-processor] authorized_payment_in_process_pending", {
+      apId,
+      preapprovalId,
+      apStatus: ap.status
+    });
   }
 
   console.log("[mp-processor] authorized_payment_linked", {
