@@ -1,11 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { SuccessStateView } from './-components/success-state-view'
 
 export const Route = createFileRoute(
   '/_authenticated/app/o/$slug/billing/success',
 )({
-  component: RouteComponent,
+  component: SuccessStateView,
 })
-
-function RouteComponent() {
-  return <div>Hello "/_authenticated/app/o/$slug/billing/success"!</div>
-}
