@@ -52,6 +52,11 @@ function OrgLayout() {
   });
 
   useEffect(() => {
+    // GUARDA PÓS-CHECKOUT: não sequestrar durante fluxo de retorno do MP.
+    // O usuário volta via redirect 302 do back_url e precisa ver a página
+    // de sucesso sem ser arrancado para o wizard de onboarding.
+    if (location.pathname.includes("/billing/success")) return;
+
     if (!org || !onboardingQ.data) return;
     if (!["owner", "admin"].includes(org.role)) return;
     const { connected, dismissed, status, everConnected } = onboardingQ.data;
@@ -62,12 +67,12 @@ function OrgLayout() {
     // Conexão em andamento (QR gerado/escaneando): nunca arrancar do fluxo.
     if (status === "connecting") return;
     try {
-      if (sessionStorage.getItem(`onboarding-auto:${org.slug}`) === "skipped") return;
+    if (sessionStorage.getItem(`onboarding-auto:${org.slug}`) === "skipped") return;
     } catch {
-      /* sessionStorage bloqueado: deixa passar */
+    /* sessionStorage bloqueado: deixa passar */
     }
     navigate({ to: "/app/onboarding/$slug", params: { slug: org.slug } });
-  }, [org, onboardingQ.data, navigate]);
+    }, [org, onboardingQ.data, navigate, location.pathname]);
 
   useEffect(() => {
     if (location.pathname.endsWith("/fila")) setNewCount(0);
