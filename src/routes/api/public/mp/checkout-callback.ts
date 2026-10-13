@@ -1,22 +1,25 @@
 /**
- * Fase 4.6 — Checkout callback público (back_url handler). SIMPLIFICADO 2026-10-12.
+ * Fase 4.5/4.6 — Checkout callback público (back_url handler).
  *
- * CONFIRMAÇÃO OFICIAL MERCADO PAGO (2026-10-12):
- * No fluxo init_point de assinaturas, back_url é APENAS redirect de navegador
- * (GET do browser), NÃO notificação server-to-server. Webhooks assíncronos são
- * a única fonte de verdade do estado. Portanto este endpoint NÃO puxa o MP,
- * NÃO cria evento sintético e NÃO processa inline — ele só descobre o slug da
- * organização (para montar o destino autenticado) e redireciona. Todo o
- * processamento de estado continua sendo do webhook/processor.
+ * ITEM 1 DA 4.6 (2026-10-12) — ajustes finos aplicados:
+ * 1. Resolução de org via resolveOrgForPreapproval (UUID OU intent) — elimina
+ *    o 400 "Invalid preapproval data" do fluxo init_point (external_reference vazio).
+ * 2. await obrigatório no processBillingEvent (contrato serverless; void congelava
+ *    a promise — mesma lição que matou os eventos de 22:41 em 2026-10-10).
+ * 3. live_mode definido pelo ambiente que RESPONDEU ao pull (test→prod), não por
+ *    MP_ENV — coerente com o receiver, que deriva do env quando o payload não traz.
+ * 4. Contrato de logs padronizado: ✅ sucesso · 🔸 ramo alternativo/degradado ·
+ *    ❌ erro. Prefixo [mp-callback] para filtro na Vercel.
  *
- * Descoberta do slug (ordem):
- *   1) subscriptions.mp_preapproval_id == preapproval_id → org_id (webhook já rodou)
- *   2) fallback billing_checkout_intents (mais recente pending/consumed por
- *      mp_preapproval_id ou criado há pouco) → org_id (webhook ainda não chegou)
- * Se nenhum achar → redirect genérico para /app (hub de orgs); nunca 404 duro,
- * porque o usuário não deve ver erro por uma corrida de webhook.
+ * Mantém decisão C1: endpoint público, reconciliação determinística por pull no MP,
+ * nunca por query params. Zero dependência de sessão ativa no redirect.
  */
 import { createFileRoute } from "@tanstack/react-router";
+import { getPreapproval, MpApiError } from "@/lib/billing/mp-api";
+import {
+  processBillingEvent,
+  resolveOrgForPreapproval,
+} from "@/lib/billing/mp-processor";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 export const Route = createFileRoute("/api/public/mp/checkout-callback")({
@@ -26,93 +29,179 @@ export const Route = createFileRoute("/api/public/mp/checkout-callback")({
         const t0 = Date.now();
         const url = new URL(request.url);
         const preapprovalId = url.searchParams.get("preapproval_id");
-        const status = url.searchParams.get("status") ?? "unknown";
+        const mpStatus = url.searchParams.get("status") ?? "unknown";
 
         if (!preapprovalId) {
-          console.warn("[mp-callback] ❌ missing_preapproval_id", { status });
-          return new Response(null, {
-            status: 302,
-            headers: { Location: "/app" },
-          });
+          console.warn("[mp-callback] ❌ missing_preapproval_id", { mpStatus });
+          return new Response("Missing preapproval_id", { status: 400 });
         }
 
         try {
-          // 1) Tentativa principal: subscription já criada pelo webhook.
-          let orgId: string | null = null;
-          let source: "subscription" | "intent" | null = null;
-
-          const { data: sub } = await supabaseAdmin
-            .from("subscriptions")
-            .select("org_id")
-            .eq("mp_preapproval_id", preapprovalId)
-            .maybeSingle();
-          if (sub?.org_id) {
-            orgId = sub.org_id as string;
-            source = "subscription";
-          }
-
-          // 2) Fallback: intent de checkout (webhook ainda não persistiu a sub).
-          if (!orgId) {
-            const { data: intent } = await supabaseAdmin
-              .from("billing_checkout_intents")
-              .select("org_id")
-              .eq("mp_preapproval_id", preapprovalId)
-              .order("created_at", { ascending: false })
-              .limit(1)
-              .maybeSingle();
-            if (intent?.org_id) {
-              orgId = intent.org_id as string;
-              source = "intent";
+          // 1) Pull determinístico no MP (fonte da verdade): test → prod.
+          //    live_mode = ambiente que respondeu, não MP_ENV.
+          let pull: any = null;
+          let liveMode = false;
+          try {
+            pull = await getPreapproval(preapprovalId, false);
+            liveMode = false;
+          } catch (firstErr) {
+            if (firstErr instanceof MpApiError && firstErr.status === 404) {
+              pull = await getPreapproval(preapprovalId, true);
+              liveMode = true;
+              console.log("[mp-callback] 🔸 pull_fallback_prod", { preapprovalId });
+            } else {
+              throw firstErr;
             }
           }
 
-          // 3) Resolve slug da org.
-          if (orgId) {
-            const { data: org } = await supabaseAdmin
-              .from("organizations")
-              .select("slug")
-              .eq("id", orgId)
-              .maybeSingle();
-            if (org?.slug) {
-              const redirectTo =
-                `/app/o/${encodeURIComponent(org.slug)}/billing/success` +
-                `?preapproval_id=${encodeURIComponent(preapprovalId)}` +
-                `&status=${encodeURIComponent(status)}`;
-              console.log("[mp-callback] ✅ redirected", {
+          // 2) Resolver org (UUID direto OU intent de checkout).
+          //    No fluxo init_point o external_reference vem vazio → cai no ramo intent.
+          const { orgId, source } = await resolveOrgForPreapproval(pull);
+          if (!orgId) {
+            console.error("[mp-callback] ❌ org_unresolved", {
+              preapprovalId,
+              externalReference: pull?.external_reference,
+              planId: pull?.preapproval_plan_id,
+            });
+            return new Response("Organization not resolved", { status: 404 });
+          }
+          if (source === "intent") {
+            console.log("[mp-callback] 🔸 org_via_intent", { preapprovalId, orgId });
+          }
+
+          const { data: org, error: orgErr } = await supabaseAdmin
+            .from("organizations")
+            .select("slug")
+            .eq("id", orgId)
+            .maybeSingle();
+          if (orgErr || !org?.slug) {
+            console.error("[mp-callback] ❌ org_not_found_or_invalid_slug", {
+              orgId,
+              error: orgErr?.message,
+            });
+            return new Response("Organization not found", { status: 404 });
+          }
+
+          // 3) Evento sintético + processamento inline AGUARDADO (serverless).
+          const topic = "subscription_preapproval";
+          const action = mapMpStatusToAction(mpStatus, String(pull.status ?? ""));
+          const syntheticPayload = {
+            id: `cb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            type: topic,
+            topic,
+            action,
+            live_mode: liveMode,
+            data: { id: preapprovalId },
+            _source: "checkout_callback",
+            _org_source: source,
+            _original_mp_status: mpStatus,
+            _pull_status: pull.status,
+          };
+
+          const { data: inserted, error: insertErr } = await supabaseAdmin
+            .from("billing_events")
+            .insert({
+              mp_event_id: syntheticPayload.id,
+              topic,
+              action,
+              live_mode: liveMode,
+              payload: syntheticPayload as Record<string, unknown>,
+              status: "received",
+            } as never)
+            .select("id")
+            .maybeSingle();
+
+          if (insertErr) {
+            const isDuplicate =
+              insertErr.code === "23505" ||
+              /duplicate/i.test(insertErr.message ?? "");
+            if (!isDuplicate) {
+              console.error("[mp-callback] ❌ insert_error", {
+                error: insertErr.message,
+                code: insertErr.code,
                 preapprovalId,
-                orgSlug: org.slug,
-                orgSource: source,
-                status,
+              });
+            } else {
+              console.log("[mp-callback] 🔸 duplicate_event", { preapprovalId });
+            }
+          } else if (inserted?.id) {
+            const eventId = inserted.id as string;
+            try {
+              const outcome = await processBillingEvent(eventId);
+              console.log("[mp-callback] ✅ inline_process_done", {
+                eventId,
+                outcome,
                 ms: Date.now() - t0,
               });
-              return new Response(null, {
-                status: 302,
-                headers: { Location: redirectTo },
+            } catch (procErr) {
+              console.error("[mp-callback] ❌ inline_process_error", {
+                eventId,
+                err: procErr,
               });
             }
           }
 
-          // 4) Não achou org/slug → hub de organizações (nunca erro duro ao usuário).
-          console.log("[mp-callback] 🔸 slug_not_found_redirect_hub", {
+          // 4) Redirect 302 pra rota privada final.
+          const redirectTo =
+            `/app/o/${encodeURIComponent(org.slug)}/billing/success` +
+            `?preapproval_id=${encodeURIComponent(preapprovalId)}` +
+            `&status=${encodeURIComponent(mpStatus)}` +
+            `&live_mode=${liveMode}`;
+
+          console.log("[mp-callback] ✅ redirected", {
             preapprovalId,
-            status,
+            orgSlug: org.slug,
+            orgSource: source,
+            mpStatus,
+            pullStatus: pull.status,
+            liveMode,
             ms: Date.now() - t0,
           });
-          return new Response(null, {
-            status: 302,
-            headers: { Location: "/app" },
-          });
+          return new Response(null, { status: 302, headers: { Location: redirectTo } });
         } catch (err) {
           console.error("[mp-callback] ❌ critical_error", {
             preapprovalId,
+            mpStatus,
             error: err instanceof Error ? err.message : String(err),
           });
           return new Response(null, {
             status: 302,
-            headers: { Location: "/app" },
+            headers: {
+              Location:
+                `/app/billing/error?reason=callback_failure` +
+                `&preapproval_id=${encodeURIComponent(preapprovalId ?? "")}`,
+            },
           });
         }
       },
     },
   },
 });
+
+/** Mapeia status do MP (pull.status优先, query como fallback) para action D17. */
+function mapMpStatusToAction(queryStatus: string, pullStatus: string): string {
+  switch (pullStatus) {
+    case "authorized":
+      return "authorized";
+    case "paused":
+      return "paused";
+    case "cancelled":
+      return "cancelled";
+    case "pending":
+      return "pending";
+    default:
+      switch (queryStatus.toLowerCase()) {
+        case "approved":
+        case "authorized":
+          return "authorized";
+        case "rejected":
+        case "cancelled":
+        case "canceled":
+          return "cancelled";
+        case "pending":
+          return "pending";
+        default:
+          return "updated";
+      }
+  }
+}
