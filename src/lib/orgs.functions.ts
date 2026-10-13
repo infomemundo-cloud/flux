@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 /**
  * Server functions de organização (tenant).
@@ -444,4 +445,26 @@ export const dismissOnboarding = createServerFn({ method: "POST" })
       .eq("id", data.orgId);
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+/**
+ * Resolve orgId pelo slug público, validando membership do usuário logado.
+ * Padrão multi-tenant: identificador público → interno no SERVER, nunca no client.
+ * Usada pelos loaders de rotas /app/o/$slug/* para resolver antes do componente montar.
+ */
+export const resolveOrgBySlug = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ slug: z.string().min(1).max(40) }).parse(d),
+  )
+  .handler(async ({ data, context }): Promise<{ id: string; name: string } | null> => {
+    const userId = context.userId!;
+    // Uma única query: valida membership E retorna o orgId. Sem N+1, sem expor lista.
+    const { data: result, error } = await supabaseAdmin
+      .from("memberships")
+      .select("organization:organizations(id, name)")
+      .eq("user_id", userId)
+      .eq("organization.slug", data.slug)
+      .maybeSingle();
+    if (error || !result?.organization) return null;
+    return result.organization as { id: string; name: string };
   });

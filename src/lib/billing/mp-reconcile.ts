@@ -1,18 +1,20 @@
 /**
- * Fase 4.5 — Reconciliação síncrona do checkout MP (back_url handler).
+ * Fase 4.5/4.6 — Reconciliação síncrona do checkout MP.
  * Função PURA branchada pelos 4 ramos de status da D17:
- *   authorized → active (+period_start/end)
- *   paused     → grace_period
- *   cancelled  → canceled_by_user (se flag setado) senão canceled_by_dunning
- *   pending    → null (retry/no-op)
- * 
- * Consumida por:
- * - Processor inline da 4.4 (via applyPreapprovalTransition reutilizada);
- * - Callback público da 4.5 (GET /preapproval/{id} → resolve org → upsert subscription).
- * 
- * Decisão C4 (DRY): esta função NÃO reimplementa a lógica de transição — delega
- * para applyPreapprovalTransition exportada de mp-processor.ts. Isso garante
- * consistência absoluta entre webhook receiver e back_url handler.
+ * authorized → active (+period_start/end)
+ * paused     → grace_period
+ * cancelled  → canceled_by_user (se flag setado) senão canceled_by_dunning
+ * pending    → null (retry/no-op)
+ *
+ * STATUS ATUAL (2026-10-12): helper de consistência/teste da transição D17.
+ * O processor usa applyPreapprovalTransition direto; o callback público foi
+ * SIMPLIFICADO para redirect puro (confirmação MP: back_url não é server-to-server),
+ * portanto não consome mais reconcileCheckout. Esta função permanece como
+ * referência testável da máquina de estados e como reserva caso um futuro
+ * mecanismo síncrono de reconciliação seja introduzido.
+ *
+ * Decisão C4 (DRY): delega para applyPreapprovalTransition exportada de
+ * mp-processor.ts — garante consistência absoluta entre caminhos.
  */
 
 import {
