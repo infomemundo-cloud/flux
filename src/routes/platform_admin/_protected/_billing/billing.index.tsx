@@ -160,7 +160,7 @@ function BillingHealthDashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {snapshotQ.isLoading && !latestMetric ? (
+            {snapshotQ.isPending ? (
               <Skeleton className="h-16 w-full" />
             ) : !latestMetric ? (
               <EmptyState
@@ -195,7 +195,7 @@ function BillingHealthDashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {snapshotQ.isLoading && !latestMetric ? (
+            {snapshotQ.isPending ? (
               <Skeleton className="h-16 w-full" />
             ) : !latestMetric ? (
               <EmptyState icon={<Clock />} message="—" hint="" />
@@ -235,7 +235,7 @@ function BillingHealthDashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {snapshotQ.isLoading && !latestMetric ? (
+            {snapshotQ.isPending ? (
               <Skeleton className="h-16 w-full" />
             ) : !latestMetric ? (
               <EmptyState icon={<AlertTriangle />} message="—" hint="" />
@@ -271,7 +271,7 @@ function BillingHealthDashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {snapshotQ.isLoading && !latestMetric ? (
+            {snapshotQ.isPending ? (
               <Skeleton className="h-16 w-full" />
             ) : !latestMetric ? (
               <EmptyState icon={<RefreshCw />} message="—" hint="" />
