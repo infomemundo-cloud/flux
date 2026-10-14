@@ -66,13 +66,14 @@ function BillingHealthDashboard() {
   const fetchSnapshot = useServerFn(getBillingHealthSnapshot);
   const executeCheck = useServerFn(runBillingHealthCheck);
 
-  // Query inicial: snapshot leve (últimos N registros)
   const snapshotQ = useQuery({
     queryKey: ["billing-health-snapshot", historyLimit],
     queryFn: () => fetchSnapshot({ data: { limit: historyLimit } }),
-    staleTime: 1000 * 60 * 2, // 2 minutos: dados frescos mas não agressivos
-    retry: 0, // DIRETRIZ ABSOLUTA §2.1: zero retries automáticos
-    placeholderData: (prev) => prev, // Mantém dados anteriores durante refetch (anti-flicker)
+    staleTime: 5 * 60 * 1000, // Alinha com o padrão global de 5min (§2.1)
+    retry: 0,                 // Diretriz absoluta: zero retries automáticos
+    refetchOnWindowFocus: false, // 👈 CRÍTICO: Impede refetch ao trocar de aba
+    refetchOnReconnect: false,   // 👈 CRÍTICO: Impede refetch ao reconectar rede
+    placeholderData: (prev) => prev, // 👈 ANTI-FLICKER: Mantém dados antigos durante qualquer update
   });
 
   // Mutation: executar check manual (CTA explícito, nunca automático)
