@@ -10,7 +10,8 @@ import {
   ScrollText,
   Flag,
   Layers,
-  CreditCard,
+  CreditCard, 
+  Activity,   
   LogOut,
   ShieldCheck,
   RefreshCw,
@@ -48,7 +49,7 @@ const NAV = [
   { label: "Audit log", icon: ScrollText, href: null, soon: true },
   { label: "Feature flags", icon: Flag, href: "/platform_admin/flags", soon: false },
   { label: "Tiers", icon: Layers, href: "/platform_admin/tiers", soon: false },
-  { label: "Billing", icon: CreditCard, href: null, soon: true },
+  { label: "Billing Health", icon: Activity, href: "/platform_admin/billing", soon: false },
 ] as const;
 
 function PlatformAdminShell() {

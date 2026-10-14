@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.17"
   }
   graphql_public: {
     Tables: {
@@ -165,6 +165,57 @@ export type Database = {
           status?: Database["public"]["Enums"]["billing_event_status"]
           topic?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      billing_health_metrics: {
+        Row: {
+          created_at: string
+          duration_ms: number
+          events_failed: number
+          events_ignored: number
+          events_processed: number
+          events_received: number
+          events_retrying: number
+          id: string
+          max_attempts_seen: number
+          oldest_pending_age_sec: number
+          total_zombies_now: number
+          triggered_by: string
+          window_end: string
+          window_start: string
+        }
+        Insert: {
+          created_at?: string
+          duration_ms?: number
+          events_failed?: number
+          events_ignored?: number
+          events_processed?: number
+          events_received?: number
+          events_retrying?: number
+          id?: string
+          max_attempts_seen?: number
+          oldest_pending_age_sec?: number
+          total_zombies_now?: number
+          triggered_by?: string
+          window_end: string
+          window_start: string
+        }
+        Update: {
+          created_at?: string
+          duration_ms?: number
+          events_failed?: number
+          events_ignored?: number
+          events_processed?: number
+          events_received?: number
+          events_retrying?: number
+          id?: string
+          max_attempts_seen?: number
+          oldest_pending_age_sec?: number
+          total_zombies_now?: number
+          triggered_by?: string
+          window_end?: string
+          window_start?: string
         }
         Relationships: []
       }

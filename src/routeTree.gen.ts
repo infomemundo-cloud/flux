@@ -24,6 +24,7 @@ import { Route as AuthenticatedAppOnboardingSlugRouteRouteImport } from './route
 import { Route as ApiPublicIngestTokenRouteImport } from './routes/api/public/ingest.$token'
 import { Route as ApiPublicMpCheckoutCallbackRouteImport } from './routes/api/public/mp/checkout-callback'
 import { Route as ApiPublicMpWebhookRouteImport } from './routes/api/public/mp/webhook'
+import { Route as Platform_adminProtectedBillingBillingRouteImport } from './routes/platform_admin/_protected/_billing/billing'
 import { Route as Platform_adminProtectedFlagsFlagsRouteImport } from './routes/platform_admin/_protected/_flags/flags'
 import { Route as Platform_adminProtectedTenantsTenantsRouteImport } from './routes/platform_admin/_protected/_tenants/tenants'
 import { Route as Platform_adminProtectedTiersTiersRouteImport } from './routes/platform_admin/_protected/_tiers/tiers'
@@ -35,6 +36,7 @@ import { Route as AuthenticatedAppOSlugConfiguracoesRouteRouteImport } from './r
 import { Route as AuthenticatedAppOSlugDashboardRouteImport } from './routes/_authenticated/app.o.$slug.dashboard'
 import { Route as AuthenticatedAppOSlugEquipeRouteImport } from './routes/_authenticated/app.o.$slug.equipe'
 import { Route as AuthenticatedAppOSlugFilaRouteRouteImport } from './routes/_authenticated/app.o.$slug.fila/route'
+import { Route as Platform_adminProtectedBillingBillingIndexRouteImport } from './routes/platform_admin/_protected/_billing/billing.index'
 import { Route as Platform_adminProtectedFlagsFlagsIndexRouteImport } from './routes/platform_admin/_protected/_flags/flags.index'
 import { Route as Platform_adminProtectedTenantsTenantsIndexRouteImport } from './routes/platform_admin/_protected/_tenants/tenants.index'
 import { Route as Platform_adminProtectedTiersTiersIndexRouteImport } from './routes/platform_admin/_protected/_tiers/tiers.index'
@@ -122,6 +124,12 @@ const ApiPublicMpWebhookRoute = ApiPublicMpWebhookRouteImport.update({
   path: '/api/public/mp/webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Platform_adminProtectedBillingBillingRoute =
+  Platform_adminProtectedBillingBillingRouteImport.update({
+    id: '/_billing/billing',
+    path: '/billing',
+    getParentRoute: () => Platform_adminProtectedRouteRoute,
+  } as any)
 const Platform_adminProtectedFlagsFlagsRoute =
   Platform_adminProtectedFlagsFlagsRouteImport.update({
     id: '/_flags/flags',
@@ -188,6 +196,12 @@ const AuthenticatedAppOSlugFilaRouteRoute =
     path: '/fila',
     getParentRoute: () => AuthenticatedAppOSlugRoute,
   } as any)
+const Platform_adminProtectedBillingBillingIndexRoute =
+  Platform_adminProtectedBillingBillingIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => Platform_adminProtectedBillingBillingRoute,
+  } as any)
 const Platform_adminProtectedFlagsFlagsIndexRoute =
   Platform_adminProtectedFlagsFlagsIndexRouteImport.update({
     id: '/',
@@ -240,6 +254,7 @@ export interface FileRoutesByFullPath {
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
   '/api/public/mp/checkout-callback': typeof ApiPublicMpCheckoutCallbackRoute
   '/api/public/mp/webhook': typeof ApiPublicMpWebhookRoute
+  '/platform_admin/billing': typeof Platform_adminProtectedBillingBillingRouteWithChildren
   '/platform_admin/flags': typeof Platform_adminProtectedFlagsFlagsRouteWithChildren
   '/platform_admin/tenants': typeof Platform_adminProtectedTenantsTenantsRouteWithChildren
   '/platform_admin/tiers': typeof Platform_adminProtectedTiersTiersRouteWithChildren
@@ -251,6 +266,7 @@ export interface FileRoutesByFullPath {
   '/app/o/$slug/alertas': typeof AuthenticatedAppOSlugAlertasRoute
   '/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
   '/app/o/$slug/equipe': typeof AuthenticatedAppOSlugEquipeRoute
+  '/platform_admin/billing/': typeof Platform_adminProtectedBillingBillingIndexRoute
   '/platform_admin/flags/': typeof Platform_adminProtectedFlagsFlagsIndexRoute
   '/platform_admin/tenants/': typeof Platform_adminProtectedTenantsTenantsIndexRoute
   '/platform_admin/tiers/': typeof Platform_adminProtectedTiersTiersIndexRoute
@@ -278,6 +294,7 @@ export interface FileRoutesByTo {
   '/app/o/$slug/alertas': typeof AuthenticatedAppOSlugAlertasRoute
   '/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
   '/app/o/$slug/equipe': typeof AuthenticatedAppOSlugEquipeRoute
+  '/platform_admin/billing': typeof Platform_adminProtectedBillingBillingIndexRoute
   '/platform_admin/flags': typeof Platform_adminProtectedFlagsFlagsIndexRoute
   '/platform_admin/tenants': typeof Platform_adminProtectedTenantsTenantsIndexRoute
   '/platform_admin/tiers': typeof Platform_adminProtectedTiersTiersIndexRoute
@@ -302,6 +319,7 @@ export interface FileRoutesById {
   '/api/public/ingest/$token': typeof ApiPublicIngestTokenRoute
   '/api/public/mp/checkout-callback': typeof ApiPublicMpCheckoutCallbackRoute
   '/api/public/mp/webhook': typeof ApiPublicMpWebhookRoute
+  '/platform_admin/_protected/_billing/billing': typeof Platform_adminProtectedBillingBillingRouteWithChildren
   '/platform_admin/_protected/_flags/flags': typeof Platform_adminProtectedFlagsFlagsRouteWithChildren
   '/platform_admin/_protected/_tenants/tenants': typeof Platform_adminProtectedTenantsTenantsRouteWithChildren
   '/platform_admin/_protected/_tiers/tiers': typeof Platform_adminProtectedTiersTiersRouteWithChildren
@@ -313,6 +331,7 @@ export interface FileRoutesById {
   '/_authenticated/app/o/$slug/alertas': typeof AuthenticatedAppOSlugAlertasRoute
   '/_authenticated/app/o/$slug/dashboard': typeof AuthenticatedAppOSlugDashboardRoute
   '/_authenticated/app/o/$slug/equipe': typeof AuthenticatedAppOSlugEquipeRoute
+  '/platform_admin/_protected/_billing/billing/': typeof Platform_adminProtectedBillingBillingIndexRoute
   '/platform_admin/_protected/_flags/flags/': typeof Platform_adminProtectedFlagsFlagsIndexRoute
   '/platform_admin/_protected/_tenants/tenants/': typeof Platform_adminProtectedTenantsTenantsIndexRoute
   '/platform_admin/_protected/_tiers/tiers/': typeof Platform_adminProtectedTiersTiersIndexRoute
@@ -337,6 +356,7 @@ export interface FileRouteTypes {
     | '/api/public/ingest/$token'
     | '/api/public/mp/checkout-callback'
     | '/api/public/mp/webhook'
+    | '/platform_admin/billing'
     | '/platform_admin/flags'
     | '/platform_admin/tenants'
     | '/platform_admin/tiers'
@@ -348,6 +368,7 @@ export interface FileRouteTypes {
     | '/app/o/$slug/alertas'
     | '/app/o/$slug/dashboard'
     | '/app/o/$slug/equipe'
+    | '/platform_admin/billing/'
     | '/platform_admin/flags/'
     | '/platform_admin/tenants/'
     | '/platform_admin/tiers/'
@@ -375,6 +396,7 @@ export interface FileRouteTypes {
     | '/app/o/$slug/alertas'
     | '/app/o/$slug/dashboard'
     | '/app/o/$slug/equipe'
+    | '/platform_admin/billing'
     | '/platform_admin/flags'
     | '/platform_admin/tenants'
     | '/platform_admin/tiers'
@@ -398,6 +420,7 @@ export interface FileRouteTypes {
     | '/api/public/ingest/$token'
     | '/api/public/mp/checkout-callback'
     | '/api/public/mp/webhook'
+    | '/platform_admin/_protected/_billing/billing'
     | '/platform_admin/_protected/_flags/flags'
     | '/platform_admin/_protected/_tenants/tenants'
     | '/platform_admin/_protected/_tiers/tiers'
@@ -409,6 +432,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/o/$slug/alertas'
     | '/_authenticated/app/o/$slug/dashboard'
     | '/_authenticated/app/o/$slug/equipe'
+    | '/platform_admin/_protected/_billing/billing/'
     | '/platform_admin/_protected/_flags/flags/'
     | '/platform_admin/_protected/_tenants/tenants/'
     | '/platform_admin/_protected/_tiers/tiers/'
@@ -537,6 +561,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicMpWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/platform_admin/_protected/_billing/billing': {
+      id: '/platform_admin/_protected/_billing/billing'
+      path: '/billing'
+      fullPath: '/platform_admin/billing'
+      preLoaderRoute: typeof Platform_adminProtectedBillingBillingRouteImport
+      parentRoute: typeof Platform_adminProtectedRouteRoute
+    }
     '/platform_admin/_protected/_flags/flags': {
       id: '/platform_admin/_protected/_flags/flags'
       path: '/flags'
@@ -613,6 +644,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/app/o/$slug/fila'
       preLoaderRoute: typeof AuthenticatedAppOSlugFilaRouteRouteImport
       parentRoute: typeof AuthenticatedAppOSlugRoute
+    }
+    '/platform_admin/_protected/_billing/billing/': {
+      id: '/platform_admin/_protected/_billing/billing/'
+      path: '/'
+      fullPath: '/platform_admin/billing/'
+      preLoaderRoute: typeof Platform_adminProtectedBillingBillingIndexRouteImport
+      parentRoute: typeof Platform_adminProtectedBillingBillingRoute
     }
     '/platform_admin/_protected/_flags/flags/': {
       id: '/platform_admin/_protected/_flags/flags/'
@@ -743,6 +781,21 @@ const Platform_adminProtectedUsersRouteWithChildren =
     Platform_adminProtectedUsersRouteChildren,
   )
 
+interface Platform_adminProtectedBillingBillingRouteChildren {
+  Platform_adminProtectedBillingBillingIndexRoute: typeof Platform_adminProtectedBillingBillingIndexRoute
+}
+
+const Platform_adminProtectedBillingBillingRouteChildren: Platform_adminProtectedBillingBillingRouteChildren =
+  {
+    Platform_adminProtectedBillingBillingIndexRoute:
+      Platform_adminProtectedBillingBillingIndexRoute,
+  }
+
+const Platform_adminProtectedBillingBillingRouteWithChildren =
+  Platform_adminProtectedBillingBillingRoute._addFileChildren(
+    Platform_adminProtectedBillingBillingRouteChildren,
+  )
+
 interface Platform_adminProtectedFlagsFlagsRouteChildren {
   Platform_adminProtectedFlagsFlagsIndexRoute: typeof Platform_adminProtectedFlagsFlagsIndexRoute
 }
@@ -806,6 +859,7 @@ const Platform_adminProtectedWebhooksWebhooksRouteWithChildren =
 interface Platform_adminProtectedRouteRouteChildren {
   Platform_adminProtectedUsersRoute: typeof Platform_adminProtectedUsersRouteWithChildren
   Platform_adminProtectedIndexRoute: typeof Platform_adminProtectedIndexRoute
+  Platform_adminProtectedBillingBillingRoute: typeof Platform_adminProtectedBillingBillingRouteWithChildren
   Platform_adminProtectedFlagsFlagsRoute: typeof Platform_adminProtectedFlagsFlagsRouteWithChildren
   Platform_adminProtectedTenantsTenantsRoute: typeof Platform_adminProtectedTenantsTenantsRouteWithChildren
   Platform_adminProtectedTiersTiersRoute: typeof Platform_adminProtectedTiersTiersRouteWithChildren
@@ -817,6 +871,8 @@ const Platform_adminProtectedRouteRouteChildren: Platform_adminProtectedRouteRou
     Platform_adminProtectedUsersRoute:
       Platform_adminProtectedUsersRouteWithChildren,
     Platform_adminProtectedIndexRoute: Platform_adminProtectedIndexRoute,
+    Platform_adminProtectedBillingBillingRoute:
+      Platform_adminProtectedBillingBillingRouteWithChildren,
     Platform_adminProtectedFlagsFlagsRoute:
       Platform_adminProtectedFlagsFlagsRouteWithChildren,
     Platform_adminProtectedTenantsTenantsRoute:
