@@ -1,29 +1,12 @@
 /**
  * Fase 4.6 Item 3 — Server Functions de Saúde do Billing.
  * 
- * ARQUITETURA:
- * • getBillingHealthSnapshot(): Leitura leve para render inicial da página.
- *   Retorna apenas os últimos N registros ordenados por window_start DESC.
- *   Zero cálculos pesados, zero joins complexos. Ideal para UX instantânea (§2.1).
+ * CORREÇÃO CRÍTICA: assertPlatformAdmin agora usa supabaseAdmin (service role)
+ * para bypassar RLS e garantir que a verificação de autoridade nunca falhe
+ * por falta de permissão de leitura do próprio usuário.
  * 
- * • runBillingHealthCheck(): Execução sob demanda via CTA explícito.
- *   Faz o trabalho real: consulta eventos pendentes, calcula métricas, grava snapshot.
- *   Retorna resultado imediato para feedback visual + toast discreto se houver problemas.
- *   Nunca roda automaticamente — usuário decide quando puxar dados (§2.1 On-Demand Restrito).
- * 
- * SEGURANÇA (§5):
- * • assertPlatformAdmin() obrigatório em ambas as funções. A UI apenas oculta elementos;
- *   autoridade de permissões SEMPRE no backend.
- * • RLS na tabela billing_health_metrics reforça defesa em profundidade: mesmo que
- *   alguém bypassasse a middleware, o banco negaria acesso sem service_role.
- * 
- * PERFORMANCE (§2.1):
- * • retry: 0 em todas as queries e mutations do portal (diretriz absoluta).
- * • staleTime controlado: snapshot inicial usa cache global (5min); após mutação manual,
- *   invalidação direcionada força refetch imediato mas mantém gcTime padrão (30min RAM).
- * • Queries de agregação usam COUNT(*) head:true (sem retornar linhas) para minimizar
- *   payload network + memory footprint no edge runtime Vercel.
- * • Helpers internos Promise.all() paralelizam contagens independentes (~3x speedup vs sequencial).
+ * REMOVIDO: import { logAuditAction } (não exportado em platform-admin.functions).
+ * Auditoria mantida via logs de console (capturados pela Vercel).
  */
 
 import { createServerFn } from "@tanstack/react-start";
@@ -38,14 +21,9 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 type BillingEventStatus = "received" | "processed" | "failed" | "ignored";
 
 // ============================================================================
-// HELPERS INTERNOS (não exportados — encapsulamento SOLID)
+// HELPERS INTERNOS
 // ============================================================================
 
-/**
- * Conta eventos por status específico usando HEAD request (count exact, no rows).
- * Otimização crítica: evita transferir payloads JSON desnecessários pelo wire.
- * CORREÇÃO TS2345: Parâmetro tipado estritamente como BillingEventStatus.
- */
 async function countEventsByStatus(status: BillingEventStatus): Promise<number> {
   const { count, error } = await supabaseAdmin
     .from("billing_events")
@@ -56,10 +34,6 @@ async function countEventsByStatus(status: BillingEventStatus): Promise<number> 
   return count ?? 0;
 }
 
-/**
- * Conta eventos em retry: status='received' AND attempts > 0.
- * Diferencia "esperando primeira tentativa" (attempts=0) de "tentou e falhou" (attempts>=1).
- */
 async function countRetryingEvents(): Promise<number> {
   const { count, error } = await supabaseAdmin
     .from("billing_events")
@@ -71,10 +45,6 @@ async function countRetryingEvents(): Promise<number> {
   return count ?? 0;
 }
 
-/**
- * Idade em segundos do evento mais antigo ainda preso em status='received'.
- * Retorna 0 se não houver zombies (caso saudável esperado).
- */
 async function getOldestPendingAgeSeconds(): Promise<number> {
   const { data, error } = await supabaseAdmin
     .from("billing_events")
@@ -87,14 +57,9 @@ async function getOldestPendingAgeSeconds(): Promise<number> {
   if (!data?.length) return 0;
   
   const oldestTimestamp = new Date(data[0].created_at).getTime();
-  const nowMs = Date.now();
-  return Math.floor((nowMs - oldestTimestamp) / 1000);
+  return Math.floor((Date.now() - oldestTimestamp) / 1000);
 }
 
-/**
- * Pico de tentativas observado entre todos os eventos currently in 'received'.
- * Útil para detectar saturação do zumbi-gate (MAX_ATTEMPTS=10).
- */
 async function getMaxAttemptsInWindow(since: Date): Promise<number> {
   const { data, error } = await supabaseAdmin
     .from("billing_events")
@@ -111,7 +76,34 @@ async function getMaxAttemptsInWindow(since: Date): Promise<number> {
 }
 
 // ============================================================================
-// FUNÇÃO PÚBLICA 1: SNAPSHOT LEVE (render inicial da página)
+// ASSERT HELPER (CORRIGIDO: USA SERVICE ROLE PARA BYPASSAR RLS)
+// ============================================================================
+
+async function assertPlatformAdmin(
+  userId: string | null | undefined,
+): Promise<void> {
+  if (!userId) throw new Error("Usuário não autenticado.");
+  
+  // Usa supabaseAdmin (service role) para bypassar RLS e garantir leitura autoritativa
+  const { data: admin, error } = await supabaseAdmin
+    .from("platform_admins")
+    .select("id, active, role")
+    .eq("user_id", userId)
+    .maybeSingle();
+  
+  if (error) {
+    console.error("[billing-health] assert_admin_error", { userId, error: error.message });
+    throw new Error(`Verificação de admin falhou: ${error.message}`);
+  }
+  
+  if (!admin || !admin.active) {
+    console.warn("[billing-health] access_denied", { userId, found: !!admin, active: admin?.active });
+    throw new Error("Acesso restrito: apenas superadmins ativos podem visualizar métricas de billing.");
+  }
+}
+
+// ============================================================================
+// FUNÇÃO PÚBLICA 1: SNAPSHOT LEVE
 // ============================================================================
 
 const SnapshotInputSchema = z.object({
@@ -122,12 +114,12 @@ export const getBillingHealthSnapshot = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => SnapshotInputSchema.parse(d))
   .handler(async ({ data, context }) => {
-    // §5 Segurança: autoridade sempre no backend
-    await assertPlatformAdmin(context.supabase, context.userId!);
+    // Passa apenas o userId, a função interna usa supabaseAdmin
+    await assertPlatformAdmin(context.userId);
     
     const { limit } = data;
     
-    const { data: metrics, error } = await context.supabase
+    const { data: metrics, error } = await supabaseAdmin
       .from("billing_health_metrics")
       .select("*")
       .order("window_start", { ascending: false })
@@ -139,7 +131,7 @@ export const getBillingHealthSnapshot = createServerFn({ method: "GET" })
   });
 
 // ============================================================================
-// FUNÇÃO PÚBLICA 2: HEALTH CHECK MANUAL (execução sob demanda via CTA)
+// FUNÇÃO PÚBLICA 2: HEALTH CHECK MANUAL
 // ============================================================================
 
 const HealthCheckInputSchema = z.object({
@@ -150,29 +142,21 @@ export const runBillingHealthCheck = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => HealthCheckInputSchema.parse(d))
   .handler(async ({ data, context }) => {
-    // §5 Segurança: dupla verificação (middleware + assert explícito)
-    await assertPlatformAdmin(context.supabase, context.userId!);
+    await assertPlatformAdmin(context.userId);
     
     const t0 = Date.now();
     const now = new Date();
-    const windowStart = new Date(now.getTime() - 15 * 60 * 1000); // Janela de 15min
+    const windowStart = new Date(now.getTime() - 15 * 60 * 1000);
     
     console.log("[billing-health] ▶️ starting_check", {
       userId: context.userId,
       triggeredBy: data.triggeredBy,
-      windowStart: windowStart.toISOString(),
     });
     
     try {
-      // 1. Coleta paralela de métricas agregadas (Promise.all = ~3x faster)
       const [
-        received,
-        processed,
-        retrying,
-        failed,
-        ignored,
-        oldestPendingAgeSec,
-        maxAttemptsSeen,
+        received, processed, retrying, failed, ignored,
+        oldestPendingAgeSec, maxAttemptsSeen,
       ] = await Promise.all([
         countEventsByStatus("received"),
         countEventsByStatus("processed"),
@@ -183,22 +167,14 @@ export const runBillingHealthCheck = createServerFn({ method: "POST" })
         getMaxAttemptsInWindow(windowStart),
       ]);
       
-      const totalZombiesNow = received; // Simplificação: same as count above
-      
+      const totalZombiesNow = received;
       const durationMs = Date.now() - t0;
       
       console.log("[billing-health] ✅ collected_metrics", {
-        received,
-        processed,
-        retrying,
-        failed,
-        ignored,
-        oldestPendingAgeSec,
-        maxAttemptsSeen,
-        durationMs,
+        received, processed, retrying, failed, ignored,
+        oldestPendingAgeSec, maxAttemptsSeen, durationMs,
       });
       
-      // 2. Gravar snapshot na tabela de métricas
       const { error: insertErr } = await supabaseAdmin
         .from("billing_health_metrics")
         .insert({
@@ -217,70 +193,81 @@ export const runBillingHealthCheck = createServerFn({ method: "POST" })
         } as never);
       
       if (insertErr) {
-        console.error("[billing-health] ❌ insert_error", {
-          error: insertErr.message,
-          code: insertErr.code,
-        });
         throw new Error(`Falha ao registrar snapshot: ${insertErr.message}`);
       }
       
-      // NOTA: Removida chamada explícita a logAuditAction pois a função não existe
-      // no módulo platform-admin.functions atual. A auditoria é garantida via logs
-      // do servidor (console.log acima) e RLS na tabela de métricas.
-      
-      // 3. Alerta proativo discreto (só loga, não bloqueia resposta)
-      if (oldestPendingAgeSec > 900) { // > 15 minutos
+      if (oldestPendingAgeSec > 900) {
         console.warn("[billing-health] ⚠️ stale_event_detected", {
           age_seconds: oldestPendingAgeSec,
-          threshold_seconds: 900,
-          recommendation: "Investigar webhook delivery ou acionar reconciliação reversa.",
         });
       }
       
       return {
         ok: true,
         metrics: {
-          received,
-          processed,
-          retrying,
-          failed,
-          ignored,
-          maxAttemptsSeen,
-          oldestPendingAgeSec,
-          totalZombiesNow,
-          durationMs,
+          received, processed, retrying, failed, ignored,
+          maxAttemptsSeen, oldestPendingAgeSec, totalZombiesNow, durationMs,
         },
       };
       
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error("[billing-health] ❌ critical_error", {
-        error: errorMsg,
-        stack: err instanceof Error ? err.stack : undefined,
-      });
-      
-      throw err; // Propaga para o frontend mostrar toast de erro
+      console.error("[billing-health] ❌ critical_error", { error: errorMsg });
+      throw err;
     }
   });
 
 // ============================================================================
-// ASSERT HELPER (extraído para reuso futuro em outras funcs admin)
+// FUNÇÕES PÚBLICAS 3 & 4: GERENCIAMENTO DO KILL-SWITCH (CRUD LEVE)
 // ============================================================================
 
-async function assertPlatformAdmin(
-  supabase: any,
-  userId: string | null | undefined,
-): Promise<void> {
-  if (!userId) throw new Error("Usuário não autenticado.");
-  
-  const { data: admin, error } = await supabase
-    .from("platform_admins")
-    .select("id, active")
-    .eq("user_id", userId)
-    .maybeSingle();
-  
-  if (error) throw new Error(`Verificação de admin falhou: ${error.message}`);
-  if (!admin || !admin.active) {
-    throw new Error("Acesso restrito: apenas superadmins ativos podem visualizar métricas de billing.");
-  }
-}
+/**
+ * Lê o estado atual do cron de segurança.
+ * Retorna { enabled: boolean, lastRunAt?: string } ou null se não configurado.
+ */
+export const getCronStatus = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertPlatformAdmin(context.userId);
+    
+    const { data, error } = await supabaseAdmin
+      .from("billing_cron_config")
+      .select("id, enabled, last_run_at, last_run_status")
+      .eq("id", "00000000-0000-0000-0000-000000000001")
+      .maybeSingle();
+    
+    if (error) throw new Error(`getCronStatus_error: ${error.message}`);
+    
+    return data ?? { id: null, enabled: false, last_run_at: null, last_run_status: null };
+  });
+
+const SetCronInputSchema = z.object({
+  enabled: z.boolean(),
+});
+
+/**
+ * Ativa ou desativa o cron de segurança.
+ * Input: { enabled: boolean }
+ */
+export const setCronEnabled = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => SetCronInputSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    await assertPlatformAdmin(context.userId);
+    
+    const { enabled } = data;
+    
+    const { error } = await supabaseAdmin
+      .from("billing_cron_config")
+      .update({ 
+        enabled,
+        updated_at: new Date().toISOString() 
+      } as never)
+      .eq("id", "00000000-0000-0000-0000-000000000001");
+    
+    if (error) throw new Error(`setCronEnabled_error: ${error.message}`);
+    
+    console.log("[billing-cron] 🔀 toggled", { userId: context.userId, enabled });
+    
+    return { ok: true, enabled };
+  });
