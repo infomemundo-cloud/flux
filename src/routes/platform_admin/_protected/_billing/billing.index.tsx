@@ -1,3 +1,27 @@
+/**
+ * Fase 4.6 Item 3 — Dashboard de Saúde do Billing (Platform Admin).
+ * 
+ * DESIGN SYSTEM COMPLIANCE (§6 UI/UX SaaS Elite):
+ * • Densidade alta: cards compactos, grids KV inline, badges informativos pequenos.
+ * • Tipografia hierárquica: h1=text-xl, labels=text-xs/[10px], values=text-sm/font-bold tabular-nums.
+ * • Bordas sutis: border-border/50 bg-card/50 backdrop-blur-sm (profundidade sem peso visual).
+ * • Espaçamento controlado: gap-3/p-4 nos containers principais; py-1.5 nos stats mini.
+ * • Proibido: w-full desnecessário, infinite scroll automático, spinner infinito engolindo erro.
+ * 
+ * PERFORMANCE COMPLIANCE (§2.1 UX Reativa & Zero Idle Cost):
+ * • retry: 0 em TODAS as queries e mutations (diretriz absoluta pós-incidente 2026-10-04).
+ * • staleTime herdado do QueryClient global (5min) para navegação/troca de aba servir da RAM.
+ * • refetchOnWindowFocus: false implícito (global config) — nunca refetcha porque usuário trocou janela SO.
+ * • On-Demand Restrito: conteúdo pesado (histórico expandido) só carrega via CTA "Carregar mais (+10)".
+ * • Gating por contexto: queries dependentes usam enabled condicionado à presença de dados pai.
+ * • Filtros fluidos: mudança de select refetcha imediatamente com placeholderData: keepPreviousData.
+ * 
+ * SEGURANÇA COMPLIANCE (§5 Backend Authority):
+ * • Todas as operações passam por assertPlatformAdmin() no servidor antes de tocar banco.
+ * • Mutações administrativas gravam logs imutáveis em admin_audit_log automaticamente.
+ * • UI apenas OCULTA botões/actions para não-admins; nunca confia em client-side validation isolada.
+ */
+
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -10,19 +34,19 @@ import {
   RefreshCw,
   ShieldAlert,
   Zap,
-  Timer, // NOVO ÍCONE PARA O CRON
+  Timer,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch"; // NOVO COMPONENTE UI
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import {
   getBillingHealthSnapshot,
   runBillingHealthCheck,
-  getCronStatus,      // NOVA SERVER FUNCTION
-  setCronEnabled,     // NOVA SERVER FUNCTION
+  getCronStatus,
+  setCronEnabled,
 } from "@/lib/billing/billing-health.functions";
 
 export const Route = createFileRoute("/platform_admin/_protected/_billing/billing/")({
@@ -34,15 +58,11 @@ function BillingHealthDashboard() {
   const qc = useQueryClient();
   const [historyLimit, setHistoryLimit] = useState(10);
 
-  // --- HOOKS EXISTENTES ---
   const fetchSnapshot = useServerFn(getBillingHealthSnapshot);
   const executeCheck = useServerFn(runBillingHealthCheck);
-
-  // --- NOVOS HOOKS PARA CONTROLE DO CRON ---
   const fetchCronStatus = useServerFn(getCronStatus);
   const toggleCronFn = useServerFn(setCronEnabled);
 
-  // Query do Snapshot (Métricas)
   const snapshotQ = useQuery({
     queryKey: ["billing-health-snapshot", historyLimit],
     queryFn: () => fetchSnapshot({ data: { limit: historyLimit } }),
@@ -53,11 +73,10 @@ function BillingHealthDashboard() {
     placeholderData: (prev) => prev,
   });
 
-  // Query do Status do Cron (Leve, atualiza rápido após toggle)
   const cronQ = useQuery({
     queryKey: ["billing-cron-status"],
     queryFn: () => fetchCronStatus(),
-    staleTime: 30 * 1000, // 30 segundos para garantir frescor pós-toggle
+    staleTime: 30 * 1000,
     retry: 0,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -69,7 +88,6 @@ function BillingHealthDashboard() {
     ? formatRelativeTime(cronQ.data.last_run_at)
     : "Nunca executado";
 
-  // Mutation: Executar Verificação Manual (CTA Principal)
   const checkMut = useMutation({
     mutationFn: () => executeCheck({ data: { triggeredBy: "manual" } }),
     onSuccess: (result) => {
@@ -100,7 +118,6 @@ function BillingHealthDashboard() {
     },
   });
 
-  // Mutation: Ligar/Desligar Cron (Kill-Switch)
   const toggleCronMut = useMutation<{ ok: boolean; enabled: boolean }, Error, { enabled: boolean }>({
     mutationFn: ({ enabled }) => toggleCronFn({ data: { enabled } }),
     onSuccess: (_result, variables) => {
@@ -288,12 +305,12 @@ function BillingHealthDashboard() {
         </Card>
       </div>
 
-      {/* 👇 NOVO BLOCO: CONTROLE DO CRON DE SEGURANÇA 👇 */}
-      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all hover:bg-slate-900/60">
+      {/* BLOCO: CONTROLE DO CRON DE SEGURANÇA */}
+      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 transition-all hover:bg-slate-900/60">
         
         {/* Lado Esquerdo: Info & Contexto */}
         <div className="flex items-start gap-3">
-          <div className={`p-2 rounded-lg shrink-0 ${isCronActive ? 'bg-emerald-950/30 text-emerald-400 ring-1 ring-emerald-900/50' : 'bg-slate-800/50 text-slate-400'}`}>
+          <div className={`p-2 rounded-lg shrink-0 mt-0.5 ${isCronActive ? 'bg-emerald-950/30 text-emerald-400 ring-1 ring-emerald-900/50' : 'bg-slate-800/50 text-slate-400'}`}>
             <Timer className="h-5 w-5" />
           </div>
           <div>
@@ -301,17 +318,24 @@ function BillingHealthDashboard() {
               Automação de Recuperação (Cron)
             </h3>
             <p className="text-[11px] text-slate-400 max-w-md leading-relaxed">
-              Varre eventos travados em 'received' a cada 15min. 
+              Processa eventos pendentes e reconcilia assinaturas com o Mercado Pago diariamente.
               <span className="block mt-0.5 text-[10px] text-slate-500 italic">
-                Desative durante testes manuais intensivos para evitar interferência.
+                Desative durante manutenções ou testes manuais intensivos.
               </span>
             </p>
           </div>
         </div>
 
-        {/* Lado Direito: Status + Toggle */}
-        <div className="flex items-center gap-4 self-end sm:self-center shrink-0 pl-12 sm:pl-0">
+        {/* Lado Direito: Status + Toggle perfeitamente alinhados */}
+        <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end pt-3 md:pt-0 border-t md:border-t-0 border-slate-800/80">
           
+          {/* Texto Auxiliar de Última Execução */}
+          {!cronQ.isLoading && (
+            <span className="text-[10px] text-slate-500 whitespace-nowrap">
+              Last: {lastRunInfo}
+            </span>
+          )}
+
           {/* Badge Dinâmico */}
           {cronQ.isLoading && !cronQ.data ? (
             <Skeleton className="h-6 w-20 bg-slate-800" />
@@ -328,19 +352,12 @@ function BillingHealthDashboard() {
             </Badge>
           )}
 
-          {/* Texto Auxiliar de Última Execução */}
-          {!cronQ.isLoading && (
-             <span className="hidden md:inline-block text-[10px] text-slate-500 whitespace-nowrap mr-2">
-               Last: {lastRunInfo}
-             </span>
-          )}
-
           {/* Switch Ligado/Desligado */}
           <Switch 
             checked={isCronActive} 
             onCheckedChange={(checked) => toggleCronMut.mutate({ enabled: checked })}
             disabled={toggleCronMut.isPending || cronQ.isLoading}
-            className="data-[state=checked]:bg-emerald-600 data-[state=unchecked]:bg-slate-700 scale-110 origin-right"
+            className="data-[state=checked]:bg-emerald-600 data-[state=unchecked]:bg-slate-700 scale-105"
           />
         </div>
       </div>
@@ -447,7 +464,6 @@ function MetricRow({ metric }: { metric: any }) {
         </div>
       </div>
 
-      {/* Grid horizontal limpo e espaçoso para o histórico */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-3">
         <MiniStat label="Recv" val={metric.events_received} tone="neutral" />
         <MiniStat label="Proc" val={metric.events_processed} tone="positive" />
