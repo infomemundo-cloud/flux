@@ -16,6 +16,7 @@ import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/ap
 import { Route as ConviteTokenRouteImport } from './routes/convite.$token'
 import { Route as Platform_adminProtectedRouteRouteImport } from './routes/platform_admin/_protected/route'
 import { Route as Platform_adminLoginRouteImport } from './routes/platform_admin/login'
+import { Route as ApiInternalCronTriggerRouteImport } from './routes/api/internal/cron-trigger'
 import { Route as Platform_adminProtectedIndexRouteImport } from './routes/platform_admin/_protected/index'
 import { Route as Platform_adminProtectedUsersRouteImport } from './routes/platform_admin/_protected/users'
 import { Route as Platform_adminConviteTokenRouteImport } from './routes/platform_admin/convite.$token'
@@ -77,6 +78,11 @@ const Platform_adminProtectedRouteRoute =
 const Platform_adminLoginRoute = Platform_adminLoginRouteImport.update({
   id: '/platform_admin/login',
   path: '/platform_admin/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiInternalCronTriggerRoute = ApiInternalCronTriggerRouteImport.update({
+  id: '/api/internal/cron-trigger',
+  path: '/api/internal/cron-trigger',
   getParentRoute: () => rootRouteImport,
 } as any)
 const Platform_adminProtectedIndexRoute =
@@ -246,6 +252,7 @@ export interface FileRoutesByFullPath {
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/convite/$token': typeof ConviteTokenRoute
   '/platform_admin/login': typeof Platform_adminLoginRoute
+  '/api/internal/cron-trigger': typeof ApiInternalCronTriggerRoute
   '/platform_admin/users': typeof Platform_adminProtectedUsersRouteWithChildren
   '/platform_admin/convite/$token': typeof Platform_adminConviteTokenRoute
   '/platform_admin/': typeof Platform_adminProtectedIndexRoute
@@ -280,6 +287,7 @@ export interface FileRoutesByTo {
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/convite/$token': typeof ConviteTokenRoute
   '/platform_admin/login': typeof Platform_adminLoginRoute
+  '/api/internal/cron-trigger': typeof ApiInternalCronTriggerRoute
   '/platform_admin/convite/$token': typeof Platform_adminConviteTokenRoute
   '/platform_admin': typeof Platform_adminProtectedIndexRoute
   '/app/onboarding/$slug': typeof AuthenticatedAppOnboardingSlugRouteRoute
@@ -311,6 +319,7 @@ export interface FileRoutesById {
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
   '/convite/$token': typeof ConviteTokenRoute
   '/platform_admin/login': typeof Platform_adminLoginRoute
+  '/api/internal/cron-trigger': typeof ApiInternalCronTriggerRoute
   '/platform_admin/_protected/users': typeof Platform_adminProtectedUsersRouteWithChildren
   '/platform_admin/convite/$token': typeof Platform_adminConviteTokenRoute
   '/platform_admin/_protected/': typeof Platform_adminProtectedIndexRoute
@@ -348,6 +357,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/convite/$token'
     | '/platform_admin/login'
+    | '/api/internal/cron-trigger'
     | '/platform_admin/users'
     | '/platform_admin/convite/$token'
     | '/platform_admin/'
@@ -382,6 +392,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/convite/$token'
     | '/platform_admin/login'
+    | '/api/internal/cron-trigger'
     | '/platform_admin/convite/$token'
     | '/platform_admin'
     | '/app/onboarding/$slug'
@@ -412,6 +423,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app'
     | '/convite/$token'
     | '/platform_admin/login'
+    | '/api/internal/cron-trigger'
     | '/platform_admin/_protected/users'
     | '/platform_admin/convite/$token'
     | '/platform_admin/_protected/'
@@ -448,6 +460,7 @@ export interface RootRouteChildren {
   Platform_adminProtectedRouteRoute: typeof Platform_adminProtectedRouteRouteWithChildren
   ConviteTokenRoute: typeof ConviteTokenRoute
   Platform_adminLoginRoute: typeof Platform_adminLoginRoute
+  ApiInternalCronTriggerRoute: typeof ApiInternalCronTriggerRoute
   Platform_adminConviteTokenRoute: typeof Platform_adminConviteTokenRoute
   ApiPublicIngestTokenRoute: typeof ApiPublicIngestTokenRoute
   ApiPublicMpCheckoutCallbackRoute: typeof ApiPublicMpCheckoutCallbackRoute
@@ -503,6 +516,13 @@ declare module '@tanstack/react-router' {
       path: '/platform_admin/login'
       fullPath: '/platform_admin/login'
       preLoaderRoute: typeof Platform_adminLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/internal/cron-trigger': {
+      id: '/api/internal/cron-trigger'
+      path: '/api/internal/cron-trigger'
+      fullPath: '/api/internal/cron-trigger'
+      preLoaderRoute: typeof ApiInternalCronTriggerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/platform_admin/_protected/': {
@@ -896,6 +916,7 @@ const rootRouteChildren: RootRouteChildren = {
     Platform_adminProtectedRouteRouteWithChildren,
   ConviteTokenRoute: ConviteTokenRoute,
   Platform_adminLoginRoute: Platform_adminLoginRoute,
+  ApiInternalCronTriggerRoute: ApiInternalCronTriggerRoute,
   Platform_adminConviteTokenRoute: Platform_adminConviteTokenRoute,
   ApiPublicIngestTokenRoute: ApiPublicIngestTokenRoute,
   ApiPublicMpCheckoutCallbackRoute: ApiPublicMpCheckoutCallbackRoute,

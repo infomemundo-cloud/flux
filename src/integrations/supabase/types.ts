@@ -123,6 +123,36 @@ export type Database = {
           },
         ]
       }
+      billing_cron_config: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          id: string
+          last_run_at: string | null
+          last_run_status: string | null
+          last_run_summary: Json | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          last_run_at?: string | null
+          last_run_status?: string | null
+          last_run_summary?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          last_run_at?: string | null
+          last_run_status?: string | null
+          last_run_summary?: Json | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       billing_events: {
         Row: {
           action: string | null
