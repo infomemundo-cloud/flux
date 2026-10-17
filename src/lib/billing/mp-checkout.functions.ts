@@ -1,11 +1,27 @@
 /**
  * Server Functions de Checkout MP (create + cancel + get).
+ *
+ * Fase 4.7 Item 1 — Base da troca de tier:
+ * • adiciona startTierSwitchCheckout para iniciar transição pendente;
+ * • adiciona getPendingTierSwitch para a UI consultar troca em andamento;
+ * • mantém createCheckoutSession, cancelSubscription e getCurrentSubscription intactos.
+ *
+ * Regra de estabilidade:
+ * - compra normal continua usando createCheckoutSession;
+ * - troca de tier usa startTierSwitchCheckout apenas quando já existe assinatura viva;
+ * - nenhuma assinatura antiga é cancelada antes da aprovação do novo preapproval.
  */
+
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { mpTokenFor } from "./mp-api";
+import {
+  mpTokenFor,
+  createPreapprovalForSwitch,
+  buildTierSwitchExternalReference,
+  MpApiError,
+} from "./mp-api";
 
 const PLAN_IDS_TEST: Record<string, string> = {
   operacao: "2ae043b092704c96b1e67b4238295c43",
@@ -17,6 +33,12 @@ const PLAN_IDS_PROD: Record<string, string> = {
   // Preencher após seed em produção
 };
 
+const TierCodeSchema = z.enum(["operacao", "crescimento", "escala"]);
+
+type TierCode = z.infer<typeof TierCodeSchema>;
+
+const SWITCH_EXPIRY_HOURS = 24;
+
 function getPlanId(tierCode: string, liveMode: boolean): string | undefined {
   const map = liveMode ? PLAN_IDS_PROD : PLAN_IDS_TEST;
   return map[tierCode];
@@ -24,14 +46,36 @@ function getPlanId(tierCode: string, liveMode: boolean): string | undefined {
 
 const CreateInputSchema = z.object({
   orgId: z.string().uuid(),
-  tierCode: z.enum(["operacao", "crescimento", "escala"]),
+  tierCode: TierCodeSchema,
 });
 
 const CancelInputSchema = z.object({
   subscriptionId: z.string().uuid(),
 });
 
-async function assertOwnerOrAdmin(orgId: string, userId: string): Promise<void> {
+const SwitchInputSchema = z.object({
+  orgId: z.string().uuid(),
+  targetTierCode: TierCodeSchema,
+});
+
+const PendingTierSwitchInputSchema = z.object({
+  orgId: z.string().uuid(),
+});
+
+export interface PendingTierSwitch {
+  id: string;
+  status: "pending";
+  fromTierCode: string | null;
+  toTierCode: TierCode;
+  fromSubscriptionId: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
+async function assertOwnerOrAdmin(
+  orgId: string,
+  userId: string,
+): Promise<void> {
   const { data: membership } = await supabaseAdmin
     .from("memberships")
     .select("role")
@@ -40,8 +84,31 @@ async function assertOwnerOrAdmin(orgId: string, userId: string): Promise<void> 
     .maybeSingle();
 
   if (!membership || !["owner", "admin"].includes(membership.role)) {
-    throw new Error("Sem permissão para gerenciar assinaturas desta organização.");
+    throw new Error(
+      "Sem permissão para gerenciar assinaturas desta organização.",
+    );
   }
+}
+
+function isUniqueViolation(
+  error: unknown,
+  constraint?: string,
+): boolean {
+  const err = error as { code?: string; message?: string } | null | undefined;
+
+  if (!err) return false;
+
+  if (err.code === "23505") return true;
+
+  if (
+    constraint &&
+    typeof err.message === "string" &&
+    err.message.includes(constraint)
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 export const createCheckoutSession = createServerFn({ method: "POST" })
@@ -83,6 +150,7 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
         mp_plan_id: planId,
         status: "pending",
       } as never);
+
     if (intentErr) {
       console.warn("[mp-checkout] intent_insert_error", {
         orgId,
@@ -130,7 +198,9 @@ export const cancelSubscription = createServerFn({ method: "POST" })
     const token = mpTokenFor(liveMode);
 
     if (!token) {
-      throw new Error(`Token MP indisponível para ambiente ${liveMode ? "prod" : "test"}.`);
+      throw new Error(
+        `Token MP indisponível para ambiente ${liveMode ? "prod" : "test"}.`,
+      );
     }
 
     const res = await fetch(
@@ -184,4 +254,343 @@ export const getCurrentSubscription = createServerFn({ method: "GET" })
       .maybeSingle();
 
     return sub ?? null;
+  });
+
+// ============================================================================
+// FASE 4.7 ITEM 1 — TROCA DE TIER
+// ============================================================================
+
+/**
+ * Inicia uma troca de tier.
+ *
+ * Fluxo:
+ * 1. valida owner/admin;
+ * 2. localiza assinatura viva;
+ * 3. impede troca para o mesmo tier;
+ * 4. impede múltiplas transições pendentes;
+ * 5. cria tier_transition pending;
+ * 6. cria billing_checkout_intent vinculado à transição;
+ * 7. cria novo preapproval no MP com external_reference = switch:<transition_id>;
+ * 8. retorna initPoint para o usuário aprovar.
+ *
+ * Importante:
+ * - a assinatura antiga NÃO é cancelada aqui;
+ * - a assinatura antiga permanece active até a aprovação do novo preapproval;
+ * - a troca efetiva acontecerá no processor via billing_complete_tier_switch().
+ */
+export const startTierSwitchCheckout = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => SwitchInputSchema.parse(d))
+  .handler(
+    async ({
+      data,
+      context,
+    }): Promise<{ initPoint: string; transitionId: string }> => {
+      const { orgId, targetTierCode } = data;
+      const userId = context.userId!;
+
+      await assertOwnerOrAdmin(orgId, userId);
+
+      const liveMode = process.env.MP_ENV === "prod";
+      const planId = getPlanId(targetTierCode, liveMode);
+
+      if (!planId) {
+        throw new Error(
+          `Plano '${targetTierCode}' não configurado para ambiente ${liveMode ? "produção" : "teste"}.`,
+        );
+      }
+
+      const nowIso = new Date().toISOString();
+
+      const { data: currentSub, error: currentSubErr } = await supabaseAdmin
+        .from("subscriptions")
+        .select("id, plan_code, mp_preapproval_id")
+        .eq("org_id", orgId)
+        .in("state", ["active", "grace_period", "past_due"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (currentSubErr) {
+        throw new Error(
+          `Falha ao ler assinatura ativa: ${currentSubErr.message}`,
+        );
+      }
+
+      if (!currentSub) {
+        throw new Error(
+          "Nenhuma assinatura ativa encontrada para troca de plano.",
+        );
+      }
+
+      if (currentSub.plan_code === targetTierCode) {
+        throw new Error(
+          "Esta organização já está no plano selecionado.",
+        );
+      }
+
+      const { data: existingPending, error: existingPendingErr } =
+        await supabaseAdmin
+          .from("tier_transitions")
+          .select("id")
+          .eq("org_id", orgId)
+          .eq("status", "pending")
+          .gt("expires_at", nowIso)
+          .maybeSingle();
+
+      if (existingPendingErr) {
+        throw new Error(
+          `Falha ao verificar troca em andamento: ${existingPendingErr.message}`,
+        );
+      }
+
+      if (existingPending) {
+        throw new Error(
+          "Já existe uma troca de plano em andamento.",
+        );
+      }
+
+      let transitionId: string | null = null;
+      let intentId: string | null = null;
+
+      try {
+        const expiresAt = new Date(
+          Date.now() + SWITCH_EXPIRY_HOURS * 60 * 60 * 1000,
+        ).toISOString();
+
+        const { data: transition, error: transitionErr } = await supabaseAdmin
+          .from("tier_transitions")
+          .insert(
+            {
+              org_id: orgId,
+              from_subscription_id: currentSub.id,
+              from_mp_preapproval_id: currentSub.mp_preapproval_id ?? null,
+              to_tier_code: targetTierCode,
+              status: "pending",
+              expires_at: expiresAt,
+              metadata: {
+                source: "billing_plan_card",
+                requested_by: userId,
+              },
+            } as never,
+          )
+          .select("id")
+          .single();
+
+        if (transitionErr) {
+          if (
+            isUniqueViolation(
+              transitionErr,
+              "tier_transitions_org_pending_uq",
+            )
+          ) {
+            throw new Error(
+              "Já existe uma troca de plano em andamento.",
+            );
+          }
+
+          throw new Error(
+            `Falha ao registrar troca de plano: ${transitionErr.message}`,
+          );
+        }
+
+        transitionId = transition.id;
+
+        const { data: intent, error: intentErr } = await supabaseAdmin
+          .from("billing_checkout_intents")
+          .insert(
+            {
+              org_id: orgId,
+              tier_code: targetTierCode,
+              mp_plan_id: planId,
+              status: "pending",
+              transition_id: transitionId,
+            } as never,
+          )
+          .select("id")
+          .single();
+
+        if (intentErr) {
+          throw new Error(
+            `Falha ao registrar intenção de checkout da troca: ${intentErr.message}`,
+          );
+        }
+
+        intentId = intent.id;
+
+        const mp = await createPreapprovalForSwitch({
+          planId,
+          externalReference: buildTierSwitchExternalReference(transitionId),
+          liveMode,
+          reason: `Troca de plano para ${targetTierCode}`,
+        });
+
+        const { error: intentUpdateErr } = await supabaseAdmin
+          .from("billing_checkout_intents")
+          .update({ mp_preapproval_id: mp.id } as never)
+          .eq("id", intentId);
+
+        if (intentUpdateErr) {
+          console.warn(
+            "[mp-checkout] switch_intent_preapproval_update_error",
+            {
+              intentId,
+              transitionId,
+              mpPreapprovalId: mp.id,
+              error: intentUpdateErr.message,
+            },
+          );
+        }
+
+        console.log("[mp-checkout] tier_switch_checkout_created", {
+          orgId,
+          transitionId,
+          intentId,
+          targetTierCode,
+          mpPreapprovalId: mp.id,
+          liveMode,
+        });
+
+        return {
+          initPoint: mp.initPoint,
+          transitionId,
+        };
+      } catch (err) {
+        if (transitionId) {
+          const { error: failTransitionErr } = await supabaseAdmin
+            .from("tier_transitions")
+            .update({ status: "failed" } as never)
+            .eq("id", transitionId)
+            .eq("status", "pending");
+
+          if (failTransitionErr) {
+            console.warn(
+              "[mp-checkout] switch_transition_fail_cleanup_error",
+              {
+                transitionId,
+                error: failTransitionErr.message,
+              },
+            );
+          }
+        }
+
+        if (intentId) {
+          const { error: failIntentErr } = await supabaseAdmin
+            .from("billing_checkout_intents")
+            .update({ status: "failed" } as never)
+            .eq("id", intentId);
+
+          if (failIntentErr) {
+            console.warn(
+              "[mp-checkout] switch_intent_fail_cleanup_error",
+              {
+                intentId,
+                error: failIntentErr.message,
+              },
+            );
+          }
+        }
+
+        if (err instanceof MpApiError) {
+          console.error("[mp-checkout] tier_switch_mp_error", {
+            orgId,
+            transitionId,
+            intentId,
+            status: err.status,
+            message: err.message,
+          });
+
+          throw new Error(
+            `Falha ao iniciar troca no Mercado Pago (${err.status}). Tente novamente.`,
+          );
+        }
+
+        throw err;
+      }
+    },
+  );
+
+/**
+ * Consulta transição de tier pendente da organização.
+ *
+ * Usado pela UI para:
+ * - bloquear novas trocas enquanto houver pendência;
+ * - mostrar estado "troca em andamento";
+ * - evitar múltiplas transições simultâneas.
+ *
+ * Considera pendente apenas:
+ *   status = pending
+ *   expires_at > now()
+ */
+export const getPendingTierSwitch = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => PendingTierSwitchInputSchema.parse(d))
+  .handler(async ({ data, context }): Promise<PendingTierSwitch | null> => {
+    const { orgId } = data;
+    const userId = context.userId!;
+
+    const { data: membership, error: membershipErr } = await supabaseAdmin
+      .from("memberships")
+      .select("id")
+      .eq("org_id", orgId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (membershipErr) {
+      throw new Error(
+        `Falha ao validar acesso: ${membershipErr.message}`,
+      );
+    }
+
+    if (!membership) {
+      throw new Error("Sem acesso a esta organização.");
+    }
+
+    const nowIso = new Date().toISOString();
+
+    const { data: transition, error } = await supabaseAdmin
+      .from("tier_transitions")
+      .select(
+        "id, status, from_subscription_id, to_tier_code, expires_at, created_at",
+      )
+      .eq("org_id", orgId)
+      .eq("status", "pending")
+      .gt("expires_at", nowIso)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(
+        `Falha ao consultar troca pendente: ${error.message}`,
+      );
+    }
+
+    if (!transition) {
+      return null;
+    }
+
+    const { data: fromSub, error: fromSubErr } = await supabaseAdmin
+      .from("subscriptions")
+      .select("plan_code")
+      .eq("id", transition.from_subscription_id)
+      .maybeSingle();
+
+    if (fromSubErr) {
+      console.warn("[mp-checkout] pending_switch_from_subscription_error", {
+        transitionId: transition.id,
+        fromSubscriptionId: transition.from_subscription_id,
+        error: fromSubErr.message,
+      });
+    }
+
+    return {
+      id: transition.id,
+      status: "pending",
+      fromTierCode: fromSub?.plan_code ?? null,
+      toTierCode: transition.to_tier_code as TierCode,
+      fromSubscriptionId: transition.from_subscription_id,
+      expiresAt: transition.expires_at,
+      createdAt: transition.created_at,
+    };
   });

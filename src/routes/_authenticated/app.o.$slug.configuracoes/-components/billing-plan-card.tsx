@@ -1,32 +1,48 @@
 /**
  * Layout clean de pricing sem badges flutuantes, botões uniformes em largura total
  * e preços alinhados sem quebra de linha.
- * 
+ *
  * CORREÇÃO DE BUG: Isola o estado de loading por card usando useState<string|null>.
  * Antes, uma única useMutation compartilhava isPending entre os 3 bots, causando
  * spinners sincrônicos indesejados. Agora, apenas o botão clicado gira.
- * 
- * FASE 4.7 ITEM 3 (Contrato de Features):
- * • Descrições dos planos agora vêm do TIER_CONTRACTS (marketingHighlights).
- * • Elimina hardcoded e garante consistência entre UI de pricing e gates de features.
- * • Invalidação de cache account-access antes do redirect para reduzir latência em testes.
  */
-import { CheckCircle2, Clock, AlertTriangle, Ban, Sparkles, Check } from "lucide-react";
+import {
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
+  Ban,
+  Sparkles,
+  Check,
+} from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { friendlyError } from "@/lib/friendly-error";
-import { createCheckoutSession, cancelSubscription } from "@/lib/billing/mp-checkout.functions";
+import {
+  createCheckoutSession,
+  cancelSubscription,
+  startTierSwitchCheckout,
+} from "@/lib/billing/mp-checkout.functions";
+import type { PendingTierSwitch } from "@/lib/billing/mp-checkout.functions";
 import type { AccountAccess } from "@/lib/billing/account-access";
-import { TIER_CONTRACTS } from "@/lib/billing/tier-contracts"; // 👈 Import Contrato de Tiers
+import { TIER_CONTRACTS } from "@/lib/billing/tier-contracts";
 import { useState } from "react";
+
+type SubscriptionState =
+  | "active"
+  | "grace_period"
+  | "past_due"
+  | "canceled_by_user"
+  | "canceled_by_dunning"
+  | "suspended"
+  | "canceled_by_upgrade";
 
 interface SubscriptionLike {
   id: string;
   plan_code: string;
-  state: "active" | "grace_period" | "past_due" | "canceled_by_user" | "canceled_by_dunning" | "suspended";
+  state: SubscriptionState;
   current_period_start: string | null;
   current_period_end: string | null;
   cancel_requested_by_user: boolean;
@@ -36,61 +52,146 @@ interface SubscriptionLike {
 interface BillingPlanCardProps {
   subscription: SubscriptionLike | null;
   access: AccountAccess | null;
+  pendingSwitch?: PendingTierSwitch | null;
   isOwner: boolean;
   orgId: string;
 }
 
-// 👇 TIERS agora derivam descrições do contrato centralizado
 const TIERS = [
   {
     code: "operacao",
     name: "Operação",
     price: "97",
-    description: TIER_CONTRACTS.operacao.marketingHighlights.slice(0, 2).join(" • "), // Primeiros 2 bullets
+    description: TIER_CONTRACTS.operacao.marketingHighlights
+      .slice(0, 2)
+      .join(" • "),
   },
   {
     code: "crescimento",
     name: "Crescimento",
     price: "197",
-    description: TIER_CONTRACTS.crescimento.marketingHighlights.slice(0, 2).join(" • "),
+    description: TIER_CONTRACTS.crescimento.marketingHighlights
+      .slice(0, 2)
+      .join(" • "),
   },
   {
     code: "escala",
     name: "Escala",
     price: "397",
-    description: TIER_CONTRACTS.escala.marketingHighlights.slice(0, 2).join(" • "),
+    description: TIER_CONTRACTS.escala.marketingHighlights
+      .slice(0, 2)
+      .join(" • "),
   },
 ] as const;
 
-export function BillingPlanCard({ subscription, access, isOwner, orgId }: BillingPlanCardProps) {
+type TierCode = (typeof TIERS)[number]["code"];
+
+const LIVE_SUBSCRIPTION_STATES: readonly SubscriptionState[] = [
+  "active",
+  "grace_period",
+  "past_due",
+];
+
+const HISTORICAL_SUBSCRIPTION_STATES: readonly SubscriptionState[] = [
+  "canceled_by_user",
+  "canceled_by_dunning",
+  "canceled_by_upgrade",
+];
+
+function isLiveSubscription(
+  subscription: SubscriptionLike | null,
+): subscription is SubscriptionLike & { state: (typeof LIVE_SUBSCRIPTION_STATES)[number] } {
+  return Boolean(
+    subscription &&
+      (LIVE_SUBSCRIPTION_STATES as readonly SubscriptionState[]).includes(
+        subscription.state,
+      ),
+  );
+}
+
+function isHistoricalSubscription(subscription: SubscriptionLike | null): boolean {
+  return Boolean(
+    subscription &&
+      (HISTORICAL_SUBSCRIPTION_STATES as readonly SubscriptionState[]).includes(
+        subscription.state,
+      ),
+  );
+}
+
+function findTierDefinition(code: string | null | undefined) {
+  if (!code) return null;
+  return TIERS.find((t) => t.code === (code as TierCode)) ?? null;
+}
+
+export function BillingPlanCard({
+  subscription,
+  access,
+  pendingSwitch,
+  isOwner,
+  orgId,
+}: BillingPlanCardProps) {
   const qc = useQueryClient();
   const checkoutFn = useServerFn(createCheckoutSession);
   const cancelFn = useServerFn(cancelSubscription);
+  const switchFn = useServerFn(startTierSwitchCheckout);
 
-  // ESTADO LOCAL: Rastreia qual tier está em processo de assinatura (null = nenhum)
   const [loadingTierCode, setLoadingTierCode] = useState<string | null>(null);
 
   const displayState = deriveDisplayState(subscription, access);
+
   const tierName = subscription?.plan_code
-    ? TIERS.find((t) => t.code === subscription.plan_code)?.name ?? subscription.plan_code
+    ? TIERS.find((t) => t.code === subscription.plan_code)?.name ??
+      subscription.plan_code
     : null;
 
-  // MUTATION ÚNICA (mas controlada pelo estado local acima para UI)
+  const subscriptionIsHistorical = isHistoricalSubscription(subscription);
+  const pendingSwitchActive = Boolean(pendingSwitch);
+
+  const pendingTargetTier = pendingSwitch
+    ? findTierDefinition(pendingSwitch.toTierCode)
+    : null;
+
+  const pendingFromTier = pendingSwitch?.fromTierCode
+    ? findTierDefinition(pendingSwitch.fromTierCode)
+    : null;
+
   const subscribeMut = useMutation({
-    mutationFn: async (tierCode: (typeof TIERS)[number]["code"]) => {
-      setLoadingTierCode(tierCode); // Marca qual card está girando
+    mutationFn: async (tierCode: TierCode) => {
+      setLoadingTierCode(tierCode);
       try {
         const res = await checkoutFn({ data: { orgId, tierCode } });
         return res.initPoint;
       } finally {
-        setLoadingTierCode(null); // Limpa o estado quando terminar (sucesso ou erro)
+        setLoadingTierCode(null);
       }
     },
     onSuccess: (initPoint) => {
-      // 👇 INVALIDAÇÃO ANTECIPADA: Limpa cache antes do redirect
-      // Quando o usuário voltar do MP, os dados estarão frescos imediatamente
       qc.invalidateQueries({ queryKey: ["account-access", orgId] });
       qc.invalidateQueries({ queryKey: ["subscription", orgId] });
+      qc.invalidateQueries({ queryKey: ["pending-tier-switch", orgId] });
+      window.location.href = initPoint;
+    },
+    onError: (err) => {
+      toast.error(friendlyError(err));
+    },
+  });
+
+  const switchMut = useMutation({
+    mutationFn: async (targetTierCode: TierCode) => {
+      setLoadingTierCode(targetTierCode);
+      try {
+        const res = await switchFn({
+          data: { orgId, targetTierCode },
+        });
+        return res.initPoint;
+      } finally {
+        setLoadingTierCode(null);
+      }
+    },
+    onSuccess: (initPoint) => {
+      qc.invalidateQueries({ queryKey: ["account-access", orgId] });
+      qc.invalidateQueries({ queryKey: ["subscription", orgId] });
+      qc.invalidateQueries({ queryKey: ["pending-tier-switch", orgId] });
       window.location.href = initPoint;
     },
     onError: (err) => {
@@ -99,18 +200,21 @@ export function BillingPlanCard({ subscription, access, isOwner, orgId }: Billin
   });
 
   const cancelMut = useMutation({
-    mutationFn: async (subId: string) => cancelFn({ data: { subscriptionId: subId } }),
+    mutationFn: async (subId: string) =>
+      cancelFn({ data: { subscriptionId: subId } }),
     onSuccess: () => {
-      toast.success("Cancelamento solicitado. Sua assinatura permanecerá ativa até o fim do ciclo vigente.");
+      toast.success(
+        "Cancelamento solicitado. Sua assinatura permanecerá ativa até o fim do ciclo vigente.",
+      );
       qc.invalidateQueries({ queryKey: ["subscription", orgId] });
       qc.invalidateQueries({ queryKey: ["account-access", orgId] });
+      qc.invalidateQueries({ queryKey: ["pending-tier-switch", orgId] });
     },
     onError: (err) => {
       toast.error(friendlyError(err));
     },
   });
 
-  // Lógica de exibição da tabela (mantida igual à sua versão atual)
   const showPricingTable =
     !subscription ||
     isOwner ||
@@ -118,7 +222,39 @@ export function BillingPlanCard({ subscription, access, isOwner, orgId }: Billin
 
   return (
     <div className="space-y-6">
-      {/* Banner de Trial Limpo e Discreto */}
+      {/* Banner de Troca Pendente */}
+      {pendingSwitch && (
+        <div className="flex items-start justify-between gap-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Clock className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground">
+                Troca de plano em andamento
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {pendingFromTier && pendingTargetTier
+                  ? `Do ${pendingFromTier.name} para ${pendingTargetTier.name}. `
+                  : ""}
+                Aguardando aprovação no Mercado Pago. Novas alterações ficam
+                bloqueadas até a confirmação ou expiração.
+              </p>
+              <p className="text-[11px] text-muted-foreground/80 mt-1">
+                Expira em {formatDate(pendingSwitch.expiresAt)}.
+              </p>
+            </div>
+          </div>
+          <Badge
+            variant="outline"
+            className="hidden sm:inline-flex border-primary/30 text-primary bg-primary/5"
+          >
+            Pendente
+          </Badge>
+        </div>
+      )}
+
+      {/* Banner de Trial */}
       {!subscription && access?.effective_state === "trial" && (
         <div className="flex items-center justify-between gap-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
           <div className="flex items-center gap-3">
@@ -126,34 +262,52 @@ export function BillingPlanCard({ subscription, access, isOwner, orgId }: Billin
               <Sparkles className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-foreground">Período experimental ativo</p>
+              <p className="text-sm font-semibold text-foreground">
+                Período experimental ativo
+              </p>
               <p className="text-xs text-muted-foreground">
-                Restam <span className="font-semibold text-primary tabular-nums">{access.days_left}</span>{" "}
-                {Number(access.days_left) === 1 ? "dia" : "dias"} do seu teste grátis. Escolha um plano abaixo para manter seu acesso contínuo.
+                Restam{" "}
+                <span className="font-semibold text-primary tabular-nums">
+                  {access.days_left}
+                </span>{" "}
+                {Number(access.days_left) === 1 ? "dia" : "dias"} do seu teste
+                grátis. Escolha um plano abaixo para manter seu acesso contínuo.
               </p>
             </div>
           </div>
-          <Badge variant="outline" className="hidden sm:inline-flex border-primary/30 text-primary bg-primary/5">
+          <Badge
+            variant="outline"
+            className="hidden sm:inline-flex border-primary/30 text-primary bg-primary/5"
+          >
             Trial Gratuito
           </Badge>
         </div>
       )}
 
-      {/* Grid de Cards Limpo sem Badges */}
+      {/* Grid de Cards Limpo e Alinhado */}
       {showPricingTable && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
           {TIERS.map((tier) => {
-            const isActive =
-              subscription?.plan_code === tier.code &&
-              subscription.state !== "canceled_by_user" &&
-              subscription.state !== "canceled_by_dunning";
-            
-            const isHighlighted = tier.code === "crescimento";
-            
-            // VERIFICAÇÃO CRÍTICA: Só mostra spinner se ESTE tier específico estiver carregando
-            const isThisCardLoading = loadingTierCode === tier.code;
+            const activeSubscription =
+              subscription &&
+              subscription.plan_code === tier.code &&
+              !subscriptionIsHistorical
+                ? subscription
+                : null;
 
-            // 👇 Pega highlights completos do contrato para exibir como lista
+            const canSwitch = Boolean(
+              isOwner &&
+                subscription &&
+                isLiveSubscription(subscription) &&
+                !subscriptionIsHistorical &&
+                !pendingSwitchActive &&
+                subscription.plan_code !== tier.code,
+            );
+
+            const isHighlighted = tier.code === "crescimento";
+            const isThisCardLoading = loadingTierCode === tier.code;
+            const isPendingTarget = pendingSwitch?.toTierCode === tier.code;
+
             const tierContract = TIER_CONTRACTS[tier.code];
             const highlights = tierContract?.marketingHighlights ?? [];
 
@@ -168,34 +322,41 @@ export function BillingPlanCard({ subscription, access, isOwner, orgId }: Billin
               >
                 {/* Informações do Plano */}
                 <div>
-                  <h3 className="text-base font-bold text-foreground mb-1.5">{tier.name}</h3>
+                  <h3 className="text-base font-bold text-foreground mb-1.5">
+                    {tier.name}
+                  </h3>
                   <p className="text-xs text-muted-foreground leading-relaxed min-h-[32px]">
                     {tier.description}
                   </p>
-                  
-                  {/* 👇 Lista de Features Dinâmica do Contrato */}
+
                   <ul className="mt-3 space-y-1.5">
                     {highlights.slice(0, 4).map((highlight, idx) => (
-                      <li key={idx} className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                      <li
+                        key={idx}
+                        className="flex items-start gap-1.5 text-[11px] text-muted-foreground"
+                      >
                         <Check className="h-3 w-3 text-primary shrink-0 mt-0.5" />
                         <span>{highlight}</span>
                       </li>
                     ))}
                   </ul>
 
-                  {/* Preço em linha única */}
                   <div className="my-5 flex items-baseline gap-1 whitespace-nowrap">
-                    <span className="text-xs font-semibold text-muted-foreground">R$</span>
+                    <span className="text-xs font-semibold text-muted-foreground">
+                      R$
+                    </span>
                     <span className="text-3xl font-extrabold tracking-tight text-foreground">
                       {tier.price}
                     </span>
-                    <span className="text-xs text-muted-foreground font-medium">/mês</span>
+                    <span className="text-xs text-muted-foreground font-medium">
+                      /mês
+                    </span>
                   </div>
                 </div>
 
-                {/* Ações (Botões em Largura Total) */}
+                {/* Ações com copywriting focado em conversão */}
                 <div className="pt-2">
-                  {isActive ? (
+                  {activeSubscription ? (
                     <div className="space-y-2">
                       <div className="flex items-center justify-center gap-1.5 rounded-lg bg-emerald-500/10 py-2 text-xs font-semibold text-emerald-500 border border-emerald-500/20">
                         <Check className="h-3.5 w-3.5" />
@@ -205,37 +366,80 @@ export function BillingPlanCard({ subscription, access, isOwner, orgId }: Billin
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="w-full text-xs text-destructive hover:text-destructive hover:bg-destructive/10 h-8"
+                          className="w-full text-xs text-destructive hover:text-destructive hover:bg-destructive/10 h-9 px-3"
                           onClick={() => {
                             if (
                               confirm(
-                                "Tem certeza que deseja cancelar esta assinatura? Ela permanecerá ativa até o fim do ciclo vigente."
+                                "Tem certeza que deseja cancelar esta assinatura? Ela permanecerá ativa até o fim do ciclo vigente.",
                               )
                             ) {
-                              cancelMut.mutate(subscription!.id);
+                              cancelMut.mutate(activeSubscription.id);
                             }
                           }}
-                          disabled={cancelMut.isPending || subscription!.cancel_requested_by_user}
+                          disabled={
+                            cancelMut.isPending ||
+                            activeSubscription.cancel_requested_by_user ||
+                            pendingSwitchActive
+                          }
                         >
-                          {cancelMut.isPending ? <Clock className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-                          {subscription!.cancel_requested_by_user ? "Cancelamento pendente…" : "Cancelar assinatura"}
+                          {cancelMut.isPending ? (
+                            <Clock className="mr-1.5 h-3.5 w-3.5 animate-spin shrink-0" />
+                          ) : null}
+                          <span className="truncate">
+                            {activeSubscription.cancel_requested_by_user
+                              ? "Cancelamento pendente…"
+                              : pendingSwitchActive
+                                ? "Alteração bloqueada"
+                                : "Cancelar assinatura"}
+                          </span>
                         </Button>
                       )}
                     </div>
+                  ) : canSwitch ? (
+                    <div className="space-y-2">
+                      <p className="text-[11px] text-muted-foreground text-center font-medium">
+                        Evolua sua operação instantaneamente
+                      </p>
+                      <Button
+                        variant={isHighlighted ? "default" : "outline"}
+                        className="w-full text-xs font-semibold rounded-lg h-9 px-4 shadow-sm"
+                        onClick={() => switchMut.mutate(tier.code)}
+                        disabled={
+                          !isOwner || isThisCardLoading || pendingSwitchActive
+                        }
+                      >
+                        {isThisCardLoading ? (
+                          <Clock className="mr-1.5 h-3.5 w-3.5 animate-spin shrink-0" />
+                        ) : null}
+                        <span>Upgrade</span>
+                      </Button>
+                    </div>
                   ) : (
-                    <Button
-                      variant={isHighlighted ? "default" : "outline"}
-                      className="w-full text-xs font-semibold rounded-lg h-9"
-                      onClick={() => subscribeMut.mutate(tier.code)}
-                      // DESABILITA APENAS SE ESTIVER CARREGANDO OU NÃO FOR OWNER
-                      disabled={!isOwner || isThisCardLoading}
-                    >
-                      {/* MOSTRA SPINNER APENAS NESTE CARD ESPECÍFICO */}
-                      {isThisCardLoading ? <Clock className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-                      Assinar {tier.name}
-                    </Button>
+                    <div className="space-y-2">
+                      <p className="text-[11px] text-muted-foreground text-center font-medium">
+                        Pronto para escalar com segurança
+                      </p>
+                      <Button
+                        variant={isHighlighted ? "default" : "outline"}
+                        className="w-full text-xs font-semibold rounded-lg h-9 px-4 shadow-sm"
+                        onClick={() => subscribeMut.mutate(tier.code)}
+                        disabled={
+                          !isOwner || isThisCardLoading || pendingSwitchActive
+                        }
+                      >
+                        {isThisCardLoading ? (
+                          <Clock className="mr-1.5 h-3.5 w-3.5 animate-spin shrink-0" />
+                        ) : null}
+                        <span>
+                          {pendingSwitchActive && isPendingTarget
+                            ? "Troca em andamento"
+                            : "Começar agora"}
+                        </span>
+                      </Button>
+                    </div>
                   )}
-                  {!isOwner && !isActive && (
+
+                  {!isOwner && !activeSubscription && (
                     <p className="text-[10px] text-center text-muted-foreground/70 italic mt-2">
                       Apenas o proprietário pode alterar o plano.
                     </p>
@@ -248,50 +452,55 @@ export function BillingPlanCard({ subscription, access, isOwner, orgId }: Billin
       )}
 
       {/* Resumo da Assinatura Vigente */}
-      {subscription &&
-        subscription.state !== "canceled_by_user" &&
-        subscription.state !== "canceled_by_dunning" && (
-          <div className="rounded-xl border border-border/60 bg-card p-5 space-y-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-foreground">
-                    Plano Ativo: <span className="text-primary font-bold">{tierName}</span>
-                  </h3>
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {displayState.description}
-                </p>
+      {subscription && !subscriptionIsHistorical && (
+        <div className="rounded-xl border border-border/60 bg-card p-5 space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-foreground">
+                  Plano Ativo:{" "}
+                  <span className="text-primary font-bold">{tierName}</span>
+                </h3>
               </div>
-              <Badge variant={displayState.badgeVariant} className="gap-1.5 py-1 px-2.5">
-                {displayState.Icon && <displayState.Icon className="h-3.5 w-3.5" />}
-                {displayState.label}
-              </Badge>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {displayState.description}
+              </p>
             </div>
-            {subscription.current_period_start && (
-              <div className="grid grid-cols-2 gap-4 rounded-lg bg-muted/40 p-3 text-xs border border-border/40">
+            <Badge
+              variant={displayState.badgeVariant}
+              className="gap-1.5 py-1 px-2.5"
+            >
+              {displayState.Icon && (
+                <displayState.Icon className="h-3.5 w-3.5" />
+              )}
+              {displayState.label}
+            </Badge>
+          </div>
+
+          {subscription.current_period_start && (
+            <div className="grid grid-cols-2 gap-4 rounded-lg bg-muted/40 p-3 text-xs border border-border/40">
+              <div>
+                <span className="text-muted-foreground block text-[10px] uppercase font-semibold tracking-wider">
+                  Início do ciclo
+                </span>
+                <span className="font-mono font-medium text-foreground">
+                  {formatDate(subscription.current_period_start)}
+                </span>
+              </div>
+              {subscription.current_period_end && (
                 <div>
                   <span className="text-muted-foreground block text-[10px] uppercase font-semibold tracking-wider">
-                    Início do ciclo
+                    Próxima renovação
                   </span>
                   <span className="font-mono font-medium text-foreground">
-                    {formatDate(subscription.current_period_start)}
+                    {formatDate(subscription.current_period_end)}
                   </span>
                 </div>
-                {subscription.current_period_end && (
-                  <div>
-                    <span className="text-muted-foreground block text-[10px] uppercase font-semibold tracking-wider">
-                      Próxima renovação
-                    </span>
-                    <span className="font-mono font-medium text-foreground">
-                      {formatDate(subscription.current_period_end)}
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -305,7 +514,7 @@ type DisplayState = {
 
 function deriveDisplayState(
   subscription: SubscriptionLike | null,
-  access: AccountAccess | null
+  access: AccountAccess | null,
 ): DisplayState {
   if (!subscription && access?.effective_state === "trial") {
     return {
@@ -315,13 +524,16 @@ function deriveDisplayState(
       badgeVariant: "secondary",
     };
   }
+
   if (!subscription) {
     return {
       label: "Sem plano",
-      description: "Escolha um plano acima para liberar todos os recursos.",
+      description:
+        "Escolha um plano acima para liberar todos os recursos.",
       badgeVariant: "outline",
     };
   }
+
   switch (subscription.state) {
     case "active":
       return {
@@ -330,20 +542,25 @@ function deriveDisplayState(
         Icon: CheckCircle2,
         badgeVariant: "default",
       };
+
     case "grace_period":
       return {
         label: "Carência",
-        description: "Pagamento pendente. Regularize para continuar utilizando o sistema.",
+        description:
+          "Pagamento pendente. Regularize para continuar utilizando o sistema.",
         Icon: Clock,
         badgeVariant: "secondary",
       };
+
     case "past_due":
       return {
         label: "Em atraso",
-        description: "Falha na última cobrança. Atualize seu meio de pagamento.",
+        description:
+          "Falha na última cobrança. Atualize seu meio de pagamento.",
         Icon: AlertTriangle,
         badgeVariant: "destructive",
       };
+
     case "canceled_by_user":
     case "canceled_by_dunning":
       return {
@@ -355,6 +572,7 @@ function deriveDisplayState(
         Icon: Ban,
         badgeVariant: "outline",
       };
+
     case "suspended":
       return {
         label: "Suspenso",
@@ -362,6 +580,15 @@ function deriveDisplayState(
         Icon: Ban,
         badgeVariant: "destructive",
       };
+
+    case "canceled_by_upgrade":
+      return {
+        label: "Substituído",
+        description: "Assinatura substituída por troca de plano.",
+        Icon: Ban,
+        badgeVariant: "outline",
+      };
+
     default:
       return {
         label: "Desconhecido",
@@ -373,7 +600,11 @@ function deriveDisplayState(
 
 function formatDate(iso: string): string {
   try {
-    return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
+    return new Date(iso).toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
   } catch {
     return iso.slice(0, 10);
   }

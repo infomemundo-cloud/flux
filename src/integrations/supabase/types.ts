@@ -85,6 +85,7 @@ export type Database = {
           org_id: string
           status: string
           tier_code: string
+          transition_id: string | null
         }
         Insert: {
           consumed_at?: string | null
@@ -95,6 +96,7 @@ export type Database = {
           org_id: string
           status?: string
           tier_code: string
+          transition_id?: string | null
         }
         Update: {
           consumed_at?: string | null
@@ -105,6 +107,7 @@ export type Database = {
           org_id?: string
           status?: string
           tier_code?: string
+          transition_id?: string | null
         }
         Relationships: [
           {
@@ -119,6 +122,13 @@ export type Database = {
             columns: ["org_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "billing_checkout_intents_transition_id_fkey"
+            columns: ["transition_id"]
+            isOneToOne: false
+            referencedRelation: "tier_transitions"
             referencedColumns: ["id"]
           },
         ]
@@ -1082,6 +1092,7 @@ export type Database = {
           mp_preapproval_plan_id: string | null
           org_id: string
           plan_code: string
+          previous_subscription_id: string | null
           state: Database["public"]["Enums"]["tenant_subscription_state"]
           updated_at: string
         }
@@ -1096,6 +1107,7 @@ export type Database = {
           mp_preapproval_plan_id?: string | null
           org_id: string
           plan_code: string
+          previous_subscription_id?: string | null
           state?: Database["public"]["Enums"]["tenant_subscription_state"]
           updated_at?: string
         }
@@ -1110,6 +1122,7 @@ export type Database = {
           mp_preapproval_plan_id?: string | null
           org_id?: string
           plan_code?: string
+          previous_subscription_id?: string | null
           state?: Database["public"]["Enums"]["tenant_subscription_state"]
           updated_at?: string
         }
@@ -1131,6 +1144,109 @@ export type Database = {
           {
             foreignKeyName: "subscriptions_plan_code_fkey"
             columns: ["plan_code"]
+            isOneToOne: false
+            referencedRelation: "tiers"
+            referencedColumns: ["code"]
+          },
+          {
+            foreignKeyName: "subscriptions_previous_subscription_id_fkey"
+            columns: ["previous_subscription_id"]
+            isOneToOne: false
+            referencedRelation: "subscriptions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tier_transitions: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          expires_at: string
+          from_mp_preapproval_id: string | null
+          from_subscription_id: string
+          id: string
+          legacy_mp_cancel_attempts: number
+          legacy_mp_cancel_completed_at: string | null
+          legacy_mp_cancel_error: string | null
+          legacy_mp_cancel_next_attempt_at: string | null
+          legacy_mp_cancel_status: string | null
+          metadata: Json
+          org_id: string
+          status: string
+          to_mp_preapproval_id: string | null
+          to_subscription_id: string | null
+          to_tier_code: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          expires_at: string
+          from_mp_preapproval_id?: string | null
+          from_subscription_id: string
+          id?: string
+          legacy_mp_cancel_attempts?: number
+          legacy_mp_cancel_completed_at?: string | null
+          legacy_mp_cancel_error?: string | null
+          legacy_mp_cancel_next_attempt_at?: string | null
+          legacy_mp_cancel_status?: string | null
+          metadata?: Json
+          org_id: string
+          status?: string
+          to_mp_preapproval_id?: string | null
+          to_subscription_id?: string | null
+          to_tier_code: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          from_mp_preapproval_id?: string | null
+          from_subscription_id?: string
+          id?: string
+          legacy_mp_cancel_attempts?: number
+          legacy_mp_cancel_completed_at?: string | null
+          legacy_mp_cancel_error?: string | null
+          legacy_mp_cancel_next_attempt_at?: string | null
+          legacy_mp_cancel_status?: string | null
+          metadata?: Json
+          org_id?: string
+          status?: string
+          to_mp_preapproval_id?: string | null
+          to_subscription_id?: string | null
+          to_tier_code?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tier_transitions_from_subscription_id_fkey"
+            columns: ["from_subscription_id"]
+            isOneToOne: false
+            referencedRelation: "subscriptions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tier_transitions_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "org_access_effective"
+            referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "tier_transitions_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tier_transitions_to_subscription_id_fkey"
+            columns: ["to_subscription_id"]
+            isOneToOne: false
+            referencedRelation: "subscriptions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tier_transitions_to_tier_code_fkey"
+            columns: ["to_tier_code"]
             isOneToOne: false
             referencedRelation: "tiers"
             referencedColumns: ["code"]
@@ -1362,6 +1478,24 @@ export type Database = {
       }
     }
     Functions: {
+      billing_complete_tier_switch: {
+        Args: {
+          p_external_reference?: string
+          p_new_mp_preapproval_id: string
+          p_new_plan_code: string
+          p_period_end?: string
+          p_period_start?: string
+          p_preapproval_plan_id?: string
+          p_transition_id: string
+        }
+        Returns: {
+          already_completed: boolean
+          new_subscription_id: string
+          old_subscription_id: string
+          outcome: string
+          transition_id: string
+        }[]
+      }
       delete_organization_cascade: {
         Args: { p_org_id: string }
         Returns: undefined
@@ -1434,6 +1568,7 @@ export type Database = {
         | "canceled_by_user"
         | "canceled_by_dunning"
         | "suspended"
+        | "canceled_by_upgrade"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1604,6 +1739,7 @@ export const Constants = {
         "canceled_by_user",
         "canceled_by_dunning",
         "suspended",
+        "canceled_by_upgrade",
       ],
     },
   },
