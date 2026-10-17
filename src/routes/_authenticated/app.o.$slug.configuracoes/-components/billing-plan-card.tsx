@@ -5,6 +5,11 @@
  * CORREÇÃO DE BUG: Isola o estado de loading por card usando useState<string|null>.
  * Antes, uma única useMutation compartilhava isPending entre os 3 bots, causando
  * spinners sincrônicos indesejados. Agora, apenas o botão clicado gira.
+ * 
+ * FASE 4.7 ITEM 3 (Contrato de Features):
+ * • Descrições dos planos agora vêm do TIER_CONTRACTS (marketingHighlights).
+ * • Elimina hardcoded e garante consistência entre UI de pricing e gates de features.
+ * • Invalidação de cache account-access antes do redirect para reduzir latência em testes.
  */
 import { CheckCircle2, Clock, AlertTriangle, Ban, Sparkles, Check } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -15,7 +20,8 @@ import { Button } from "@/components/ui/button";
 import { friendlyError } from "@/lib/friendly-error";
 import { createCheckoutSession, cancelSubscription } from "@/lib/billing/mp-checkout.functions";
 import type { AccountAccess } from "@/lib/billing/account-access";
-import { useState } from "react"; // NOVO IMPORT PARA CONTROLAR LOADING INDIVIDUAL
+import { TIER_CONTRACTS } from "@/lib/billing/tier-contracts"; // 👈 Import Contrato de Tiers
+import { useState } from "react";
 
 interface SubscriptionLike {
   id: string;
@@ -34,24 +40,25 @@ interface BillingPlanCardProps {
   orgId: string;
 }
 
+// 👇 TIERS agora derivam descrições do contrato centralizado
 const TIERS = [
   {
     code: "operacao",
     name: "Operação",
     price: "97",
-    description: "Ideal para pequenas equipes estruturarem o atendimento.",
+    description: TIER_CONTRACTS.operacao.marketingHighlights.slice(0, 2).join(" • "), // Primeiros 2 bullets
   },
   {
     code: "crescimento",
     name: "Crescimento",
     price: "197",
-    description: "Para operação em expansão com múltiplos canais e SLA.",
+    description: TIER_CONTRACTS.crescimento.marketingHighlights.slice(0, 2).join(" • "),
   },
   {
     code: "escala",
     name: "Escala",
     price: "397",
-    description: "Alta capacidade, automação avançada e suporte prioritário.",
+    description: TIER_CONTRACTS.escala.marketingHighlights.slice(0, 2).join(" • "),
   },
 ] as const;
 
@@ -80,6 +87,10 @@ export function BillingPlanCard({ subscription, access, isOwner, orgId }: Billin
       }
     },
     onSuccess: (initPoint) => {
+      // 👇 INVALIDAÇÃO ANTECIPADA: Limpa cache antes do redirect
+      // Quando o usuário voltar do MP, os dados estarão frescos imediatamente
+      qc.invalidateQueries({ queryKey: ["account-access", orgId] });
+      qc.invalidateQueries({ queryKey: ["subscription", orgId] });
       window.location.href = initPoint;
     },
     onError: (err) => {
@@ -142,6 +153,10 @@ export function BillingPlanCard({ subscription, access, isOwner, orgId }: Billin
             // VERIFICAÇÃO CRÍTICA: Só mostra spinner se ESTE tier específico estiver carregando
             const isThisCardLoading = loadingTierCode === tier.code;
 
+            // 👇 Pega highlights completos do contrato para exibir como lista
+            const tierContract = TIER_CONTRACTS[tier.code];
+            const highlights = tierContract?.marketingHighlights ?? [];
+
             return (
               <div
                 key={tier.code}
@@ -157,6 +172,17 @@ export function BillingPlanCard({ subscription, access, isOwner, orgId }: Billin
                   <p className="text-xs text-muted-foreground leading-relaxed min-h-[32px]">
                     {tier.description}
                   </p>
+                  
+                  {/* 👇 Lista de Features Dinâmica do Contrato */}
+                  <ul className="mt-3 space-y-1.5">
+                    {highlights.slice(0, 4).map((highlight, idx) => (
+                      <li key={idx} className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                        <Check className="h-3 w-3 text-primary shrink-0 mt-0.5" />
+                        <span>{highlight}</span>
+                      </li>
+                    ))}
+                  </ul>
+
                   {/* Preço em linha única */}
                   <div className="my-5 flex items-baseline gap-1 whitespace-nowrap">
                     <span className="text-xs font-semibold text-muted-foreground">R$</span>

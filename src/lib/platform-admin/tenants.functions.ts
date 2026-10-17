@@ -3,6 +3,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { assertPlatformAdmin } from "@/integrations/supabase/admin-middleware";
 import { adminAction } from "@/lib/platform-admin.functions";
 import { resolveAccountAccess } from "@/lib/billing/account-access";
+import { getTierFeatures } from "@/lib/billing/tier-contracts"; // 👈 NOVO IMPORT
 import { z } from "zod";
 
 /**
@@ -89,11 +90,14 @@ export const listTenants = createServerFn({ method: "GET" })
         } catch (e) {
           // Fallback defensivo: se o helper falhar (org sem dados, p.ex.),
           // tratamos como active pra não quebrar a listagem.
+          // ✅ CORREÇÃO TS2345: Adicionados tierCode e features obrigatórios
           accessByOrg.set(o.id, {
             access_level: "full",
             effective_state: "active",
             days_left: null,
             trial_ends_at: null,
+            tierCode: "operacao",
+            features: getTierFeatures("operacao"),
           });
         }
       }),

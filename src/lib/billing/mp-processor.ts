@@ -19,6 +19,14 @@
  * 7. GAP G2 CORRIGIDO: `rejected`/`cancelled` no Authorized Payment agora 
  *    transicionam a subscription viva para `past_due`, em vez de serem ignorados 
  *    silenciosamente. Estados intermediários (`in_process`) apenas logam.
+ *
+ * HOTFIX FASE 4.7.A (Renovação Automática - 2026-10-16):
+ * 8. GAP G3 CORRIGIDO: Quando chega `subscription_authorized_payment` com 
+ *    status=`approved` E a subscription JÁ ESTAVA `active` (cenário de renovação 
+ *    recorrente sem webhook de preapproval), fazemos um REFRESH leve consultando 
+ *    GET /preapproval/{id} para obter o novo `next_payment_date` e atualizar 
+ *    current_period_start/end no banco. Sem isso, as datas ficariam congeladas 
+ *    na criação original para sempre.
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
@@ -421,15 +429,91 @@ async function handleAuthorizedPayment(ev: EventRow): Promise<ProcessOutcome> {
     return "retry";
   }
 
-  // Lógica Original: Reativação se aprovado
-  if (ap.status === "approved" && (sub as any).state !== "active") {
-    const { error } = await supabaseAdmin
-      .from("subscriptions")
-      .update({ state: "active", updated_at: new Date().toISOString() } as never)
-      .eq("id", (sub as any).id);
-    if (error) {
-      await markEvent(ev.id, "failed", `sub_reactivate:${error.message}`, ev.attempts);
-      return "failed";
+  // ========================================================================
+  // 🔥 HOTFIX GAP G3: RENOVACIÓN AUTOMÁTICA COM ATUALIZAÇÃO DE PERÍODOS
+  // ========================================================================
+  // Cenário: A subscription JÁ ESTAVA active (renovação recorrente normal).
+  // O MP cobrou a parcela nova e enviou este webhook de payment aprovado,
+  // MAS pode NÃO ter enviado o webhook de atualização do preapproval inteiro.
+  // Se dependermos só do preapproval webhook, as datas ficam congeladas.
+  // Solução: Refresh leve consultando GET /preapproval/{id} para pegar o
+  // novo next_payment_date fresco e atualizar current_period_start/end.
+  // ========================================================================
+  
+  if (ap.status === "approved") {
+    const wasAlreadyActive = (sub as any).state === "active";
+    
+    // CASO 1: Primeira aprovação pós-criação OU reativação após past_due
+    if (!wasAlreadyActive) {
+      const { error } = await supabaseAdmin
+        .from("subscriptions")
+        .update({ 
+          state: "active", 
+          updated_at: new Date().toISOString() 
+        } as never)
+        .eq("id", (sub as any).id);
+      
+      if (error) {
+        await markEvent(ev.id, "failed", `sub_reactivate:${error.message}`, ev.attempts);
+        return "failed";
+      }
+      
+      console.log("[mp-processor] authorized_payment_reactivated", {
+        apId,
+        preapprovalId,
+        previousState: (sub as any).state,
+      });
+    }
+    
+    // CASO 2: RENOVAÇÃO RECURRENTE NORMAL (já estava active)
+    // Precisamos atualizar os períodos derivando do preapproval fresco.
+    else {
+      try {
+        // Faz um GET rápido no preapproval para obter next_payment_date atualizado
+        const freshPull = await getPreapproval(preapprovalId, ev.live_mode);
+        
+        if (freshPull.next_payment_date) {
+          // Deriva início do novo ciclo: usa date_approved da parcela aprovada
+          // (é o momento exato em que o dinheiro caiu para este mês específico)
+          const periodStart = ap.date_approved ?? ap.date_of_creation ?? new Date().toISOString();
+          
+          const { error: updErr } = await supabaseAdmin
+            .from("subscriptions")
+            .update({
+              current_period_start: periodStart,
+              current_period_end: freshPull.next_payment_date,
+              updated_at: new Date().toISOString(),
+            } as never)
+            .eq("id", (sub as any).id);
+            
+          if (updErr) {
+            console.error("[mp-processor] renewal_period_update_failed", {
+              apId,
+              preapprovalId,
+              error: updErr.message,
+            });
+            // Não falha o evento inteiro por causa disso — o pagamento foi aprovado
+            // e a subscription continua active. Logamos para investigação futura.
+          } else {
+            console.log("[mp-processor] renewal_periods_updated_via_refresh", {
+              apId,
+              preapprovalId,
+              newPeriodStart: periodStart,
+              newPeriodEnd: freshPull.next_payment_date,
+            });
+          }
+        }
+      } catch (refreshErr) {
+        // Non-blocking failure: se o refresh do preapproval falhar (timeout/rate limit),
+        // mantemos a subscription como active sem atualizar as datas.
+        // O próximo webhook de preapproval (se vier) ou o cron diário de reconciliação
+        // corrigirão isso eventualmente.
+        console.warn("[mp-processor] renewal_refresh_non_blocking_failure", {
+          apId,
+          preapprovalId,
+          error: refreshErr instanceof Error ? refreshErr.message : String(refreshErr),
+        });
+      }
     }
   }
 

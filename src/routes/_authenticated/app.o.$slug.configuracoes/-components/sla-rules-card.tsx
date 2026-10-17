@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"; // 👈 Adicionado useQuery
 import { useServerFn } from "@tanstack/react-start";
-import { Timer } from "lucide-react";
+import { Timer, Lock } from "lucide-react"; // 👈 Adicionado Lock
 import { toast } from "sonner";
 import { updateSlaSettings } from "@/lib/orgs.functions";
 import { friendlyError } from "@/lib/friendly-error";
@@ -15,9 +15,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { InfoTip } from "@/components/info-tip";
+import { Badge } from "@/components/ui/badge"; // 👈 Adicionado Badge
+import { getAccountAccess } from "@/lib/billing/account-access"; // 👈 Import Account Access
+import { hasFeature } from "@/lib/billing/tier-contracts"; // 👈 Import Helper de Features
 
 /**
  * Card 3 (coluna direita): Prazos de SLA & monitoramento — AUTOSAVE.
+ * 
+ * FASE 4.7 ITEM 3 (Gate de Features):
+ * • Plano 'operacao': customSlaRules = false → Pode ligar/desligar SLA, 
+ *   mas NÃO pode alterar as horas (travado no padrão). Select desabilitado.
+ * • Planos 'crescimento'/'escala': customSlaRules = true → Controle total.
+ * 
  * Toggle e select salvam na hora (padrão de mercado); erro reverte o
  * valor local e avisa com toast. A regra mora no banco
  * (organizations.sla_enabled / sla_max_inactivity_hours) e é a fonte
@@ -36,8 +45,18 @@ export function SlaRulesCard({
 }) {
   const qc = useQueryClient();
   const updateFn = useServerFn(updateSlaSettings);
+  const accessFn = useServerFn(getAccountAccess); // 👈 Server Fn de Acesso
+  
   const [on, setOn] = useState(enabled);
   const [hours, setHours] = useState(maxHours);
+
+  // 👇 NOVA QUERY: Buscar acesso/features do tier atual
+  const { data: access } = useQuery({
+    queryKey: ["account-access", orgId],
+    queryFn: () => accessFn({ data: { orgId } }),
+    staleTime: 1000 * 60 * 5, // 5 min cache
+    retry: 0,
+  });
 
   const patch = useMutation({
     mutationFn: (p: { enabled?: boolean; maxInactivityHours?: number }) =>
@@ -57,6 +76,11 @@ export function SlaRulesCard({
   });
 
   const busy = patch.isPending;
+
+  // 👇 LÓGICA DE GATE: Verifica se o tier atual permite customizar SLA
+  const tierCode = access?.tierCode ?? "operacao";
+  const canCustomizeSla = hasFeature(tierCode, "customSlaRules");
+  const isHoursLocked = !canCustomizeSla;
 
   return (
     <div className="card-elevated space-y-3 p-4">
@@ -87,19 +111,36 @@ export function SlaRulesCard({
       </div>
 
       <div className={`space-y-2 transition-opacity ${on ? "" : "pointer-events-none opacity-50"}`}>
-        <label className="text-xs font-medium text-muted-foreground">
-          Tempo limite sem atualização
-        </label>
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium text-muted-foreground">
+            Tempo limite sem atualização
+          </label>
+          
+          {/* 👇 Badge de Bloqueio se tier não suportar customização */}
+          {isHoursLocked && (
+            <Badge variant="outline" className="h-5 px-1.5 text-[9px] font-bold uppercase tracking-wider border-amber-500/30 text-amber-500 bg-amber-500/10 gap-1">
+              <Lock className="h-2.5 w-2.5" />
+              Pro
+            </Badge>
+          )}
+        </div>
+
         <Select
           value={String(hours)}
-          disabled={busy}
+          disabled={busy || isHoursLocked} // 👈 Desabilita se locked
           onValueChange={(v) => {
+            if (isHoursLocked) {
+              toast.info("Faça upgrade de plano para personalizar o tempo do SLA.", {
+                description: "Vá em Configurações > Financeiro para ver os planos disponíveis.",
+              });
+              return;
+            }
             const h = Number(v);
             setHours(h);
             patch.mutate({ maxInactivityHours: h });
           }}
         >
-          <SelectTrigger className="h-9 w-full max-w-[220px] text-sm">
+          <SelectTrigger className={`h-9 w-full max-w-[220px] text-sm ${isHoursLocked ? "opacity-60 bg-muted/20" : ""}`}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -110,8 +151,12 @@ export function SlaRulesCard({
             ))}
           </SelectContent>
         </Select>
+        
         <p className="text-[11px] text-muted-foreground">
-          Ao ultrapassar este limite, a demanda atualiza o contador de alertas da equipe e entra na página de Alertas de SLA.
+          {isHoursLocked
+            ? "Personalização de tempo disponível nos planos Crescimento e Escala. Atualmente usando o padrão de 24h."
+            : "Ao ultrapassar este limite, a demanda atualiza o contador de alertas da equipe e entra na página de Alertas de SLA."
+          }
         </p>
       </div>
     </div>

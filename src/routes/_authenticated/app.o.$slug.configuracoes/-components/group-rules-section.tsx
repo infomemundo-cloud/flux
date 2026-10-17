@@ -1,20 +1,26 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { setAllowGroupIngest } from "@/lib/orgs.functions";
 import { friendlyError } from "@/lib/friendly-error";
 import { Switch } from "@/components/ui/switch";
 import { InfoTip } from "@/components/info-tip";
+import { Badge } from "@/components/ui/badge";
+import { Lock } from "lucide-react";
+import { getAccountAccess } from "@/lib/billing/account-access";
+import { hasFeature } from "@/lib/billing/tier-contracts"; // 👈 AGORA UTILIZADO CORRETAMENTE
 
 /**
  * Card de regras de atendimento em grupos (linguagem de gestor):
  * - Toggle "Atendimento em Grupos do WhatsApp" (default de produto: OFF);
- * - ATIVAR exige confirmação em modal com aviso de sobrecarga (grupos
- *   enviam mídias com frequência) e envia `acknowledged: true` — o
- *   servidor recusa ativar sem o ack (defesa em profundidade);
- * - DESATIVAR é imediato (ação segura, sem cerimônia);
- * - Persiste em organizations.allow_group_ingest (owner/admin no servidor).
+ * - ATIVAR exige confirmação em modal com aviso de sobrecarga;
+ * - DESATIVAR é imediato;
+ * - Persiste em organizations.allow_group_ingest.
+ * 
+ * FASE 4.7 ITEM 3 (Gate de Features):
+ * • Recurso EXCLUSIVO para plano 'escala'.
+ * • Planos 'operacao' e 'crescimento': Switch desabilitado + Badge ESCALA.
  */
 export function GroupRulesSection({
   orgId,
@@ -27,7 +33,17 @@ export function GroupRulesSection({
 }) {
   const qc = useQueryClient();
   const setFn = useServerFn(setAllowGroupIngest);
+  const accessFn = useServerFn(getAccountAccess);
+  
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // Query de Acesso (compartilha cache com outros cards da página)
+  const { data: access } = useQuery({
+    queryKey: ["account-access", orgId],
+    queryFn: () => accessFn({ data: { orgId } }),
+    staleTime: 1000 * 60 * 5,
+    retry: 0,
+  });
 
   const toggle = useMutation({
     mutationFn: (value: boolean) =>
@@ -35,8 +51,6 @@ export function GroupRulesSection({
         data: {
           orgId,
           enabled: value,
-          // Ack só faz sentido ao ATIVAR (o servidor exige); ao desativar
-          // vai undefined e o refine passa direto.
           acknowledged: value ? true : undefined,
         },
       }),
@@ -55,13 +69,23 @@ export function GroupRulesSection({
     },
   });
 
+  // 👇 LÓGICA DE GATE ESTRITA VIA CONTRATO CENTRALIZADO
+  const tierCode = access?.tierCode ?? "operacao";
+  const canUseGroups = hasFeature(tierCode, "groupIngestEnabled"); // ✅ Consulta correta ao contrato
+  const isLocked = !canUseGroups;
+
   function handleChange(v: boolean) {
+    if (v && isLocked) {
+      toast.info("Faça upgrade para o plano Escala para habilitar atendimento em grupos.", {
+        description: "Vá em Configurações > Financeiro para ver os planos disponíveis.",
+      });
+      return;
+    }
+    
     if (v) {
-      // Ativar = ação de alto impacto: confirmação com aviso de sobrecarga.
       setConfirmOpen(true);
       return;
     }
-    // Desativar = seguro: imediato.
     toggle.mutate(false);
   }
 
@@ -72,21 +96,34 @@ export function GroupRulesSection({
           <div className="flex items-center gap-1.5">
             <h3 className="text-sm font-semibold">Atendimento em Grupos do WhatsApp</h3>
             <InfoTip text="Quando ativado, conversas de grupos criam chamados com o nome do grupo e identificam o cliente que enviou a mensagem." />
+            
+            {/* Badge específico indicando o plano necessário */}
+            {isLocked && (
+              <Badge variant="outline" className="h-5 px-1.5 text-[9px] font-bold uppercase tracking-wider border-violet-500/30 text-violet-500 bg-violet-500/10 gap-1 ml-1">
+                <Lock className="h-2.5 w-2.5" />
+                Escala
+              </Badge>
+            )}
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Permitir que mensagens enviadas em grupos gerem chamados automaticamente na fila da equipe.
+            {isLocked
+              ? "Recurso exclusivo do plano Escala. Automatize triagem de mensagens de grupos diretamente na sua fila."
+              : "Permitir que mensagens enviadas em grupos gerem chamados automaticamente na fila da equipe."
+            }
           </p>
         </div>
+        
         <Switch
-          checked={enabled}
-          disabled={toggle.isPending}
+          checked={isLocked ? false : enabled}
+          disabled={toggle.isPending || isLocked}
           onCheckedChange={handleChange}
           aria-label="Atendimento em Grupos"
+          className={isLocked ? "opacity-50 cursor-not-allowed" : ""}
         />
       </div>
 
-      {/* Modal de confirmação de ativação (aviso de sobrecarga) */}
-      {confirmOpen && (
+      {/* Modal de confirmação (só abre se não estiver locked) */}
+      {confirmOpen && !isLocked && (
         <div
           role="dialog"
           aria-modal="true"
