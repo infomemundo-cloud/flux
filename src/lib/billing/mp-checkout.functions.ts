@@ -491,17 +491,47 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
           }
         }
 
-        if (err instanceof MpApiError) {
+                if (err instanceof MpApiError) {
+          const mpBody = err.body as
+            | { message?: unknown; cause?: unknown; error?: unknown }
+            | undefined;
+
+          const mpMessage =
+            typeof mpBody?.message === "string" ? mpBody.message : undefined;
+
+          const mpCause = Array.isArray(mpBody?.cause)
+            ? (
+                mpBody.cause as Array<{
+                  code?: unknown;
+                  cause_code?: unknown;
+                  description?: unknown;
+                }>
+              )
+                .map((c) => {
+                  const code = c?.code ?? c?.cause_code ?? "unknown";
+                  const description =
+                    typeof c?.description === "string" ? c.description : "";
+                  return description ? `${code}: ${description}` : String(code);
+                })
+                .join(" | ")
+            : undefined;
+
           console.error("[mp-checkout] tier_switch_mp_error", {
             orgId,
             transitionId,
             intentId,
             status: err.status,
             message: err.message,
+            mp_message: mpMessage ?? null,
+            mp_cause: mpCause ?? null,
+            mp_body: mpBody ?? null,
           });
 
+          const detail =
+            mpCause ?? mpMessage ?? mpBody?.error ?? "sem detalhes do MP";
+
           throw new Error(
-            `Falha ao iniciar troca no Mercado Pago (${err.status}). Tente novamente.`,
+            `Falha ao iniciar troca no Mercado Pago (${err.status}): ${detail}`,
           );
         }
 
