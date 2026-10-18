@@ -1,14 +1,15 @@
 /**
- * Server Functions de Checkout MP (create + cancel + get).
+ * Server Functions de Checkout MP (create + cancel + get + tier switch).
  *
  * Fase 4.7 Item 1 — Base da troca de tier:
- * • adiciona startTierSwitchCheckout para iniciar transição pendente;
- * • adiciona getPendingTierSwitch para a UI consultar troca em andamento;
- * • mantém createCheckoutSession, cancelSubscription e getCurrentSubscription intactos.
+ * • startTierSwitchCheckout cria transição + intent + preapproval via auto_recurring
+ *   (sem plan_id, para não exigir card_token_id) com external_reference = switch:<id>.
+ * • getPendingTierSwitch para a UI bloquear trocas concorrentes.
+ * • createCheckoutSession, cancelSubscription e getCurrentSubscription intactos.
  *
  * Regra de estabilidade:
- * - compra normal continua usando createCheckoutSession;
- * - troca de tier usa startTierSwitchCheckout apenas quando já existe assinatura viva;
+ * - compra normal continua usando createCheckoutSession (init_point do plano);
+ * - troca usa startTierSwitchCheckout apenas quando já existe assinatura viva;
  * - nenhuma assinatura antiga é cancelada antes da aprovação do novo preapproval.
  */
 
@@ -22,6 +23,7 @@ import {
   buildTierSwitchExternalReference,
   MpApiError,
 } from "./mp-api";
+import { TIER_CONTRACTS } from "./tier-contracts";
 
 const PLAN_IDS_TEST: Record<string, string> = {
   operacao: "2ae043b092704c96b1e67b4238295c43",
@@ -42,6 +44,27 @@ const SWITCH_EXPIRY_HOURS = 24;
 function getPlanId(tierCode: string, liveMode: boolean): string | undefined {
   const map = liveMode ? PLAN_IDS_PROD : PLAN_IDS_TEST;
   return map[tierCode];
+}
+
+/**
+ * Resolve a URL base pública do app para montar back_url do checkout de troca.
+ * Defensivo: retorna null se nenhuma env estiver configurada (back_url vira opcional).
+ */
+function resolveAppBaseUrl(): string | null {
+  const direct =
+    process.env.PUBLIC_APP_URL ??
+    process.env.APP_URL ??
+    process.env.NEXT_PUBLIC_APP_URL;
+
+  if (direct) return direct.replace(/\/+$/, "");
+
+  const vercelProd = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  if (vercelProd) return `https://${vercelProd}`;
+
+  const vercel = process.env.VERCEL_URL;
+  if (vercel) return `https://${vercel}`;
+
+  return null;
 }
 
 const CreateInputSchema = z.object({
@@ -140,8 +163,6 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
       initPoint,
     });
 
-    // 5) Registrar intenção de checkout (permite resolver org no webhook,
-    //    já que o init_point do plano não carrega external_reference=orgId)
     const { error: intentErr } = await supabaseAdmin
       .from("billing_checkout_intents")
       .insert({
@@ -260,24 +281,6 @@ export const getCurrentSubscription = createServerFn({ method: "GET" })
 // FASE 4.7 ITEM 1 — TROCA DE TIER
 // ============================================================================
 
-/**
- * Inicia uma troca de tier.
- *
- * Fluxo:
- * 1. valida owner/admin;
- * 2. localiza assinatura viva;
- * 3. impede troca para o mesmo tier;
- * 4. impede múltiplas transições pendentes;
- * 5. cria tier_transition pending;
- * 6. cria billing_checkout_intent vinculado à transição;
- * 7. cria novo preapproval no MP com external_reference = switch:<transition_id>;
- * 8. retorna initPoint para o usuário aprovar.
- *
- * Importante:
- * - a assinatura antiga NÃO é cancelada aqui;
- * - a assinatura antiga permanece active até a aprovação do novo preapproval;
- * - a troca efetiva acontecerá no processor via billing_complete_tier_switch().
- */
 export const startTierSwitchCheckout = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => SwitchInputSchema.parse(d))
@@ -292,6 +295,10 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
       await assertOwnerOrAdmin(orgId, userId);
 
       const liveMode = process.env.MP_ENV === "prod";
+
+      // planId ainda é usado como metadado do intent e para validar que o tier
+      // está configurado no ambiente. A CRIAÇÃO do preapproval NÃO o usa
+      // (auto_recurring), para evitar o 400 "card_token_id is required".
       const planId = getPlanId(targetTierCode, liveMode);
 
       if (!planId) {
@@ -299,6 +306,14 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
           `Plano '${targetTierCode}' não configurado para ambiente ${liveMode ? "produção" : "teste"}.`,
         );
       }
+
+      const tierContract = TIER_CONTRACTS[targetTierCode];
+
+      if (!tierContract) {
+        throw new Error(`Contrato de tier desconhecido: ${targetTierCode}`);
+      }
+
+      const transactionAmount = tierContract.priceCents / 100;
 
       const nowIso = new Date().toISOString();
 
@@ -324,9 +339,7 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
       }
 
       if (currentSub.plan_code === targetTierCode) {
-        throw new Error(
-          "Esta organização já está no plano selecionado.",
-        );
+        throw new Error("Esta organização já está no plano selecionado.");
       }
 
       const { data: existingPending, error: existingPendingErr } =
@@ -345,9 +358,29 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
       }
 
       if (existingPending) {
-        throw new Error(
-          "Já existe uma troca de plano em andamento.",
-        );
+        throw new Error("Já existe uma troca de plano em andamento.");
+      }
+
+      // back_url defensivo: melhora UX de retorno, mas nunca bloqueia a criação.
+      let backUrl: string | undefined;
+      try {
+        const base = resolveAppBaseUrl();
+        if (base) {
+          const { data: org } = await supabaseAdmin
+            .from("organizations")
+            .select("slug")
+            .eq("id", orgId)
+            .maybeSingle();
+
+          if (org?.slug) {
+            backUrl = `${base}/app/o/${org.slug}/configuracoes`;
+          }
+        }
+      } catch (e) {
+        console.warn("[mp-checkout] switch_backurl_resolve_warning", {
+          orgId,
+          error: e instanceof Error ? e.message : String(e),
+        });
       }
 
       let transitionId: string | null = null;
@@ -419,10 +452,14 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
         intentId = intent.id;
 
         const mp = await createPreapprovalForSwitch({
-          planId,
+          transactionAmount,
+          currencyId: "BRL",
+          frequency: 1,
+          frequencyType: "months",
           externalReference: buildTierSwitchExternalReference(transitionId),
           liveMode,
           reason: `Troca de plano para ${targetTierCode}`,
+          backUrl,
         });
 
         const { error: intentUpdateErr } = await supabaseAdmin
@@ -447,8 +484,10 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
           transitionId,
           intentId,
           targetTierCode,
+          transactionAmount,
           mpPreapprovalId: mp.id,
           liveMode,
+          hasBackUrl: Boolean(backUrl),
         });
 
         return {
@@ -491,7 +530,7 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
           }
         }
 
-                if (err instanceof MpApiError) {
+        if (err instanceof MpApiError) {
           const mpBody = err.body as
             | { message?: unknown; cause?: unknown; error?: unknown }
             | undefined;
@@ -540,18 +579,6 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
     },
   );
 
-/**
- * Consulta transição de tier pendente da organização.
- *
- * Usado pela UI para:
- * - bloquear novas trocas enquanto houver pendência;
- * - mostrar estado "troca em andamento";
- * - evitar múltiplas transições simultâneas.
- *
- * Considera pendente apenas:
- *   status = pending
- *   expires_at > now()
- */
 export const getPendingTierSwitch = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => PendingTierSwitchInputSchema.parse(d))
@@ -567,9 +594,7 @@ export const getPendingTierSwitch = createServerFn({ method: "GET" })
       .maybeSingle();
 
     if (membershipErr) {
-      throw new Error(
-        `Falha ao validar acesso: ${membershipErr.message}`,
-      );
+      throw new Error(`Falha ao validar acesso: ${membershipErr.message}`);
     }
 
     if (!membership) {

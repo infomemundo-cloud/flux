@@ -5,9 +5,11 @@
  * Seleção de token por live_mode (decisão 2026-10-08): false → TEST, true → PROD.
  *
  * Fase 4.7 Item 1 — Base da troca de tier:
- * • adiciona helper para criar preapproval de troca com external_reference identificável;
- * • adiciona helper para cancelar preapproval no MP;
- * • mantém getPreapproval original intacto.
+ * • createPreapprovalForSwitch usa auto_recurring (NÃO preapproval_plan_id),
+ *   porque o POST /preapproval com plan_id exige card_token_id (autorização direta).
+ *   Com auto_recurring o MP retorna init_point de checkout E preserva external_reference.
+ * • cancelPreapproval para o cancelamento legado pós-troca.
+ * • getPreapproval original intacto.
  */
 
 const MP_BASE = "https://api.mercadopago.com";
@@ -87,11 +89,6 @@ export async function getPreapproval(
  *
  * Formato:
  *   switch:<transition_id>
- *
- * Isso permite que o processor distinga:
- *   - compra normal;
- *   - evento da assinatura antiga;
- *   - novo preapproval criado exclusivamente para troca.
  */
 export const TIER_SWITCH_EXTERNAL_PREFIX = "switch:";
 
@@ -118,7 +115,11 @@ export function parseTierSwitchExternalReference(
 }
 
 export interface CreatePreapprovalForSwitchInput {
-  planId: string;
+  /** Valor em unidade monetária (ex.: 197 para R$197,00). Não em centavos. */
+  transactionAmount: number;
+  currencyId?: string;
+  frequency?: number;
+  frequencyType?: string;
   externalReference: string;
   liveMode: boolean;
   reason?: string;
@@ -135,10 +136,13 @@ export interface CreatePreapprovalForSwitchResult {
 /**
  * Cria um preapproval no Mercado Pago especificamente para troca de tier.
  *
- * Importante:
- * - este helper NÃO cancela a assinatura antiga;
- * - ele apenas cria o novo checkout/preapproval identificado por external_reference;
- * - a troca efetiva no banco acontecerá depois, via billing_complete_tier_switch().
+ * IMPORTANTE (correção 2026-10-18):
+ * - NÃO usa preapproval_plan_id. Com plan_id o MP tenta autorização imediata
+ *   e exige card_token_id (que não temos server-side) → 400.
+ * - Usa auto_recurring: o MP retorna init_point de checkout e preserva
+ *   external_reference = switch:<transition_id>, que é a âncora do processor.
+ * - O preço vem do TIER_CONTRACTS (fonte central), não do plano MP.
+ * - Este helper NÃO cancela a assinatura antiga.
  */
 export async function createPreapprovalForSwitch(
   input: CreatePreapprovalForSwitchInput,
@@ -152,14 +156,26 @@ export async function createPreapprovalForSwitch(
     );
   }
 
-  const body: Record<string, unknown> = {
-    preapproval_plan_id: input.planId,
-    external_reference: input.externalReference,
-  };
-
-  if (input.reason) {
-    body.reason = input.reason;
+  if (
+    typeof input.transactionAmount !== "number" ||
+    !Number.isFinite(input.transactionAmount) ||
+    input.transactionAmount <= 0
+  ) {
+    throw new MpApiError(0, "invalid_transaction_amount", {
+      transactionAmount: input.transactionAmount,
+    });
   }
+
+  const body: Record<string, unknown> = {
+    reason: input.reason ?? "Troca de plano",
+    external_reference: input.externalReference,
+    auto_recurring: {
+      frequency: input.frequency ?? 1,
+      frequency_type: input.frequencyType ?? "months",
+      transaction_amount: input.transactionAmount,
+      currency_id: input.currencyId ?? "BRL",
+    },
+  };
 
   if (input.backUrl) {
     body.back_url = input.backUrl;
@@ -230,13 +246,9 @@ export interface CancelPreapprovalResult {
 /**
  * Cancela um preapproval no Mercado Pago.
  *
- * Usado futuramente pelo cron/reconciliação para cancelar o preapproval antigo
- * depois que a troca de tier já foi concluída atomicamente no banco.
- *
  * Regra de segurança:
- * - 404 é tratado como ok/idempotente, porque se o recurso não existe mais,
- *   não há cobrança futura associada;
- * - demais erros propagam MpApiError para retry/controlado.
+ * - 404 é tratado como ok/idempotente;
+ * - demais erros propagam MpApiError para retry controlado.
  */
 export async function cancelPreapproval(
   input: CancelPreapprovalInput,

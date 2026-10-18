@@ -189,8 +189,22 @@ export async function completeTierSwitchForTransition(
     };
   }
 
-  const planCode =
+  // A criação da troca usa auto_recurring (sem preapproval_plan_id), então
+  // pull.preapproval_plan_id pode ser null. Fonte canônica do novo tier é
+  // tier_transitions.to_tier_code; plan_id é apenas fallback compatível.
+  let planCode: string | null =
     PLAN_ID_TO_TIER[String(pull.preapproval_plan_id ?? "").trim()] ?? null;
+
+  if (!planCode) {
+    const { data: tt } = await supabaseAdmin
+      .from("tier_transitions")
+      .select("to_tier_code")
+      .eq("id", normalizedTransitionId)
+      .maybeSingle();
+
+    planCode =
+      (tt as { to_tier_code?: string } | null)?.to_tier_code ?? null;
+  }
 
   if (!planCode) {
     return {
