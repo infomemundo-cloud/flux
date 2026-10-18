@@ -5,34 +5,23 @@
  *
  * CORREÇÃO 2026-10-12 (pós ciclo de testes compra+cancelamento):
  * ORDEM: subscription existente é a fonte da org; intent/UUID só para CRIAÇÃO.
- * (Eventos de ciclo de vida — cancelled/paused/renewal — não morrem mais em
- * org_unresolved_no_intent depois que o intent foi consumido.)
- *
- * sweepAuthorizedPayments DEFINIDO (estava chamado mas não existia).
- * applyPreapprovalTransition recebe o pull inteiro (status + períodos).
+ * sweepAuthorizedPayments DEFINIDO. applyPreapprovalTransition recebe o pull inteiro.
  * retry NÃO grava status='retry': mantém 'received' + attempts++ (zumbi-gate).
  * Claim condicional .eq('status','received') restaurado no mark final.
  *
  * ITEM 2 DA FASE 4.6 (Inadimplência - 2026-10-13):
- * GAP G1 CORRIGIDO: `paused` no Preapproval agora mapeia para `past_due`
- * (inadimplência real), não mais para `grace_period`. Isso permite bloqueio
- * imediato conforme política SaaS padrão quando o MP suspende por falha recorrente.
- *
- * GAP G2 CORRIGIDO: `rejected`/`cancelled` no Authorized Payment agora
- * transicionam a subscription viva para `past_due`, em vez de serem ignorados
- * silenciosamente. Estados intermediários (`in_process`) apenas logam.
+ * GAP G1: `paused` → `past_due`. GAP G2: `rejected`/`cancelled` no AP → `past_due`.
  *
  * HOTFIX FASE 4.7.A (Renovação Automática - 2026-10-16):
- * GAP G3 CORRIGIDO: Quando chega `subscription_authorized_payment` com
- * status=`approved` E a subscription JÁ ESTAVA `active` (cenário de renovação
- * recorrente sem webhook de preapproval), fazemos um REFRESH leve consultando
- * GET /preapproval/{id} para obter o novo `next_payment_date` e atualizar
- * current_period_start/end no banco. Sem isso, as datas ficariam congeladas
- * na criação original para sempre.
+ * GAP G3: AP approved com sub já active → refresh leve do preapproval para
+ * atualizar current_period_start/end.
  *
  * FASE 4.7 ITEM 1 (Troca de Tier - 2026-10-18):
- * • Detecta preapproval de troca via external_reference = switch:<transition_id>.
- * • Fallback: billing_checkout_intents.mp_preapproval_id + transition_id not null.
+ * • Detecta preapproval de troca por três caminhos, em ordem:
+ *     1. external_reference = switch:<transition_id>  (compatibilidade criação via API)
+ *     2. intent vinculado por mp_preapproval_id + transition_id not null
+ *     3. intent pendente por mp_plan_id + status pending + transition_id not null
+ *        ← este é o caminho da troca atual (mesmo mecanismo da primeira compra)
  * • Chama billing_complete_tier_switch(...) de forma atômica/idempotente.
  * • Eventos de troca NÃO caem no fluxo normal de upsert de subscription.
  * • Assinaturas antigas em canceled_by_upgrade nunca são reativadas por webhook.
@@ -59,7 +48,6 @@ interface EventRow {
   attempts: number;
 }
 
-// ✅ ATUALIZAÇÃO GAP G1/G2: Adicionado 'past_due' à união de tipos permitidos
 export interface SubscriptionPatch {
   state:
     | "active"
@@ -114,22 +102,28 @@ export function isFatalTierSwitchOutcome(outcome: string): boolean {
 /**
  * Resolve se um preapproval pertence a uma troca de tier.
  *
- * Caminho principal:
- *   external_reference = switch:<transition_id>
+ * Três caminhos, em ordem de especificidade:
+ *   1. external_reference = switch:<transition_id>  (criação via API, futuro)
+ *   2. intent já vinculado por mp_preapproval_id + transition_id not null
+ *      (pós-troca: billing_complete_tier_switch grava mp_preapproval_id no intent)
+ *   3. intent pendente por mp_plan_id + status pending + transition_id not null
+ *      ← CAMINHO DA TROCA ATUAL (mesma resolução da primeira compra)
  *
- * Fallback defensivo:
- *   billing_checkout_intents.mp_preapproval_id = pull.id
- *   AND transition_id IS NOT NULL
+ * O caminho 3 é o que destrava o fluxo sem POST /preapproval: o MP cria o
+ * preapproval via checkout do plano, o webhook chega, e o processor reconhece
+ * a troca pelo transition_id do intent pendente do mesmo mp_plan_id.
  */
 export async function resolveTierSwitchTransitionId(
   pull: PreapprovalPull,
 ): Promise<string | null> {
+  // 1. external_reference switch:<transition_id>
   const fromExternal = parseTierSwitchExternalReference(pull.external_reference);
   if (fromExternal) {
     return fromExternal;
   }
 
-  const { data, error } = await supabaseAdmin
+  // 2. intent vinculado por mp_preapproval_id + transition_id not null
+  const { data: byPreapproval, error: errByPreapproval } = await supabaseAdmin
     .from("billing_checkout_intents")
     .select("transition_id")
     .eq("mp_preapproval_id", pull.id)
@@ -138,27 +132,59 @@ export async function resolveTierSwitchTransitionId(
     .limit(1)
     .maybeSingle();
 
-  if (error) {
-    console.warn("[mp-processor] tier_switch_intent_lookup_error", {
+  if (errByPreapproval) {
+    console.warn("[mp-processor] tier_switch_intent_by_preapproval_error", {
       preapprovalId: pull.id,
-      error: error.message,
+      error: errByPreapproval.message,
     });
-    return null;
   }
 
-  const transitionId = (data as { transition_id?: unknown } | null)
+  const tidByPreapproval = (byPreapproval as { transition_id?: unknown } | null)
     ?.transition_id;
+  if (tidByPreapproval) {
+    return String(tidByPreapproval);
+  }
 
-  return transitionId ? String(transitionId) : null;
+  // 3. intent pendente por mp_plan_id + transition_id not null (troca atual)
+  const planId = String(pull.preapproval_plan_id ?? "").trim();
+  if (planId) {
+    const since = new Date(
+      Date.now() - INTENT_WINDOW_H * 60 * 60 * 1000,
+    ).toISOString();
+
+    const { data: byPlan, error: errByPlan } = await supabaseAdmin
+      .from("billing_checkout_intents")
+      .select("transition_id")
+      .eq("mp_plan_id", planId)
+      .eq("status", "pending")
+      .not("transition_id", "is", null)
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (errByPlan) {
+      console.warn("[mp-processor] tier_switch_intent_by_plan_error", {
+        planId,
+        error: errByPlan.message,
+      });
+    }
+
+    const tidByPlan = (byPlan as { transition_id?: unknown } | null)
+      ?.transition_id;
+    if (tidByPlan) {
+      return String(tidByPlan);
+    }
+  }
+
+  return null;
 }
 
 /**
  * Executa a conclusão atômica da troca de tier via função SQL.
- *
- * Importante:
- * - não recria a lógica de troca no TypeScript;
- * - a função SQL é a autoridade da transação;
- * - resultados de negócio são mapeados para outcomes observáveis.
+ * A função SQL é a autoridade da transação; resultados de negócio são
+ * mapeados para outcomes observáveis. O novo tier é resolvido por
+ * preapproval_plan_id (quando houver) com fallback em to_tier_code da transição.
  */
 export async function completeTierSwitchForTransition(
   pull: PreapprovalPull,
@@ -189,9 +215,9 @@ export async function completeTierSwitchForTransition(
     };
   }
 
-  // A criação da troca usa auto_recurring (sem preapproval_plan_id), então
-  // pull.preapproval_plan_id pode ser null. Fonte canônica do novo tier é
-  // tier_transitions.to_tier_code; plan_id é apenas fallback compatível.
+  // A criação da troca atual usa checkout do plano, então preapproval_plan_id
+  // vem setado e PLAN_ID_TO_TIER resolve direto. O fallback em to_tier_code
+  // cobre o cenário de criação via API sem plan_id (compatibilidade futura).
   let planCode: string | null =
     PLAN_ID_TO_TIER[String(pull.preapproval_plan_id ?? "").trim()] ?? null;
 
@@ -215,17 +241,17 @@ export async function completeTierSwitchForTransition(
   }
 
   const { data, error } = await supabaseAdmin.rpc(
-      "billing_complete_tier_switch",
-      {
-        p_transition_id: normalizedTransitionId,
-        p_new_mp_preapproval_id: String(pull.id),
-        p_new_plan_code: planCode,
-        p_period_start: pull.date_created ?? undefined,
-        p_period_end: pull.next_payment_date ?? undefined,
-        p_external_reference: pull.external_reference ?? undefined,
-        p_preapproval_plan_id: pull.preapproval_plan_id ?? undefined,
-      },
-    );
+    "billing_complete_tier_switch",
+    {
+      p_transition_id: normalizedTransitionId,
+      p_new_mp_preapproval_id: String(pull.id),
+      p_new_plan_code: planCode,
+      p_period_start: pull.date_created ?? undefined,
+      p_period_end: pull.next_payment_date ?? undefined,
+      p_external_reference: pull.external_reference ?? undefined,
+      p_preapproval_plan_id: pull.preapproval_plan_id ?? undefined,
+    },
+  );
 
   if (error) {
     const msg = error.message || "rpc_error";
@@ -287,10 +313,6 @@ export function applyPreapprovalTransition(
         current_period_end: pull.next_payment_date ?? null,
       };
 
-    // ✅ GAP G1 CORRIGIDO:
-    // Antes mapeava 'paused' -> 'grace_period'.
-    // Agora mapeia 'paused' -> 'past_due', pois o MP pausa principalmente
-    // por falha recorrente de cobrança ou inadimplência administrativa.
     case "paused":
       return { state: "past_due" };
 
@@ -301,7 +323,7 @@ export function applyPreapprovalTransition(
 
     case "pending":
     default:
-      return null; // transitório/desconhecido → não inventa estado
+      return null;
   }
 }
 
@@ -376,7 +398,6 @@ async function markEvent(
   attempts = 0,
 ) {
   if (outcome === "retry") {
-    // NÃO grava status='retry': mantém 'received' p/ cron/sweep re-puxarem.
     const next = attempts + 1;
 
     if (next > MAX_ATTEMPTS) {
@@ -418,12 +439,12 @@ async function markEvent(
   const { error } = await supabaseAdmin
     .from("billing_events")
     .update({
-      status: outcome, // processed | ignored | failed
+      status: outcome,
       error: outcome === "processed" ? null : info,
       processed_at: outcome === "processed" ? new Date().toISOString() : null,
     } as never)
     .eq("id", eventId)
-    .eq("status", "received"); // claim: só transiciona de received
+    .eq("status", "received");
 
   if (error) {
     console.error("[mp-processor] mark_error", {
@@ -474,7 +495,6 @@ async function sweepAuthorizedPayments(preapprovalId: string) {
     const apId = String((ev.payload as any)?.data?.id ?? "").trim();
     if (!apId) continue;
 
-    // Só processa se o AP pertence AO preapproval recém-ancorado.
     const probe = await pullAuthorizedPayment(apId, false).catch(() => null);
     if (!probe || String(probe.preapproval_id ?? "") !== preapprovalId) continue;
 
@@ -500,7 +520,6 @@ async function processSubscriptionPreapproval(
     return "failed";
   }
 
-  // (2) pull do recurso completo — ANTES de transicionar (D17)
   let pull: Pull;
   try {
     pull = (await getPreapproval(dataId, event.live_mode)) as Pull;
@@ -530,10 +549,9 @@ async function processSubscriptionPreapproval(
 
   // ========================================================================
   // FASE 4.7 ITEM 1 — RAMO DE TROCA DE TIER
-  // ========================================================================
-  // Se este preapproval pertence a uma tier_transition, a conclusão deve ser
-  // feita exclusivamente pela função SQL atômica billing_complete_tier_switch().
-  // Não podemos deixar cair no fluxo normal de upsert de subscription.
+  // Avaliado ANTES de buscar subscription existente, para que webhooks da
+  // nova subscription (já ativa pós-troca) caiam em already_completed e não
+  // re-processem como upsert normal.
   // ========================================================================
   const switchTransitionId = await resolveTierSwitchTransitionId(pull);
 
@@ -603,8 +621,7 @@ async function processSubscriptionPreapproval(
     return "ignored";
   }
 
-  // (3) ORDEM CORRETA: subscription existente é a fonte da org (eventos de
-  // ciclo de vida: cancelled/paused/renewal). Intent/UUID só para CRIAÇÃO.
+  // (3) ORDEM CORRETA: subscription existente é a fonte da org.
   const { data: existing } = await supabaseAdmin
     .from("subscriptions")
     .select("id, org_id, plan_code, state, cancel_requested_by_user")
@@ -613,11 +630,6 @@ async function processSubscriptionPreapproval(
 
   // ========================================================================
   // FASE 4.7 ITEM 1 — PROTEÇÃO CONTRA EVENTOS TARDIOS DA ASSINATURA ANTIGA
-  // ========================================================================
-  // Depois de uma troca concluída, a subscription antiga vira canceled_by_upgrade.
-  // Webhooks antigos do preapproval antigo podem chegar atrasados, principalmente
-  // se o cancelamento no MP ainda não foi confirmado. Esses eventos NÃO podem
-  // reativar nem sobrescrever a assinatura histórica.
   // ========================================================================
   if (existing && String((existing as any).state) === "canceled_by_upgrade") {
     console.warn("[mp-processor] historical_subscription_event_ignored", {
@@ -662,7 +674,6 @@ async function processSubscriptionPreapproval(
     }
   }
 
-  // (4) transição pura D17
   const patch = applyPreapprovalTransition(
     pull,
     Boolean((existing as any)?.cancel_requested_by_user),
@@ -803,7 +814,6 @@ async function handleAuthorizedPayment(
     .maybeSingle();
 
   if (!sub) {
-    // preapproval ainda não processado → retry (zumbi-gate limita tentativas)
     console.log("[mp-processor] authorized_payment_waiting_subscription", {
       apId,
       preapprovalId,
@@ -815,10 +825,6 @@ async function handleAuthorizedPayment(
 
   // ========================================================================
   // FASE 4.7 ITEM 1 — PROTEÇÃO CONTRA PAGAMENTO TARDIO DA ASSINATURA ANTIGA
-  // ========================================================================
-  // Se a subscription já foi substituída por troca de tier, pagamentos antigos
-  // do preapproval antigo não podem reativar, atualizar períodos nem transicionar
-  // a assinatura histórica.
   // ========================================================================
   if (String((sub as any).state) === "canceled_by_upgrade") {
     console.warn("[mp-processor] historical_authorized_payment_ignored", {
@@ -840,19 +846,11 @@ async function handleAuthorizedPayment(
   }
 
   // ========================================================================
-  // 🔥 HOTFIX GAP G3: RENOVAÇÃO AUTOMÁTICA COM ATUALIZAÇÃO DE PERÍODOS
-  // ========================================================================
-  // Cenário: A subscription JÁ ESTAVA active (renovação recorrente normal).
-  // O MP cobrou a parcela nova e enviou este webhook de payment aprovado,
-  // MAS pode NÃO ter enviado o webhook de atualização do preapproval inteiro.
-  // Se dependermos só do preapproval webhook, as datas ficam congeladas.
-  // Solução: Refresh leve consultando GET /preapproval/{id} para pegar o
-  // novo next_payment_date fresco e atualizar current_period_start/end.
+  // HOTFIX GAP G3: RENOVAÇÃO AUTOMÁTICA COM ATUALIZAÇÃO DE PERÍODOS
   // ========================================================================
   if (ap.status === "approved") {
     const wasAlreadyActive = (sub as any).state === "active";
 
-    // CASO 1: Primeira aprovação pós-criação OU reativação após past_due
     if (!wasAlreadyActive) {
       const { error } = await supabaseAdmin
         .from("subscriptions")
@@ -877,17 +875,11 @@ async function handleAuthorizedPayment(
         preapprovalId,
         previousState: (sub as any).state,
       });
-    }
-    // CASO 2: RENOVAÇÃO RECURRENTE NORMAL (já estava active)
-    // Precisamos atualizar os períodos derivando do preapproval fresco.
-    else {
+    } else {
       try {
-        // Faz um GET rápido no preapproval para obter next_payment_date atualizado
         const freshPull = await getPreapproval(preapprovalId, ev.live_mode);
 
         if (freshPull.next_payment_date) {
-          // Deriva início do novo ciclo: usa date_approved da parcela aprovada
-          // (é o momento exato em que o dinheiro caiu para este mês específico)
           const periodStart =
             ap.date_approved ?? ap.date_of_creation ?? new Date().toISOString();
 
@@ -906,8 +898,6 @@ async function handleAuthorizedPayment(
               preapprovalId,
               error: updErr.message,
             });
-            // Não falha o evento inteiro por causa disso — o pagamento foi aprovado
-            // e a subscription continua active. Logamos para investigação futura.
           } else {
             console.log("[mp-processor] renewal_periods_updated_via_refresh", {
               apId,
@@ -918,10 +908,6 @@ async function handleAuthorizedPayment(
           }
         }
       } catch (refreshErr) {
-        // Non-blocking failure: se o refresh do preapproval falhar (timeout/rate limit),
-        // mantemos a subscription como active sem atualizar as datas.
-        // O próximo webhook de preapproval (se vier) ou o cron diário de reconciliação
-        // corrigirão isso eventualmente.
         console.warn(
           "[mp-processor] renewal_refresh_non_blocking_failure",
           {
@@ -935,12 +921,7 @@ async function handleAuthorizedPayment(
         );
       }
     }
-  }
-  // ✅ GAP G2 CORRIGIDO: Tratamento de Falha de Pagamento
-  // Se o pagamento foi recusado ou cancelado pelo gateway, a assinatura
-  // deve entrar em inadimplência (past_due), desde que ainda esteja viva.
-  else if (["rejected", "cancelled", "canceled"].includes(ap.status)) {
-    // Só transiciona se a sub estiver em estado vivo (evita sobrescrever cancelamento manual)
+  } else if (["rejected", "cancelled", "canceled"].includes(ap.status)) {
     if (
       ["active", "grace_period", "past_due"].includes((sub as any).state)
     ) {
@@ -978,9 +959,7 @@ async function handleAuthorizedPayment(
         },
       );
     }
-  }
-  // Estados intermediários (in_process/pending): apenas logar, aguardar próximo webhook
-  else if (["in_process", "pending"].includes(ap.status)) {
+  } else if (["in_process", "pending"].includes(ap.status)) {
     console.log("[mp-processor] authorized_payment_in_process_pending", {
       apId,
       preapprovalId,
@@ -1038,7 +1017,7 @@ export async function processBillingEvent(
     return "ignored";
   }
 
-  if ((event as EventRow).status !== "received") return "ignored"; // já pego
+  if ((event as EventRow).status !== "received") return "ignored";
 
   try {
     return await processOne(event as EventRow);

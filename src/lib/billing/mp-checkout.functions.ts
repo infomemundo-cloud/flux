@@ -1,34 +1,28 @@
 /**
  * Server Functions de Checkout MP (create + cancel + get + tier switch).
  *
- * Fase 4.7 Item 1 — Base da troca de tier:
- * • startTierSwitchCheckout cria transição + intent + preapproval no modelo
- *   "assinatura sem plano associado / pagamento pendente" (auto_recurring,
- *   payer_email na raiz, status pending, external_reference = switch:<id>).
- * • getPendingTierSwitch para a UI bloquear trocas concorrentes.
- * • createCheckoutSession, cancelSubscription e getCurrentSubscription intactos.
+ * FASE 4.7 ITEM 1 — TROCA DE TIER (correção de abordagem 2026-10-18):
+ * • A troca NÃO cria preapproval via API (POST /preapproval). Isso exigia
+ *   payer_email, que no ambiente TEST precisa ser conta de teste do MP — e o
+ *   e-mail do usuário da plataforma é real → 400 "Both payer and collector
+ *   must be real or test users".
+ * • A troca passa a usar EXATAMENTE o mesmo mecanismo da primeira compra:
+ *   URL do plano MP + billing_checkout_intent. O MP cria o preapproval
+ *   internamente, com o test user já logado no checkout (cartão salvo).
+ * • A única diferença: o intent da troca carrega transition_id setado.
+ *   É esse marcador que faz o processor entrar no ramo de troca.
  *
  * Regra de estabilidade:
- * - compra normal continua usando createCheckoutSession (init_point do plano);
- * - troca usa startTierSwitchCheckout apenas quando já existe assinatura viva;
+ * - createCheckoutSession, cancelSubscription e getCurrentSubscription intactos;
+ * - a troca reutiliza a mesma URL do plano, mesmo checkout, mesmo payer;
  * - nenhuma assinatura antiga é cancelada antes da aprovação do novo preapproval.
- *
- * Sandbox (liveMode=false): o MP exige que o e-mail do checkout bata com
- * payer_email. Como o checkout sandbox é aprovado por um test user, definimos
- * MP_TEST_PAYER_EMAIL para sobrescrever o e-mail logado APENAS em teste.
- * Em produção o override nunca age.
  */
 
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import {
-  mpTokenFor,
-  createPreapprovalForSwitch,
-  buildTierSwitchExternalReference,
-  MpApiError,
-} from "./mp-api";
+import { mpTokenFor } from "./mp-api";
 import { TIER_CONTRACTS } from "./tier-contracts";
 
 const PLAN_IDS_TEST: Record<string, string> = {
@@ -50,27 +44,6 @@ const SWITCH_EXPIRY_HOURS = 24;
 function getPlanId(tierCode: string, liveMode: boolean): string | undefined {
   const map = liveMode ? PLAN_IDS_PROD : PLAN_IDS_TEST;
   return map[tierCode];
-}
-
-/**
- * Resolve a URL base pública do app para montar back_url do checkout de troca.
- * Defensivo: retorna null se nenhuma env estiver configurada (back_url vira opcional).
- */
-function resolveAppBaseUrl(): string | null {
-  const direct =
-    process.env.PUBLIC_APP_URL ??
-    process.env.APP_URL ??
-    process.env.NEXT_PUBLIC_APP_URL;
-
-  if (direct) return direct.replace(/\/+$/, "");
-
-  const vercelProd = process.env.VERCEL_PROJECT_PRODUCTION_URL;
-  if (vercelProd) return `https://${vercelProd}`;
-
-  const vercel = process.env.VERCEL_URL;
-  if (vercel) return `https://${vercel}`;
-
-  return null;
 }
 
 const CreateInputSchema = z.object({
@@ -287,6 +260,24 @@ export const getCurrentSubscription = createServerFn({ method: "GET" })
 // FASE 4.7 ITEM 1 — TROCA DE TIER
 // ============================================================================
 
+/**
+ * Inicia uma troca de tier.
+ *
+ * Mecanismo (idêntico à primeira compra):
+ * 1. valida owner/admin;
+ * 2. localiza assinatura viva;
+ * 3. impede troca para o mesmo tier;
+ * 4. impede múltiplas transições pendentes;
+ * 5. cria tier_transition pending;
+ * 6. cria billing_checkout_intent COM transition_id (o marcador da troca);
+ * 7. retorna a URL do plano MP (mesma tela, mesmo test user, mesmo cartão).
+ *
+ * Importante:
+ * - NÃO chama POST /preapproval (evita o 400 de payer_email real vs collector teste);
+ * - a assinatura antiga NÃO é cancelada aqui;
+ * - a troca efetiva acontece no processor via billing_complete_tier_switch(),
+ *   disparado quando o webhook resolve o intent com transition_id.
+ */
 export const startTierSwitchCheckout = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => SwitchInputSchema.parse(d))
@@ -301,11 +292,6 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
       await assertOwnerOrAdmin(orgId, userId);
 
       const liveMode = process.env.MP_ENV === "prod";
-
-      // planId ainda é usado como metadado do intent e para validar que o tier
-      // está configurado no ambiente. A CRIAÇÃO do preapproval NÃO o usa
-      // (auto_recurring / sem plano associado), para evitar o 400
-      // "card_token_id is required".
       const planId = getPlanId(targetTierCode, liveMode);
 
       if (!planId) {
@@ -314,13 +300,11 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
         );
       }
 
+      // Garante que o tier alvo existe no contrato central (consistência UI/gates).
       const tierContract = TIER_CONTRACTS[targetTierCode];
-
       if (!tierContract) {
         throw new Error(`Contrato de tier desconhecido: ${targetTierCode}`);
       }
-
-      const transactionAmount = tierContract.priceCents / 100;
 
       const nowIso = new Date().toISOString();
 
@@ -366,60 +350,6 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
 
       if (existingPending) {
         throw new Error("Já existe uma troca de plano em andamento.");
-      }
-
-      /**
-       * E-mail do pagador.
-       *
-       * Produção (liveMode=true): sempre o e-mail do usuário logado.
-       * Teste (liveMode=false): o MP exige que o e-mail do checkout bata com
-       * payer_email. Como o checkout sandbox é aprovado por um test user,
-       * permitimos override via MP_TEST_PAYER_EMAIL. Se não definido, cai para
-       * o e-mail logado com warning (pode falhar na aprovação por mismatch).
-       *
-       * Buscamos antes de criar transição/intent para não gerar lixo em falha.
-       */
-      const { data: authUser, error: authUserErr } =
-        await supabaseAdmin.auth.admin.getUserById(userId);
-
-      const payerEmail =
-        typeof authUser?.user?.email === "string"
-          ? authUser.user.email.trim()
-          : "";
-
-      if (!payerEmail) {
-        console.warn("[mp-checkout] switch_payer_email_unavailable", {
-          orgId,
-          userId,
-          liveMode,
-          authError: authUserErr?.message ?? null,
-        });
-
-        throw new Error(
-          "Não foi possível identificar o e-mail do pagador para iniciar a troca.",
-        );
-      }
-
-      // back_url defensivo: melhora UX de retorno, mas nunca bloqueia a criação.
-      let backUrl: string | undefined;
-      try {
-        const base = resolveAppBaseUrl();
-        if (base) {
-          const { data: org } = await supabaseAdmin
-            .from("organizations")
-            .select("slug")
-            .eq("id", orgId)
-            .maybeSingle();
-
-          if (org?.slug) {
-            backUrl = `${base}/app/o/${org.slug}/configuracoes`;
-          }
-        }
-      } catch (e) {
-        console.warn("[mp-checkout] switch_backurl_resolve_warning", {
-          orgId,
-          error: e instanceof Error ? e.message : String(e),
-        });
       }
 
       let transitionId: string | null = null;
@@ -468,6 +398,8 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
 
         transitionId = transition.id;
 
+        // Intent da troca: igual ao da primeira compra, MAS com transition_id.
+        // É esse marcador que o processor usa para entrar no ramo de troca.
         const { data: intent, error: intentErr } = await supabaseAdmin
           .from("billing_checkout_intents")
           .insert(
@@ -490,52 +422,30 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
 
         intentId = intent.id;
 
-        const mp = await createPreapprovalForSwitch({
-          transactionAmount,
-          currencyId: "BRL",
-          frequency: 1,
-          frequencyType: "months",
-          externalReference: buildTierSwitchExternalReference(transitionId),
-          liveMode,
-          reason: `Troca de plano para ${targetTierCode}`,
-          backUrl,
-          payerEmail,
-        });
-
-        const { error: intentUpdateErr } = await supabaseAdmin
-          .from("billing_checkout_intents")
-          .update({ mp_preapproval_id: mp.id } as never)
-          .eq("id", intentId);
-
-        if (intentUpdateErr) {
-          console.warn(
-            "[mp-checkout] switch_intent_preapproval_update_error",
-            {
-              intentId,
-              transitionId,
-              mpPreapprovalId: mp.id,
-              error: intentUpdateErr.message,
-            },
-          );
-        }
+        // Mesma URL da primeira compra. O MP cria o preapproval internamente,
+        // com o test user logado no checkout. Nenhum POST /preapproval nosso.
+        const baseUrl = "https://www.mercadopago.com.br";
+        const initPoint = `${baseUrl}/subscriptions/checkout?preapproval_plan_id=${encodeURIComponent(planId)}`;
 
         console.log("[mp-checkout] tier_switch_checkout_created", {
           orgId,
           transitionId,
           intentId,
           targetTierCode,
-          transactionAmount,
-          mpPreapprovalId: mp.id,
-          mpStatus: mp.status ?? null,
+          planId,
           liveMode,
-          hasBackUrl: Boolean(backUrl),
+          initPoint,
         });
 
         return {
-          initPoint: mp.initPoint,
+          initPoint,
           transitionId,
         };
       } catch (err) {
+        // Sem chamada externa após a criação do intent: o único ponto de falha
+        // residual é o próprio insert. Marcamos a transição como failed para
+        // não deixar pending órfão (o unique é só em pending, então não trava
+        // a org, mas mantém higiene).
         if (transitionId) {
           const { error: failTransitionErr } = await supabaseAdmin
             .from("tier_transitions")
@@ -569,67 +479,6 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
               },
             );
           }
-        }
-
-        /**
-         * Erros locais de validação do helper MP (status 0) não devem ser
-         * confundidos com recusa do Mercado Pago.
-         */
-        if (err instanceof MpApiError && err.status === 0) {
-          console.error("[mp-checkout] tier_switch_local_validation_error", {
-            orgId,
-            transitionId,
-            intentId,
-            message: err.message,
-          });
-
-          throw new Error(
-            `Falha ao preparar troca no Mercado Pago: ${err.message}`,
-          );
-        }
-
-        if (err instanceof MpApiError) {
-          const mpBody = err.body as
-            | { message?: unknown; cause?: unknown; error?: unknown }
-            | undefined;
-
-          const mpMessage =
-            typeof mpBody?.message === "string" ? mpBody.message : undefined;
-
-          const mpCause = Array.isArray(mpBody?.cause)
-            ? (
-                mpBody.cause as Array<{
-                  code?: unknown;
-                  cause_code?: unknown;
-                  description?: unknown;
-                }>
-              )
-                .map((c) => {
-                  const code = c?.code ?? c?.cause_code ?? "unknown";
-                  const description =
-                    typeof c?.description === "string" ? c.description : "";
-                  return description ? `${code}: ${description}` : String(code);
-                })
-                .join(" | ")
-            : undefined;
-
-          console.error("[mp-checkout] tier_switch_mp_error", {
-            orgId,
-            transitionId,
-            intentId,
-            status: err.status,
-            message: err.message,
-            mp_message: mpMessage ?? null,
-            mp_cause: mpCause ?? null,
-            mp_body: mpBody ?? null,
-          });
-
-          const detail =
-            mpCause ?? mpMessage ?? mpBody?.error ?? "sem detalhes do MP";
-
-          throw new Error(
-            `Falha ao iniciar troca no Mercado Pago (${err.status}): ${detail}`,
-          );
         }
 
         throw err;
