@@ -2,9 +2,9 @@
  * Server Functions de Checkout MP (create + cancel + get + tier switch).
  *
  * Fase 4.7 Item 1 — Base da troca de tier:
- * • startTierSwitchCheckout cria transição + intent + preapproval via auto_recurring
- *   (sem plan_id, para não exigir card_token_id) com payer.email e
- *   external_reference = switch:<transition_id>.
+ * • startTierSwitchCheckout cria transição + intent + preapproval no modelo
+ *   "assinatura sem plano associado / pagamento pendente" (auto_recurring,
+ *   payer_email na raiz, status pending, external_reference = switch:<id>).
  * • getPendingTierSwitch para a UI bloquear trocas concorrentes.
  * • createCheckoutSession, cancelSubscription e getCurrentSubscription intactos.
  *
@@ -12,6 +12,11 @@
  * - compra normal continua usando createCheckoutSession (init_point do plano);
  * - troca usa startTierSwitchCheckout apenas quando já existe assinatura viva;
  * - nenhuma assinatura antiga é cancelada antes da aprovação do novo preapproval.
+ *
+ * Sandbox (liveMode=false): o MP exige que o e-mail do checkout bata com
+ * payer_email. Como o checkout sandbox é aprovado por um test user, definimos
+ * MP_TEST_PAYER_EMAIL para sobrescrever o e-mail logado APENAS em teste.
+ * Em produção o override nunca age.
  */
 
 import { createServerFn } from "@tanstack/react-start";
@@ -299,7 +304,8 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
 
       // planId ainda é usado como metadado do intent e para validar que o tier
       // está configurado no ambiente. A CRIAÇÃO do preapproval NÃO o usa
-      // (auto_recurring), para evitar o 400 "card_token_id is required".
+      // (auto_recurring / sem plano associado), para evitar o 400
+      // "card_token_id is required".
       const planId = getPlanId(targetTierCode, liveMode);
 
       if (!planId) {
@@ -363,27 +369,50 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
       }
 
       /**
-       * O Mercado Pago exige payer.email no modo auto_recurring.
+       * E-mail do pagador.
+       *
+       * Produção (liveMode=true): sempre o e-mail do usuário logado.
+       * Teste (liveMode=false): o MP exige que o e-mail do checkout bata com
+       * payer_email. Como o checkout sandbox é aprovado por um test user,
+       * permitimos override via MP_TEST_PAYER_EMAIL. Se não definido, cai para
+       * o e-mail logado com warning (pode falhar na aprovação por mismatch).
+       *
        * Buscamos antes de criar transição/intent para não gerar lixo em falha.
        */
       const { data: authUser, error: authUserErr } =
         await supabaseAdmin.auth.admin.getUserById(userId);
 
-      const payerEmail =
+      const loggedEmail =
         typeof authUser?.user?.email === "string"
           ? authUser.user.email.trim()
           : "";
 
-      if (authUserErr || !payerEmail) {
+      const testPayerEmailOverride = !liveMode
+        ? String(process.env.MP_TEST_PAYER_EMAIL ?? "").trim()
+        : "";
+
+      const payerEmail = testPayerEmailOverride || loggedEmail;
+
+      if (!payerEmail) {
         console.warn("[mp-checkout] switch_payer_email_unavailable", {
           orgId,
           userId,
-          error: authUserErr?.message ?? null,
+          liveMode,
+          hasOverride: Boolean(testPayerEmailOverride),
+          authError: authUserErr?.message ?? null,
         });
 
         throw new Error(
-          "Não foi possível identificar o e-mail do usuário para iniciar a troca.",
+          "Não foi possível identificar o e-mail do pagador para iniciar a troca.",
         );
+      }
+
+      if (!liveMode && !testPayerEmailOverride) {
+        console.warn("[mp-checkout] switch_test_payer_email_fallback", {
+          orgId,
+          note:
+            "MP_TEST_PAYER_EMAIL não definido; usando e-mail logado. Em sandbox o checkout pode falhar por mismatch de e-mail se o comprador não tiver conta com este e-mail.",
+        });
       }
 
       // back_url defensivo: melhora UX de retorno, mas nunca bloqueia a criação.
@@ -512,9 +541,10 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
           targetTierCode,
           transactionAmount,
           mpPreapprovalId: mp.id,
+          mpStatus: mp.status ?? null,
           liveMode,
           hasBackUrl: Boolean(backUrl),
-          hasPayerEmail: true,
+          usedPayerEmailOverride: Boolean(testPayerEmailOverride),
         });
 
         return {

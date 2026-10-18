@@ -5,10 +5,13 @@
  * Seleção de token por live_mode (decisão 2026-10-08): false → TEST, true → PROD.
  *
  * Fase 4.7 Item 1 — Base da troca de tier:
- * • createPreapprovalForSwitch usa auto_recurring (NÃO preapproval_plan_id),
- *   porque o POST /preapproval com plan_id exige card_token_id (autorização direta).
- * • Com auto_recurring, o MP exige payer.email. Este helper envia payer.email.
- * • O MP retorna init_point de checkout e preserva external_reference = switch:<transition_id>.
+ * • createPreapprovalForSwitch usa o modelo "assinatura sem plano associado /
+ *   pagamento pendente" (POST /preapproval sem preapproval_plan_id).
+ * • Payload canônico confirmado pelo suporte MP (2026-10-18):
+ *     - payer_email NA RAIZ (não existe objeto payer nesse endpoint);
+ *     - status: "pending" (checkout hosted via init_point);
+ *     - auto_recurring com end_date;
+ *     - external_reference preservado no recurso (lido pelo processor via pull).
  * • cancelPreapproval para o cancelamento legado pós-troca.
  * • getPreapproval original intacto.
  */
@@ -41,13 +44,14 @@ export interface PreapprovalCreateResponse extends PreapprovalPull {
 }
 
 export class MpApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-    public body?: unknown,
-  ) {
+  public status: number;
+  public body: unknown;
+
+  constructor(status: number, message: string, body?: unknown) {
     super(message);
     this.name = "MpApiError";
+    this.status = status;
+    this.body = body;
   }
 }
 
@@ -85,12 +89,6 @@ export async function getPreapproval(
 // FASE 4.7 ITEM 1 — HELPERS DE TROCA DE TIER
 // ============================================================================
 
-/**
- * Prefixo usado para identificar que um preapproval pertence a uma troca de tier.
- *
- * Formato:
- *   switch:<transition_id>
- */
 export const TIER_SWITCH_EXTERNAL_PREFIX = "switch:";
 
 export function buildTierSwitchExternalReference(
@@ -115,8 +113,13 @@ export function parseTierSwitchExternalReference(
   return transitionId.length > 0 ? transitionId : null;
 }
 
+function defaultAutoRecurringEndDate(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + 5);
+  return d.toISOString();
+}
+
 export interface CreatePreapprovalForSwitchInput {
-  /** Valor em unidade monetária (ex.: 197 para R$197,00). Não em centavos. */
   transactionAmount: number;
   currencyId?: string;
   frequency?: number;
@@ -126,6 +129,7 @@ export interface CreatePreapprovalForSwitchInput {
   reason?: string;
   backUrl?: string;
   payerEmail: string;
+  autoRecurringEndDate?: string;
 }
 
 export interface CreatePreapprovalForSwitchResult {
@@ -135,17 +139,6 @@ export interface CreatePreapprovalForSwitchResult {
   raw: PreapprovalCreateResponse;
 }
 
-/**
- * Cria um preapproval no Mercado Pago especificamente para troca de tier.
- *
- * IMPORTANTE (correção 2026-10-18):
- * - NÃO usa preapproval_plan_id. Com plan_id o MP tenta autorização imediata
- *   e exige card_token_id (que não temos server-side) → 400.
- * - Usa auto_recurring + payer.email. Esse é o caminho que retorna init_point
- *   de checkout hosted e preserva external_reference.
- * - O preço vem do TIER_CONTRACTS (fonte central), não do plano MP.
- * - Este helper NÃO cancela a assinatura antiga.
- */
 export async function createPreapprovalForSwitch(
   input: CreatePreapprovalForSwitchInput,
 ): Promise<CreatePreapprovalForSwitchResult> {
@@ -162,9 +155,7 @@ export async function createPreapprovalForSwitch(
     typeof input.payerEmail === "string" ? input.payerEmail.trim() : "";
 
   if (!payerEmail || !payerEmail.includes("@")) {
-    throw new MpApiError(0, "payer_email_required", {
-      payerEmail: null,
-    });
+    throw new MpApiError(0, "payer_email_required", { payerEmail: null });
   }
 
   const externalReference =
@@ -188,17 +179,23 @@ export async function createPreapprovalForSwitch(
     });
   }
 
+  const endDate =
+    typeof input.autoRecurringEndDate === "string" &&
+    input.autoRecurringEndDate.trim()
+      ? input.autoRecurringEndDate.trim()
+      : defaultAutoRecurringEndDate();
+
   const body: Record<string, unknown> = {
     reason: input.reason ?? "Troca de plano",
     external_reference: externalReference,
-    payer: {
-      email: payerEmail,
-    },
+    payer_email: payerEmail,
+    status: "pending",
     auto_recurring: {
       frequency: input.frequency ?? 1,
       frequency_type: input.frequencyType ?? "months",
       transaction_amount: input.transactionAmount,
       currency_id: input.currencyId ?? "BRL",
+      end_date: endDate,
     },
   };
 
@@ -268,13 +265,6 @@ export interface CancelPreapprovalResult {
   raw?: unknown;
 }
 
-/**
- * Cancela um preapproval no Mercado Pago.
- *
- * Regra de segurança:
- * - 404 é tratado como ok/idempotente;
- * - demais erros propagam MpApiError para retry controlado.
- */
 export async function cancelPreapproval(
   input: CancelPreapprovalInput,
 ): Promise<CancelPreapprovalResult> {
