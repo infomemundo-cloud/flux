@@ -382,37 +382,22 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
       const { data: authUser, error: authUserErr } =
         await supabaseAdmin.auth.admin.getUserById(userId);
 
-      const loggedEmail =
+      const payerEmail =
         typeof authUser?.user?.email === "string"
           ? authUser.user.email.trim()
           : "";
-
-      const testPayerEmailOverride = !liveMode
-        ? String(process.env.MP_TEST_PAYER_EMAIL ?? "").trim()
-        : "";
-
-      const payerEmail = testPayerEmailOverride || loggedEmail;
 
       if (!payerEmail) {
         console.warn("[mp-checkout] switch_payer_email_unavailable", {
           orgId,
           userId,
           liveMode,
-          hasOverride: Boolean(testPayerEmailOverride),
           authError: authUserErr?.message ?? null,
         });
 
         throw new Error(
           "Não foi possível identificar o e-mail do pagador para iniciar a troca.",
         );
-      }
-
-      if (!liveMode && !testPayerEmailOverride) {
-        console.warn("[mp-checkout] switch_test_payer_email_fallback", {
-          orgId,
-          note:
-            "MP_TEST_PAYER_EMAIL não definido; usando e-mail logado. Em sandbox o checkout pode falhar por mismatch de e-mail se o comprador não tiver conta com este e-mail.",
-        });
       }
 
       // back_url defensivo: melhora UX de retorno, mas nunca bloqueia a criação.
@@ -544,7 +529,6 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
           mpStatus: mp.status ?? null,
           liveMode,
           hasBackUrl: Boolean(backUrl),
-          usedPayerEmailOverride: Boolean(testPayerEmailOverride),
         });
 
         return {
