@@ -3,7 +3,8 @@
  *
  * Fase 4.7 Item 1 — Base da troca de tier:
  * • startTierSwitchCheckout cria transição + intent + preapproval via auto_recurring
- *   (sem plan_id, para não exigir card_token_id) com external_reference = switch:<id>.
+ *   (sem plan_id, para não exigir card_token_id) com payer.email e
+ *   external_reference = switch:<transition_id>.
  * • getPendingTierSwitch para a UI bloquear trocas concorrentes.
  * • createCheckoutSession, cancelSubscription e getCurrentSubscription intactos.
  *
@@ -361,6 +362,30 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
         throw new Error("Já existe uma troca de plano em andamento.");
       }
 
+      /**
+       * O Mercado Pago exige payer.email no modo auto_recurring.
+       * Buscamos antes de criar transição/intent para não gerar lixo em falha.
+       */
+      const { data: authUser, error: authUserErr } =
+        await supabaseAdmin.auth.admin.getUserById(userId);
+
+      const payerEmail =
+        typeof authUser?.user?.email === "string"
+          ? authUser.user.email.trim()
+          : "";
+
+      if (authUserErr || !payerEmail) {
+        console.warn("[mp-checkout] switch_payer_email_unavailable", {
+          orgId,
+          userId,
+          error: authUserErr?.message ?? null,
+        });
+
+        throw new Error(
+          "Não foi possível identificar o e-mail do usuário para iniciar a troca.",
+        );
+      }
+
       // back_url defensivo: melhora UX de retorno, mas nunca bloqueia a criação.
       let backUrl: string | undefined;
       try {
@@ -460,6 +485,7 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
           liveMode,
           reason: `Troca de plano para ${targetTierCode}`,
           backUrl,
+          payerEmail,
         });
 
         const { error: intentUpdateErr } = await supabaseAdmin
@@ -488,6 +514,7 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
           mpPreapprovalId: mp.id,
           liveMode,
           hasBackUrl: Boolean(backUrl),
+          hasPayerEmail: true,
         });
 
         return {
@@ -528,6 +555,23 @@ export const startTierSwitchCheckout = createServerFn({ method: "POST" })
               },
             );
           }
+        }
+
+        /**
+         * Erros locais de validação do helper MP (status 0) não devem ser
+         * confundidos com recusa do Mercado Pago.
+         */
+        if (err instanceof MpApiError && err.status === 0) {
+          console.error("[mp-checkout] tier_switch_local_validation_error", {
+            orgId,
+            transitionId,
+            intentId,
+            message: err.message,
+          });
+
+          throw new Error(
+            `Falha ao preparar troca no Mercado Pago: ${err.message}`,
+          );
         }
 
         if (err instanceof MpApiError) {

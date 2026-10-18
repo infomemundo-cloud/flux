@@ -7,7 +7,8 @@
  * Fase 4.7 Item 1 — Base da troca de tier:
  * • createPreapprovalForSwitch usa auto_recurring (NÃO preapproval_plan_id),
  *   porque o POST /preapproval com plan_id exige card_token_id (autorização direta).
- *   Com auto_recurring o MP retorna init_point de checkout E preserva external_reference.
+ * • Com auto_recurring, o MP exige payer.email. Este helper envia payer.email.
+ * • O MP retorna init_point de checkout e preserva external_reference = switch:<transition_id>.
  * • cancelPreapproval para o cancelamento legado pós-troca.
  * • getPreapproval original intacto.
  */
@@ -124,6 +125,7 @@ export interface CreatePreapprovalForSwitchInput {
   liveMode: boolean;
   reason?: string;
   backUrl?: string;
+  payerEmail: string;
 }
 
 export interface CreatePreapprovalForSwitchResult {
@@ -139,8 +141,8 @@ export interface CreatePreapprovalForSwitchResult {
  * IMPORTANTE (correção 2026-10-18):
  * - NÃO usa preapproval_plan_id. Com plan_id o MP tenta autorização imediata
  *   e exige card_token_id (que não temos server-side) → 400.
- * - Usa auto_recurring: o MP retorna init_point de checkout e preserva
- *   external_reference = switch:<transition_id>, que é a âncora do processor.
+ * - Usa auto_recurring + payer.email. Esse é o caminho que retorna init_point
+ *   de checkout hosted e preserva external_reference.
  * - O preço vem do TIER_CONTRACTS (fonte central), não do plano MP.
  * - Este helper NÃO cancela a assinatura antiga.
  */
@@ -156,6 +158,26 @@ export async function createPreapprovalForSwitch(
     );
   }
 
+  const payerEmail =
+    typeof input.payerEmail === "string" ? input.payerEmail.trim() : "";
+
+  if (!payerEmail || !payerEmail.includes("@")) {
+    throw new MpApiError(0, "payer_email_required", {
+      payerEmail: null,
+    });
+  }
+
+  const externalReference =
+    typeof input.externalReference === "string"
+      ? input.externalReference.trim()
+      : "";
+
+  if (!externalReference) {
+    throw new MpApiError(0, "external_reference_required", {
+      externalReference: null,
+    });
+  }
+
   if (
     typeof input.transactionAmount !== "number" ||
     !Number.isFinite(input.transactionAmount) ||
@@ -168,7 +190,10 @@ export async function createPreapprovalForSwitch(
 
   const body: Record<string, unknown> = {
     reason: input.reason ?? "Troca de plano",
-    external_reference: input.externalReference,
+    external_reference: externalReference,
+    payer: {
+      email: payerEmail,
+    },
     auto_recurring: {
       frequency: input.frequency ?? 1,
       frequency_type: input.frequencyType ?? "months",
