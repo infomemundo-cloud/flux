@@ -5,6 +5,15 @@
  * CORREÇÃO DE BUG: Isola o estado de loading por card usando useState<string|null>.
  * Antes, uma única useMutation compartilhava isPending entre os 3 bots, causando
  * spinners sincrônicos indesejados. Agora, apenas o botão clicado gira.
+ *
+ * FASE 4.7 ITEM 1 (UX de Troca de Tier — padrão de mercado):
+ * • Rótulo direcional derivado do preço (TIER_CONTRACTS.priceCents), nunca hardcoded:
+ *   alvo mais caro → "Upgrade"; alvo mais barato → "Downgrade"; igual → "Plano Ativo".
+ * • Downgrade tem fricção intencional: confirm enumerando features/limites perdidos
+ *   (diff entre contratos) + aviso de cobrança imediata (nosso modelo substitui a
+ *   cobrança atual neste ciclo; não agenda para o fim do período).
+ * • CTA de downgrade é visualmente menos proeminente (variant outline).
+ * • pendingSwitch continua bloqueando todas as ações concorrentes.
  */
 import {
   CheckCircle2,
@@ -100,7 +109,9 @@ const HISTORICAL_SUBSCRIPTION_STATES: readonly SubscriptionState[] = [
 
 function isLiveSubscription(
   subscription: SubscriptionLike | null,
-): subscription is SubscriptionLike & { state: (typeof LIVE_SUBSCRIPTION_STATES)[number] } {
+): subscription is SubscriptionLike & {
+  state: (typeof LIVE_SUBSCRIPTION_STATES)[number];
+} {
   return Boolean(
     subscription &&
       (LIVE_SUBSCRIPTION_STATES as readonly SubscriptionState[]).includes(
@@ -109,7 +120,9 @@ function isLiveSubscription(
   );
 }
 
-function isHistoricalSubscription(subscription: SubscriptionLike | null): boolean {
+function isHistoricalSubscription(
+  subscription: SubscriptionLike | null,
+): boolean {
   return Boolean(
     subscription &&
       (HISTORICAL_SUBSCRIPTION_STATES as readonly SubscriptionState[]).includes(
@@ -121,6 +134,90 @@ function isHistoricalSubscription(subscription: SubscriptionLike | null): boolea
 function findTierDefinition(code: string | null | undefined) {
   if (!code) return null;
   return TIERS.find((t) => t.code === (code as TierCode)) ?? null;
+}
+
+// ============================================================================
+// FASE 4.7 ITEM 1 — DIREÇÃO DA TROCA (UPGRADE / DOWNGRADE)
+// ============================================================================
+
+type SwitchDirection = "upgrade" | "downgrade";
+
+/**
+ * Direção calculada pelo preço do contrato (fonte única de verdade).
+ * Nunca derivada da posição do card no grid.
+ * Fallback seguro: se algum contrato faltar, trata como upgrade
+ * (comportamento anterior, não bloqueia a troca).
+ */
+function getSwitchDirection(
+  currentTierCode: string,
+  targetTierCode: string,
+): SwitchDirection {
+  const current = TIER_CONTRACTS[currentTierCode];
+  const target = TIER_CONTRACTS[targetTierCode];
+
+  if (!current || !target) return "upgrade";
+
+  return target.priceCents > current.priceCents ? "upgrade" : "downgrade";
+}
+
+function formatLimit(value: number | null): string {
+  if (value === null || value === Infinity) return "ilimitado";
+  return String(value);
+}
+
+/**
+ * Diff de perdas para o confirm de downgrade.
+ * Compara flags booleanas e limites quantitativos entre os contratos.
+ * Retorna lista legível do que a org perde ao descer de tier.
+ */
+function getDowngradeLosses(
+  fromTierCode: string,
+  toTierCode: string,
+): string[] {
+  const from = TIER_CONTRACTS[fromTierCode];
+  const to = TIER_CONTRACTS[toTierCode];
+
+  if (!from || !to) return [];
+
+  const losses: string[] = [];
+
+  if (from.aiAgentEnabled && !to.aiAgentEnabled) losses.push("Agente IA");
+  if (from.customSlaRules && !to.customSlaRules)
+    losses.push("Regras de SLA personalizadas");
+  if (from.advancedAutoAssign && !to.advancedAutoAssign)
+    losses.push("Auto-atribuição inteligente");
+  if (from.advancedAnalytics && !to.advancedAnalytics)
+    losses.push("Analytics avançado");
+  if (from.prioritySupport && !to.prioritySupport)
+    losses.push("Suporte prioritário");
+  if (from.groupIngestEnabled && !to.groupIngestEnabled)
+    losses.push("Automação de grupos do WhatsApp");
+
+  if (to.maxTeamMembers < from.maxTeamMembers)
+    losses.push(
+      `Operadores: de ${formatLimit(from.maxTeamMembers)} para ${formatLimit(to.maxTeamMembers)}`,
+    );
+
+  if (to.maxWhatsappChannels < from.maxWhatsappChannels)
+    losses.push(
+      `Canais WhatsApp: de ${formatLimit(from.maxWhatsappChannels)} para ${formatLimit(to.maxWhatsappChannels)}`,
+    );
+
+  if (from.maxActiveDemandas === null && to.maxActiveDemandas !== null) {
+    losses.push(
+      `Demandas ativas: de ilimitado para ${formatLimit(to.maxActiveDemandas)}`,
+    );
+  } else if (
+    from.maxActiveDemandas !== null &&
+    to.maxActiveDemandas !== null &&
+    to.maxActiveDemandas < from.maxActiveDemandas
+  ) {
+    losses.push(
+      `Demandas ativas: de ${formatLimit(from.maxActiveDemandas)} para ${formatLimit(to.maxActiveDemandas)}`,
+    );
+  }
+
+  return losses;
 }
 
 export function BillingPlanCard({
@@ -215,6 +312,37 @@ export function BillingPlanCard({
     },
   });
 
+  /**
+   * Clique em troca com fricção direcional:
+   * - upgrade: segue direto (conversão sem atrito);
+   * - downgrade: confirm enumerando perdas + aviso de cobrança imediata.
+   */
+  const handleSwitchClick = (targetCode: TierCode) => {
+    const currentCode = subscription?.plan_code;
+    if (!currentCode) return;
+
+    const direction = getSwitchDirection(currentCode, targetCode);
+
+    if (direction === "downgrade") {
+      const targetName = findTierDefinition(targetCode)?.name ?? targetCode;
+      const losses = getDowngradeLosses(currentCode, targetCode);
+
+      const lossList = losses.length
+        ? losses.map((l) => `• ${l}`).join("\n")
+        : "• Nenhum recurso adicional será perdido.";
+
+      const message =
+        `Mudar para ${targetName} (downgrade)\n\n` +
+        `O que você perde ao mudar:\n${lossList}\n\n` +
+        `A mudança é imediata: a cobrança atual é substituída agora e o novo valor passa a valer neste ciclo.\n\n` +
+        `Confirmar downgrade?`;
+
+      if (!confirm(message)) return;
+    }
+
+    switchMut.mutate(targetCode);
+  };
+
   const showPricingTable =
     !subscription ||
     isOwner ||
@@ -303,6 +431,16 @@ export function BillingPlanCard({
                 !pendingSwitchActive &&
                 subscription.plan_code !== tier.code,
             );
+
+            /**
+             * Direção da troca para este card (só relevante quando canSwitch).
+             * upgrade  → CTA proeminente, sem fricção;
+             * downgrade → CTA outline + confirm com perdas.
+             */
+            const direction: SwitchDirection | null =
+              canSwitch && subscription
+                ? getSwitchDirection(subscription.plan_code, tier.code)
+                : null;
 
             const isHighlighted = tier.code === "crescimento";
             const isThisCardLoading = loadingTierCode === tier.code;
@@ -398,12 +536,20 @@ export function BillingPlanCard({
                   ) : canSwitch ? (
                     <div className="space-y-2">
                       <p className="text-[11px] text-muted-foreground text-center font-medium">
-                        Evolua sua operação instantaneamente
+                        {direction === "downgrade"
+                          ? "Ajuste ao tamanho da sua operação"
+                          : "Evolua sua operação instantaneamente"}
                       </p>
                       <Button
-                        variant={isHighlighted ? "default" : "outline"}
+                        variant={
+                          direction === "downgrade"
+                            ? "outline"
+                            : isHighlighted
+                              ? "default"
+                              : "outline"
+                        }
                         className="w-full text-xs font-semibold rounded-lg h-9 px-4 shadow-sm"
-                        onClick={() => switchMut.mutate(tier.code)}
+                        onClick={() => handleSwitchClick(tier.code)}
                         disabled={
                           !isOwner || isThisCardLoading || pendingSwitchActive
                         }
@@ -411,7 +557,9 @@ export function BillingPlanCard({
                         {isThisCardLoading ? (
                           <Clock className="mr-1.5 h-3.5 w-3.5 animate-spin shrink-0" />
                         ) : null}
-                        <span>Upgrade</span>
+                        <span>
+                          {direction === "downgrade" ? "Downgrade" : "Upgrade"}
+                        </span>
                       </Button>
                     </div>
                   ) : (
