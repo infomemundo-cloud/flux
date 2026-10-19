@@ -782,53 +782,66 @@ export type Database = {
       invoices: {
         Row: {
           amount_cents: number
+          billing_event_id: string | null
           created_at: string
           currency: string
           due_at: string | null
           failure_reason: string | null
           id: string
-          mp_payment_id: string | null
+          mp_payment_id: string
+          mp_preapproval_id: string | null
           org_id: string
           paid_at: string | null
           period_end: string | null
           period_start: string | null
           status: Database["public"]["Enums"]["invoice_status"]
-          subscription_id: string | null
+          subscription_id: string
           updated_at: string
         }
         Insert: {
           amount_cents: number
+          billing_event_id?: string | null
           created_at?: string
           currency?: string
           due_at?: string | null
           failure_reason?: string | null
           id?: string
-          mp_payment_id?: string | null
+          mp_payment_id: string
+          mp_preapproval_id?: string | null
           org_id: string
           paid_at?: string | null
           period_end?: string | null
           period_start?: string | null
           status?: Database["public"]["Enums"]["invoice_status"]
-          subscription_id?: string | null
+          subscription_id: string
           updated_at?: string
         }
         Update: {
           amount_cents?: number
+          billing_event_id?: string | null
           created_at?: string
           currency?: string
           due_at?: string | null
           failure_reason?: string | null
           id?: string
-          mp_payment_id?: string | null
+          mp_payment_id?: string
+          mp_preapproval_id?: string | null
           org_id?: string
           paid_at?: string | null
           period_end?: string | null
           period_start?: string | null
           status?: Database["public"]["Enums"]["invoice_status"]
-          subscription_id?: string | null
+          subscription_id?: string
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "invoices_billing_event_id_fkey"
+            columns: ["billing_event_id"]
+            isOneToOne: false
+            referencedRelation: "billing_events"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "invoices_org_id_fkey"
             columns: ["org_id"]

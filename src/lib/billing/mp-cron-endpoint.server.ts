@@ -23,7 +23,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 // Import direto seguro neste contexto (.server.ts não vaza pro client)
 import { processPendingEvents } from "./mp-processor";
 import { reconcilePreapprovalsBatch } from "./mp-reconcile-batch.server";
-import { cancelPreapproval, MpApiError } from "./mp-api";
+import { cancelPreapproval, MpApiError, searchAuthorizedPayments } from "./mp-api";
 
 // ============================================================================
 // FASE 4.7 ITEM 1 — MANUTENÇÃO DE TIER TRANSITIONS
@@ -38,6 +38,13 @@ interface TierSwitchMaintenanceTally {
   legacy_canceled: number;
   legacy_failed: number;
   legacy_needs_manual: number;
+  errors: number;
+}
+
+interface InvoiceReconcileTally {
+  scanned: number;
+  created: number;
+  updated: number;
   errors: number;
 }
 
@@ -352,6 +359,142 @@ async function runTierSwitchMaintenance(): Promise<TierSwitchMaintenanceTally> {
   return tally;
 }
 
+/**
+ * FASE 4.8 — Reconciliação de Faturas (Invoices)
+ * 
+ * Busca authorized_payments do MP para todas as subscriptions vivas
+ * e faz upsert idempotente na tabela invoices.
+ * 
+ * Regras:
+ * - Âncora de idempotência: mp_payment_id (UNIQUE)
+ * - Ligação com billing_event quando possível
+ * - Mapeamento de status: approved→paid, rejected/cancelled→failed, in_process/pending→processing
+ * - Não insere se subscription não existir (evita órfãos)
+ */
+async function reconcileInvoicesBatch(): Promise<InvoiceReconcileTally> {
+  const tally: InvoiceReconcileTally = {
+    scanned: 0,
+    created: 0,
+    updated: 0,
+    errors: 0,
+  };
+
+  // 1. Buscar todas as subscriptions vivas
+  const { data: subs, error: subsErr } = await supabaseAdmin
+    .from("subscriptions")
+    .select("id, org_id, mp_preapproval_id, current_period_start, current_period_end")
+    .in("state", ["active", "grace_period", "past_due"]);
+
+  if (subsErr || !subs) {
+    console.error("[mp-cron] invoices_subs_query_error", subsErr?.message);
+    tally.errors++;
+    return tally;
+  }
+
+  const liveMode = process.env.MP_ENV === "prod";
+
+  // 2. Para cada subscription, puxar authorized_payments do MP
+  for (const sub of subs) {
+    if (!sub.mp_preapproval_id) continue;
+
+    try {
+      const response = await searchAuthorizedPayments(
+        sub.mp_preapproval_id,
+        liveMode,
+        0,
+        50,
+      );
+
+      tally.scanned += response.results.length;
+
+      // 3. Upsert idempotente para cada pagamento
+      for (const ap of response.results) {
+        const mpPaymentId = String(ap.id);
+        const amountCents = Math.round((ap.transaction_amount ?? 0) * 100);
+        const paidAt = ap.date_approved ?? ap.date_of_creation ?? null;
+        const status = mapMpStatusToInvoiceStatus(ap.status) as 
+          "scheduled" | "processing" | "retrying" | "paid" | "failed";
+
+        // Buscar billing_event correspondente (se existir)
+        const { data: event } = await supabaseAdmin
+          .from("billing_events")
+          .select("id")
+          .eq("topic", "subscription_authorized_payment")
+          .eq("payload->data->>id", mpPaymentId)
+          .maybeSingle();
+
+        // Upsert idempotente (âncora: mp_payment_id)
+        const { error: upsertErr, data: upsertData } = await supabaseAdmin
+          .from("invoices")
+          .upsert(
+            {
+              org_id: sub.org_id,
+              subscription_id: sub.id,
+              mp_payment_id: mpPaymentId,
+              mp_preapproval_id: sub.mp_preapproval_id,
+              billing_event_id: event?.id ?? null,
+              amount_cents: amountCents,
+              currency: ap.currency_id ?? "BRL",
+              status,
+              paid_at: paidAt ? new Date(paidAt).toISOString() : null,
+              period_start: sub.current_period_start,
+              period_end: sub.current_period_end,
+            },
+            { onConflict: "mp_payment_id" },
+          )
+          .select("id");
+
+        const count = upsertData?.length ?? 0;
+
+        if (upsertErr) {
+          console.error("[mp-cron] invoice_upsert_error", {
+            mpPaymentId,
+            error: upsertErr.message,
+          });
+          tally.errors++;
+        } else {
+          // Se count > 0, foi insert; senão foi update
+          if (count && count > 0) {
+            tally.created++;
+          } else {
+            tally.updated++;
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[mp-cron] invoices_reconcile_error", {
+        subscriptionId: sub.id,
+        preapprovalId: sub.mp_preapproval_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      tally.errors++;
+    }
+  }
+
+  return tally;
+}
+
+/**
+ * Mapeia status do MP para enum local de invoice_status.
+ */
+function mapMpStatusToInvoiceStatus(
+  mpStatus: string,
+): "scheduled" | "processing" | "retrying" | "paid" | "failed" {
+  switch (mpStatus) {
+    case "approved":
+      return "paid";
+    case "rejected":
+    case "cancelled":
+    case "canceled":
+      return "failed";
+    case "in_process":
+    case "pending":
+      return "processing";
+    default:
+      return "scheduled";
+  }
+}
+
 // ============================================================================
 // HANDLER PRINCIPAL DO CRON
 // ============================================================================
@@ -453,12 +596,32 @@ export async function handleCronTrigger(request: Request): Promise<Response> {
       };
     }
 
+    // --- FASE 4: Reconciliação de Faturas (Fase 4.8) ---
+    let invoicesResult: InvoiceReconcileTally = {
+      scanned: 0,
+      created: 0,
+      updated: 0,
+      errors: 0,
+    };
+
+    try {
+      invoicesResult = await reconcileInvoicesBatch();
+      console.log(
+        "[mp-cron] 🧾 INVOICES_RECONCILIATION_COMPLETED",
+        invoicesResult,
+      );
+    } catch (invErr) {
+      console.error("[mp-cron] ❌ INVOICES_RECONCILIATION_FAILED", invErr);
+      invoicesResult.errors = -1;
+    }
+
     const durationMs = Date.now() - start;
 
     const hasPartialFailure =
       eventsResult.failed > 0 ||
       reconcileResult.errors > 0 ||
-      tierSwitchResult.errors > 0;
+      tierSwitchResult.errors > 0 ||
+      invoicesResult.errors > 0;
 
     // 4. Atualizar Configuração com Resumo Consolidado da Execução
     await supabaseAdmin
@@ -488,6 +651,12 @@ export async function handleCronTrigger(request: Request): Promise<Response> {
             tierSwitchResult.legacy_needs_manual,
           tier_switch_errors: tierSwitchResult.errors,
 
+          // Métricas da Fase 4 (Invoices Reconciliation)
+          invoices_scanned: invoicesResult.scanned,
+          invoices_created: invoicesResult.created,
+          invoices_updated: invoicesResult.updated,
+          invoices_errors: invoicesResult.errors,
+
           // Meta-dados
           duration_ms: durationMs,
         },
@@ -506,6 +675,7 @@ export async function handleCronTrigger(request: Request): Promise<Response> {
         events: eventsResult,
         reconcile: reconcileResult,
         tier_switch: tierSwitchResult,
+        invoices: invoicesResult,
         duration_ms: durationMs,
       }),
       {

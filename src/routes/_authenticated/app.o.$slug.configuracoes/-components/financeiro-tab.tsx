@@ -1,12 +1,14 @@
 /**
  * Aba Financeiro refatorada mantendo alinhamento perfeito de grid e cards.
- *
  * FASE 4.7 ITEM 1 (Troca de Tier):
  * • Carrega transição pendente de tier via getPendingTierSwitch.
  * • Passa pendingSwitch para BillingPlanCard.
  * • Mantém comportamento atual quando não há troca pendente.
+ * 
+ * FASE 4.8 (Histórico de Cobrança):
+ * • Substitui placeholder InvoicesPanel por componente real conectado à API.
  */
-import { CreditCard, Receipt } from "lucide-react";
+import { CreditCard } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { SectionTitle } from "@/components/section-ui";
@@ -16,6 +18,8 @@ import {
   getPendingTierSwitch,
 } from "@/lib/billing/mp-checkout.functions";
 import { BillingPlanCard } from "./billing-plan-card";
+// IMPORTAÇÃO DO NOVO COMPONENTE REAL
+import { InvoicesPanel } from "./invoices-panel"; 
 
 interface FinanceiroTabProps {
   orgId: string;
@@ -23,31 +27,37 @@ interface FinanceiroTabProps {
 }
 
 export function FinanceiroTab({ orgId, isOwner }: FinanceiroTabProps) {
+  // Inicialização das funções server-side
   const accessFn = useServerFn(getAccountAccess);
   const subscriptionFn = useServerFn(getCurrentSubscription);
   const pendingSwitchFn = useServerFn(getPendingTierSwitch);
 
+  // Query para acesso da conta
   const { data: access, isLoading: loadingAccess } = useQuery({
     queryKey: ["account-access", orgId],
     queryFn: () => accessFn({ data: { orgId } }),
-    staleTime: 1000 * 60 * 5,
+    staleTime: 1000 * 60 * 5, // Cache por 5 minutos
     retry: 0,
   });
 
+  // Query para assinatura atual
   const { data: subscription, isLoading: loadingSub } = useQuery({
     queryKey: ["subscription", orgId],
     queryFn: () => subscriptionFn({ data: { orgId } }),
-    staleTime: 1000 * 60 * 5,
+    staleTime: 1000 * 60 * 5, // Cache por 5 minutos
     retry: 0,
   });
 
+  // Query para troca de tier pendente (Novo na Fase 4.7)
+  // StaleTime menor (15s) pois é um estado transitório que pode mudar rapidamente
   const { data: pendingSwitch, isLoading: loadingPendingSwitch } = useQuery({
     queryKey: ["pending-tier-switch", orgId],
     queryFn: () => pendingSwitchFn({ data: { orgId } }),
-    staleTime: 1000 * 15,
+    staleTime: 1000 * 15, 
     retry: 0,
   });
 
+  // Estado combinado de carregamento
   const isLoading = loadingAccess || loadingSub || loadingPendingSwitch;
 
   return (
@@ -76,13 +86,15 @@ export function FinanceiroTab({ orgId, isOwner }: FinanceiroTabProps) {
 
         {/* Coluna Secundária: Histórico de Faturas (4 colunas no desktop) */}
         <div className="lg:col-span-4">
-          <InvoicesPanel />
+          {/* AGORA RECEBE O PROP orgId PARA BUSCAR DADOS REAIS */}
+          <InvoicesPanel orgId={orgId} />
         </div>
       </div>
     </div>
   );
 }
 
+// Componente auxiliar para Skeleton Loading dos cards de plano
 function CardSkeleton() {
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -96,35 +108,5 @@ function CardSkeleton() {
   );
 }
 
-function InvoicesPanel() {
-  return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-800 text-slate-400">
-          <Receipt className="h-4 w-4" />
-        </div>
-        <div>
-          <h3 className="text-sm font-semibold text-foreground">
-            Histórico de Cobrança
-          </h3>
-          <p className="text-[11px] text-muted-foreground">
-            Faturas e comprovantes de pagamento.
-          </p>
-        </div>
-      </div>
-
-      <div className="pt-4 pb-2 flex flex-col items-center justify-center text-center">
-        <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-800/50 border border-slate-700/50">
-          <Receipt className="h-5 w-5 text-slate-500" />
-        </div>
-        <p className="text-xs font-semibold text-foreground">
-          Nenhuma cobrança registrada
-        </p>
-        <p className="text-[11px] text-muted-foreground mt-1 max-w-[210px] leading-relaxed">
-          O histórico de faturas e notas fiscais aparecerá automaticamente após
-          a primeira cobrança.
-        </p>
-      </div>
-    </div>
-  );
-}
+// REMOVIDO: A antiga função local InvoicesPanel() foi excluída.
+// Ela agora vive em ./invoices-panel.tsx com lógica real de fetch e renderização.

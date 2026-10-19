@@ -357,3 +357,67 @@ export async function cancelPreapproval(
     body,
   );
 }
+
+// ============================================================================
+// FASE 4.8 — AUTHORIZED PAYMENTS (Faturas)
+// ============================================================================
+
+export interface AuthorizedPayment {
+  id: number;
+  status: "approved" | "rejected" | "in_process" | "pending" | "cancelled" | string;
+  transaction_amount: number;
+  currency_id: string;
+  date_approved?: string;
+  date_of_creation?: string;
+  payment_method_id?: string;
+  installments?: number;
+  preapproval_id?: string;
+  external_reference?: string;
+  [key: string]: unknown;
+}
+
+export interface AuthorizedPaymentsSearchResponse {
+  paging: { total: number; offset: number; limit: number };
+  results: AuthorizedPayment[];
+}
+
+/**
+ * Busca pagamentos autorizados vinculados a um preapproval.
+ * Endpoint: GET /authorized_payments/search?preapproval_id={id}
+ * 
+ * Usado pela FASE 4 do cron para reconciliar faturas.
+ * Paginação obrigatória para evitar timeout em históricos grandes.
+ */
+export async function searchAuthorizedPayments(
+  preapprovalId: string,
+  liveMode: boolean,
+  offset = 0,
+  limit = 50,
+): Promise<AuthorizedPaymentsSearchResponse> {
+  const token = mpTokenFor(liveMode);
+
+  if (!token) {
+    throw new MpApiError(0, `missing_token:${liveMode ? "prod" : "test"}`);
+  }
+
+  const url = new URL(`${MP_BASE}/authorized_payments/search`);
+  url.searchParams.set("preapproval_id", preapprovalId);
+  url.searchParams.set("offset", String(offset));
+  url.searchParams.set("limit", String(limit));
+
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  const body = await res.json().catch(() => undefined);
+
+  if (!res.ok) {
+    throw new MpApiError(
+      res.status,
+      `mp_search_authorized_payments_${res.status}`,
+      body,
+    );
+  }
+
+  return body as AuthorizedPaymentsSearchResponse;
+}
