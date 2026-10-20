@@ -1,25 +1,27 @@
 /**
- * Aba Financeiro refatorada mantendo alinhamento perfeito de grid e cards.
- * FASE 4.7 ITEM 1 (Troca de Tier):
- * • Carrega transição pendente de tier via getPendingTierSwitch.
- * • Passa pendingSwitch para BillingPlanCard.
- * • Mantém comportamento atual quando não há troca pendente.
+ * Aba Financeiro refatorada com navegação por Sub-Abas (Tabs).
  * 
- * FASE 4.8 (Histórico de Cobrança):
- * • Substitui placeholder InvoicesPanel por componente real conectado à API.
+ * FASE 4.8 — Separação Clara de Contextos:
+ * • "Planos & Assinatura": Foco comercial (Upgrade/Downgrade/Cancelamento).
+ * • "Histórico de Pagamentos": Foco financeiro (Faturas passadas/futuras via invoices).
+ * 
+ * ARQUITETURA DE DADOS:
+ * Mantém as queries globais (access, subscription, pendingSwitch) no escopo do componente pai.
+ * Isso garante que trocar de aba não dispare re-fetch desnecessário dos dados de plano,
+ * pois eles já estão cacheados pelo TanStack Query.
  */
-import { CreditCard } from "lucide-react";
+import { CreditCard, Layers, ReceiptText } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { SectionTitle } from "@/components/section-ui";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getAccountAccess } from "@/lib/billing/account-access";
 import {
   getCurrentSubscription,
   getPendingTierSwitch,
 } from "@/lib/billing/mp-checkout.functions";
 import { BillingPlanCard } from "./billing-plan-card";
-// IMPORTAÇÃO DO NOVO COMPONENTE REAL
-import { InvoicesPanel } from "./invoices-panel"; 
+import { InvoicesPanel } from "./invoices-panel";
 
 interface FinanceiroTabProps {
   orgId: string;
@@ -27,51 +29,67 @@ interface FinanceiroTabProps {
 }
 
 export function FinanceiroTab({ orgId, isOwner }: FinanceiroTabProps) {
-  // Inicialização das funções server-side
   const accessFn = useServerFn(getAccountAccess);
   const subscriptionFn = useServerFn(getCurrentSubscription);
   const pendingSwitchFn = useServerFn(getPendingTierSwitch);
 
-  // Query para acesso da conta
+  // --- QUERIES GLOBAIS (Dados de Plano/Assinatura) ---
+  // Executam imediatamente ao montar a aba principal.
+  
   const { data: access, isLoading: loadingAccess } = useQuery({
     queryKey: ["account-access", orgId],
     queryFn: () => accessFn({ data: { orgId } }),
-    staleTime: 1000 * 60 * 5, // Cache por 5 minutos
+    staleTime: 1000 * 60 * 5, // Cache 5 min
     retry: 0,
   });
 
-  // Query para assinatura atual
   const { data: subscription, isLoading: loadingSub } = useQuery({
     queryKey: ["subscription", orgId],
     queryFn: () => subscriptionFn({ data: { orgId } }),
-    staleTime: 1000 * 60 * 5, // Cache por 5 minutos
+    staleTime: 1000 * 60 * 5, // Cache 5 min
     retry: 0,
   });
 
-  // Query para troca de tier pendente (Novo na Fase 4.7)
-  // StaleTime menor (15s) pois é um estado transitório que pode mudar rapidamente
   const { data: pendingSwitch, isLoading: loadingPendingSwitch } = useQuery({
     queryKey: ["pending-tier-switch", orgId],
     queryFn: () => pendingSwitchFn({ data: { orgId } }),
-    staleTime: 1000 * 15, 
+    staleTime: 1000 * 15, // Cache curto (estado transitório)
     retry: 0,
   });
 
-  // Estado combinado de carregamento
-  const isLoading = loadingAccess || loadingSub || loadingPendingSwitch;
+  const isLoadingPlans = loadingAccess || loadingSub || loadingPendingSwitch;
 
   return (
     <div className="space-y-6">
       <SectionTitle
         icon={CreditCard}
         title="Financeiro"
-        hint="Plano vigente, cobrança e faturas desta organização."
+        hint="Gerencie o plano vigente, cobranças e faturas da sua organização."
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Coluna Principal: Planos (8 colunas no desktop) */}
-        <div className="lg:col-span-8">
-          {isLoading ? (
+      <Tabs defaultValue="planos" className="w-full space-y-6">
+        {/* NAVEGAÇÃO POR SUB-ABAS */}
+        <TabsList className="bg-muted p-1 border border-border rounded-xl inline-flex gap-1 h-auto shadow-sm">
+          <TabsTrigger
+            value="planos"
+            className="flex items-center gap-2 rounded-lg text-xs font-medium px-4 py-2.5 text-muted-foreground data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-md transition-all duration-200 ease-out"
+          >
+            <Layers className="h-3.5 w-3.5" />
+            Planos & Assinatura
+          </TabsTrigger>
+          
+          <TabsTrigger
+            value="faturas"
+            className="flex items-center gap-2 rounded-lg text-xs font-medium px-4 py-2.5 text-muted-foreground data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-md transition-all duration-200 ease-out"
+          >
+            <ReceiptText className="h-3.5 w-3.5" />
+            Histórico de Pagamentos
+          </TabsTrigger>
+        </TabsList>
+
+        {/* SUB-ABA 1: PLANOS & ASSINATURA */}
+        <TabsContent value="planos" className="space-y-6 focus-visible:outline-none animate-in fade-in slide-in-from-bottom-2 duration-300">
+          {isLoadingPlans ? (
             <CardSkeleton />
           ) : (
             <BillingPlanCard
@@ -82,31 +100,38 @@ export function FinanceiroTab({ orgId, isOwner }: FinanceiroTabProps) {
               orgId={orgId}
             />
           )}
-        </div>
+        </TabsContent>
 
-        {/* Coluna Secundária: Histórico de Faturas (4 colunas no desktop) */}
-        <div className="lg:col-span-4">
-          {/* AGORA RECEBE O PROP orgId PARA BUSCAR DADOS REAIS */}
+        {/* SUB-ABA 2: HISTÓRICO DE PAGAMENTOS E FATURAS */}
+        <TabsContent value="faturas" className="focus-visible:outline-none animate-in fade-in slide-in-from-bottom-2 duration-300 delay-75">
+          {/* O InvoicesPanel gerencia seu próprio estado de loading/data via hook useInvoices */}
           <InvoicesPanel orgId={orgId} />
-        </div>
-      </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
 
-// Componente auxiliar para Skeleton Loading dos cards de plano
+// Componente auxiliar para Skeleton Loading específico da área de planos
 function CardSkeleton() {
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
       {[...Array(3)].map((_, i) => (
         <div
           key={i}
-          className="h-64 rounded-2xl bg-slate-900/40 border border-slate-800 animate-pulse p-6"
-        />
+          className="h-64 rounded-2xl bg-card border border-border animate-pulse p-6 shadow-card flex flex-col justify-between"
+        >
+          <div className="space-y-3">
+            <div className="h-4 w-24 bg-muted rounded" />
+            <div className="h-8 w-16 bg-muted rounded" />
+          </div>
+          <div className="space-y-2">
+            <div className="h-3 w-full bg-muted rounded" />
+            <div className="h-3 w-3/4 bg-muted rounded" />
+            <div className="h-9 w-full bg-muted rounded-lg mt-4" />
+          </div>
+        </div>
       ))}
     </div>
   );
 }
-
-// REMOVIDO: A antiga função local InvoicesPanel() foi excluída.
-// Ela agora vive em ./invoices-panel.tsx com lógica real de fetch e renderização.
