@@ -383,16 +383,13 @@ export interface AuthorizedPaymentsSearchResponse {
 
 /**
  * Busca pagamentos autorizados vinculados a um preapproval.
- * Endpoint: GET /authorized_payments/search?preapproval_id={id}
+ * Endpoint correto validado: GET /authorized_payments/search?preapproval_id={id}
  * 
  * Usado pela FASE 4 do cron para reconciliar faturas.
- * Paginação obrigatória para evitar timeout em históricos grandes.
  */
 export async function searchAuthorizedPayments(
   preapprovalId: string,
   liveMode: boolean,
-  offset = 0,
-  limit = 50,
 ): Promise<AuthorizedPaymentsSearchResponse> {
   const token = mpTokenFor(liveMode);
 
@@ -400,10 +397,8 @@ export async function searchAuthorizedPayments(
     throw new MpApiError(0, `missing_token:${liveMode ? "prod" : "test"}`);
   }
 
-  const url = new URL(`${MP_BASE}/authorized/payments/search`);
+  const url = new URL(`${MP_BASE}/authorized_payments/search`);
   url.searchParams.set("preapproval_id", preapprovalId);
-  url.searchParams.set("offset", String(offset));
-  url.searchParams.set("limit", String(limit));
 
   const res = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },

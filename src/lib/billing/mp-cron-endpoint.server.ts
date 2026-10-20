@@ -401,8 +401,6 @@ async function reconcileInvoicesBatch(): Promise<InvoiceReconcileTally> {
       const response = await searchAuthorizedPayments(
         sub.mp_preapproval_id,
         liveMode,
-        0,
-        50,
       );
 
       tally.scanned += response.results.length;
