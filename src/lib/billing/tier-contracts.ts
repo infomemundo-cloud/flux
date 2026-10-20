@@ -191,6 +191,7 @@ export function isWithinLimit(
 /**
  * Lista todos os tiers disponíveis ordenados por preço (para UI de upgrade).
  */
+
 export function getOrderedTiers(): TierFeatures[] {
   return Object.values(TIER_CONTRACTS).sort((a, b) => a.priceCents - b.priceCents);
 }
