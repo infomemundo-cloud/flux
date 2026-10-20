@@ -400,7 +400,7 @@ export async function searchAuthorizedPayments(
     throw new MpApiError(0, `missing_token:${liveMode ? "prod" : "test"}`);
   }
 
-  const url = new URL(`${MP_BASE}/authorized_payments/search`);
+  const url = new URL(`${MP_BASE}/authorized/payments/search`);
   url.searchParams.set("preapproval_id", preapprovalId);
   url.searchParams.set("offset", String(offset));
   url.searchParams.set("limit", String(limit));
