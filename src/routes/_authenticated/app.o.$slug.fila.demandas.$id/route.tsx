@@ -23,6 +23,12 @@ import { DemandaHeader } from "./-components/DemandaHeader";
 import { DemandaHistory, type ReplyTarget } from "./-components/DemandaHistory";
 import { DemandaComposer, type PendingAttachment } from "./-components/DemandaComposer";
 import { PropertiesRail } from "./-components/PropertiesRail";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/fila/demandas/$id")({
@@ -92,6 +98,7 @@ function DemandaDetail() {
   const [comment, setComment] = useState("");
   const [viaWhatsapp, setViaWhatsapp] = useState(true);
   const [railCollapsed, setRailCollapsed] = useState(false);
+  const [mobilePropsOpen, setMobilePropsOpen] = useState(false);
   const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
   const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -144,6 +151,7 @@ function DemandaDetail() {
     if (currentIdRef.current !== id) {
       // Nova demanda: reset completo
       currentIdRef.current = id;
+      setMobilePropsOpen(false);
       setEventsInitialized(false);
       setHasPrepended(false);
       setEvents(data.events ?? []);
@@ -432,7 +440,7 @@ function DemandaDetail() {
 
   return (
     <div className="relative flex h-full">
-      <div className="flex flex-col min-w-0 flex-1">
+      <div className="flex flex-col min-w-0 flex-1 pb-24 lg:pb-0">
         <DemandaHeader
           contactName={contactName}
           contactAvatarUrl={d.contacts?.avatar_url ?? null}
@@ -442,6 +450,7 @@ function DemandaDetail() {
           onToggleFila={handleToggleFila}
           railCollapsed={railCollapsed}
           onExpandRail={() => setRailCollapsed(false)}
+          onOpenMobileProps={() => setMobilePropsOpen(true)}
           onClose={() => navigate({ to: "/app/o/$slug/fila", params: { slug } })}
         />
         <DemandaHistory
@@ -497,6 +506,41 @@ function DemandaDetail() {
           }
         />
       )}
+
+      {/* Gaveta lateral deslizante de propriedades para mobile (< lg) */}
+      <Sheet open={mobilePropsOpen} onOpenChange={setMobilePropsOpen}>
+        <SheetContent
+          side="right"
+          className="p-0 w-full sm:max-w-md bg-card text-card-foreground border-l border-border [&>button]:hidden flex flex-col"
+        >
+          <SheetTitle className="sr-only">Propriedades da Demanda</SheetTitle>
+          <SheetDescription className="sr-only">
+            Detalhes, contato e notas da demanda
+          </SheetDescription>
+          <PropertiesRail
+            className="flex w-full h-full border-none bg-card text-card-foreground"
+            demanda={d}
+            onUpdate={(patch) => update.mutate(patch)}
+            onCollapseRail={() => setMobilePropsOpen(false)}
+            orgUserId={org?.userId}
+            isManager={isManager}
+            operators={operators ?? []}
+            nameOf={nameOf}
+            canDelete={canDelete}
+            onDelete={() => {
+              setMobilePropsOpen(false);
+              remove.mutate();
+            }}
+            deletePending={remove.isPending}
+            onSaveContact={(patch) => saveContact.mutate(patch)}
+            contactSaving={saveContact.isPending}
+            onOpenDemanda={(did) => {
+              setMobilePropsOpen(false);
+              navigate({ to: "/app/o/$slug/fila/demandas/$id", params: { slug, id: did } });
+            }}
+          />
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

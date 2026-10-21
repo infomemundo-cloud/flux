@@ -1,4 +1,4 @@
-import { MessageCircle, PanelLeftClose, PanelLeftOpen, PanelRightOpen, Users, X } from "lucide-react";
+import { MessageCircle, PanelLeftClose, PanelLeftOpen, PanelRightOpen, SlidersHorizontal, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { ContactAvatar } from "@/components/contact-avatar";
 
@@ -11,6 +11,7 @@ type DemandaHeaderProps = {
   onToggleFila: () => void;
   railCollapsed: boolean;
   onExpandRail: () => void;
+  onOpenMobileProps?: () => void;
   onClose: () => void;
 };
 
@@ -30,6 +31,7 @@ export function DemandaHeader({
   onToggleFila,
   railCollapsed,
   onExpandRail,
+  onOpenMobileProps,
   onClose,
 }: DemandaHeaderProps) {
   const handleCopyPhone = async () => {
@@ -86,13 +88,26 @@ export function DemandaHeader({
           {isGroupChat ? <Users className="h-3 w-3" /> : <MessageCircle className="h-3 w-3" />}
           {isGroupChat ? "Grupo" : "WhatsApp"}
         </span>
+        {/* Mobile (< lg): abre a gaveta deslizante de propriedades */}
+        {onOpenMobileProps && (
+          <button
+            type="button"
+            onClick={onOpenMobileProps}
+            title="Ver propriedades"
+            aria-label="Ver propriedades"
+            className="grid lg:hidden h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+          </button>
+        )}
+        {/* Desktop (lg+): expande o trilho se estiver recolhido */}
         {railCollapsed && (
           <button
             type="button"
             onClick={onExpandRail}
             title="Expandir propriedades"
             aria-label="Expandir propriedades"
-            className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+            className="hidden lg:grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
           >
             <PanelRightOpen className="h-4 w-4" />
           </button>

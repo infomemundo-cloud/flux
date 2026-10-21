@@ -24,6 +24,7 @@ import {
   type QuickReply,
 } from "@/lib/quick-replies.functions";
 import { EmojiPicker } from "./EmojiPicker";
+import { cn } from "@/lib/utils";
 
 export type PendingAttachment = {
   file: File;
@@ -109,6 +110,22 @@ export function DemandaComposer({
   isUploading,
   textareaRef,
 }: DemandaComposerProps) {
+  // Estado local reativo instantâneo para alternância de canais (0ms de latência)
+  const [currentViaWhatsapp, setCurrentViaWhatsapp] = useState(viaWhatsapp);
+
+  useEffect(() => {
+    setCurrentViaWhatsapp(viaWhatsapp);
+  }, [viaWhatsapp]);
+
+  const handleSelectChannel = (isWhatsapp: boolean) => {
+    if (isWhatsapp && !hasWhatsapp) {
+      toast.info("Esta demanda não possui canal WhatsApp vinculado.");
+      return;
+    }
+    setCurrentViaWhatsapp(isWhatsapp);
+    onViaWhatsappChange(isWhatsapp);
+  };
+
   // ── Macros / respostas rápidas ──────────────────────────────────
   const qc = useQueryClient();
   const listMacrosFn = useServerFn(listQuickReplies);
@@ -326,7 +343,7 @@ export function DemandaComposer({
   };
 
   return (
-    <div className="shrink-0 border-t border-border/50 bg-card p-3">
+    <div className="relative z-20 shrink-0 border-t border-border/50 bg-card p-2.5 sm:p-3">
       {/* Banner de reply (citação) */}
       {replyTo && (
         <div className="mb-2 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
@@ -439,37 +456,41 @@ export function DemandaComposer({
       ) : (
         <>
           {/* Toggle WhatsApp / Interno */}
-          <div className="mb-2 flex items-center gap-2">
+          <div className="relative z-10 mb-2 flex flex-wrap items-center gap-1.5 sm:gap-2">
             <button
               type="button"
-              onClick={() => onViaWhatsappChange(true)}
-              disabled={!hasWhatsapp}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                viaWhatsapp
-                  ? "bg-[var(--pill-green-bg)] text-[var(--pill-green-fg)]"
-                  : "bg-secondary text-muted-foreground hover:bg-secondary/80 disabled:opacity-50"
-              }`}
+              data-state={currentViaWhatsapp ? "active" : "inactive"}
+              onClick={() => handleSelectChannel(true)}
+              className={cn(
+                "inline-flex cursor-pointer select-none items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors sm:px-3 sm:py-1.5",
+                currentViaWhatsapp
+                  ? "bg-[var(--pill-green-bg)] text-[var(--pill-green-fg)] shadow-xs font-semibold"
+                  : "bg-secondary/70 text-muted-foreground hover:bg-secondary hover:text-foreground",
+                !hasWhatsapp && "opacity-60 cursor-not-allowed",
+              )}
             >
-              <MessageCircle className="h-3 w-3" />
+              <MessageCircle className="h-3.5 w-3.5 shrink-0" />
               WhatsApp
             </button>
             <button
               type="button"
-              onClick={() => onViaWhatsappChange(false)}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                !viaWhatsapp
-                  ? "bg-primary/10 text-primary"
-                  : "bg-secondary text-muted-foreground hover:bg-secondary/80"
-              }`}
+              data-state={!currentViaWhatsapp ? "active" : "inactive"}
+              onClick={() => handleSelectChannel(false)}
+              className={cn(
+                "inline-flex cursor-pointer select-none items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors sm:px-3 sm:py-1.5",
+                !currentViaWhatsapp
+                  ? "bg-primary/10 text-primary shadow-xs font-semibold"
+                  : "bg-secondary/70 text-muted-foreground hover:bg-secondary hover:text-foreground",
+              )}
             >
-              <Lock className="h-3 w-3" />
+              <Lock className="h-3.5 w-3.5 shrink-0" />
               Nota interna
             </button>
           </div>
 
           {/* Textarea + ações */}
-          <div className="flex items-end gap-2">
-            <div className="flex-1">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+            <div className="w-full sm:flex-1 min-w-0">
               <textarea
                 ref={textareaRef}
                 value={comment}
@@ -493,39 +514,40 @@ export function DemandaComposer({
                   }
                 }}
                 placeholder={
-                  viaWhatsapp ? "Digite uma mensagem...  ( / abre macros )" : "Adicione uma nota interna..."
+                  currentViaWhatsapp ? "Digite uma mensagem...  ( / abre macros )" : "Adicione uma nota interna..."
                 }
                 rows={1}
-                className="w-full resize-none rounded-xl border border-border/60 bg-background px-4 py-2.5 text-sm outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
+                className="w-full resize-none rounded-xl border border-border/60 bg-background px-3.5 py-2.5 text-sm outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
               />
             </div>
-            <div className="flex items-center gap-1">
-              {/* Emoji: picker próprio, inserção no caret, popover persistente */}
-              <EmojiPicker
-                onPick={insertAtCursor}
-                triggerClass="grid h-10 w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-              />
-              {/* Macros / respostas rápidas */}
-              <Popover
-                open={macroOpen}
-                onOpenChange={(o) => {
-                  setMacroOpen(o);
-                  if (!o) {
-                    setMacroQuery("");
-                    setMacroCreating(false);
-                  }
-                }}
-              >
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    title="Respostas rápidas (/)"
-                    aria-label="Respostas rápidas"
-                    className="grid h-10 w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-                  >
-                    <Slash className="h-4 w-4" />
-                  </button>
-                </PopoverTrigger>
+            <div className="flex items-center justify-between sm:justify-end gap-1 shrink-0">
+              <div className="flex items-center gap-0.5 sm:gap-1">
+                {/* Emoji: picker próprio, inserção no caret, popover persistente */}
+                <EmojiPicker
+                  onPick={insertAtCursor}
+                  triggerClass="grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                />
+                {/* Macros / respostas rápidas */}
+                <Popover
+                  open={macroOpen}
+                  onOpenChange={(o) => {
+                    setMacroOpen(o);
+                    if (!o) {
+                      setMacroQuery("");
+                      setMacroCreating(false);
+                    }
+                  }}
+                >
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      title="Respostas rápidas (/)"
+                      aria-label="Respostas rápidas"
+                      className="grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                    >
+                      <Slash className="h-4 w-4" />
+                    </button>
+                  </PopoverTrigger>
                 <PopoverContent align="end" className="w-72 rounded-xl p-1.5">
                   {macroCreating ? (
                     <div className="space-y-1.5">
@@ -638,31 +660,32 @@ export function DemandaComposer({
                   )}
                 </PopoverContent>
               </Popover>
-              <button
-                type="button"
-                onClick={handleAttach}
-                title="Anexar arquivo"
-                aria-label="Anexar arquivo"
-                className="grid h-10 w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-              >
-                <Paperclip className="h-4 w-4" />
-              </button>
-              {viaWhatsapp && (
                 <button
                   type="button"
-                  onClick={startRecording}
-                  title="Gravar áudio"
-                  aria-label="Gravar áudio"
-                  className="grid h-10 w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                  onClick={handleAttach}
+                  title="Anexar arquivo"
+                  aria-label="Anexar arquivo"
+                  className="grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
                 >
-                  <Mic className="h-4 w-4" />
+                  <Paperclip className="h-4 w-4" />
                 </button>
-              )}
+                {currentViaWhatsapp && (
+                  <button
+                    type="button"
+                    onClick={startRecording}
+                    title="Gravar áudio"
+                    aria-label="Gravar áudio"
+                    className="grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                  >
+                    <Mic className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={onSend}
                 disabled={isPending || isUploading || (!comment.trim() && !attachment)}
-                className="grid h-10 w-10 place-items-center rounded-lg bg-primary text-primary-foreground transition hover:brightness-110 disabled:opacity-50"
+                className="grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-lg bg-primary text-primary-foreground transition hover:brightness-110 disabled:opacity-50 ml-auto sm:ml-0"
               >
                 <Send className="h-4 w-4" />
               </button>

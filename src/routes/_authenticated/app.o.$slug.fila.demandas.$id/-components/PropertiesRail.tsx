@@ -28,6 +28,7 @@ import {
   type ContactTag,
 } from "@/lib/contacts.functions";
 import { ContactAvatar } from "@/components/contact-avatar";
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -231,6 +232,7 @@ function KVRow({ label, children }: { label: string; children: React.ReactNode }
 }
 
 type PropertiesRailProps = {
+  className?: string;
   demanda: any;
   onUpdate: (patch: any) => void;
   onCollapseRail: () => void;
@@ -261,6 +263,7 @@ type PropertiesRailProps = {
  * (canDelete = owner/admin/gerente, vindo do route; servidor valida igual).
  */
 export function PropertiesRail({
+  className,
   demanda,
   onUpdate,
   onCollapseRail,
@@ -416,7 +419,12 @@ export function PropertiesRail({
   ) : null;
 
   return (
-    <aside className="hidden lg:flex w-[320px] 2xl:w-[340px] shrink-0 flex-col border-l border-border/60 bg-muted/40 dark:bg-surface/60">
+    <aside
+      className={cn(
+        "w-[320px] 2xl:w-[340px] shrink-0 flex-col border-l border-border/60 bg-muted/40 dark:bg-surface/60",
+        className ?? "hidden lg:flex",
+      )}
+    >
       {/* Header FIXO h-12 (mesma altura do header do chat) */}
       <header className="h-12 shrink-0 border-b border-border/50 px-4 flex items-center justify-between">
         <h2 className="text-sm font-bold text-foreground">Propriedades</h2>
@@ -427,7 +435,8 @@ export function PropertiesRail({
           aria-label="Recolher propriedades"
           className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
         >
-          <PanelRightClose className="h-4 w-4" />
+          <PanelRightClose className="h-4 w-4 hidden lg:block" />
+          <X className="h-4 w-4 lg:hidden" />
         </button>
       </header>
 
