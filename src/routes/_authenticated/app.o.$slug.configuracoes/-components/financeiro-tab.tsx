@@ -68,24 +68,47 @@ export function FinanceiroTab({ orgId, isOwner }: FinanceiroTabProps) {
       />
 
       <Tabs defaultValue="planos" className="w-full space-y-6">
-        {/* NAVEGAÇÃO POR SUB-ABAS */}
-        <TabsList className="bg-muted p-1 border border-border rounded-xl inline-flex gap-1 h-auto shadow-sm">
-          <TabsTrigger
-            value="planos"
-            className="flex items-center gap-2 rounded-lg text-xs font-medium px-4 py-2.5 text-muted-foreground data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-md transition-all duration-200 ease-out"
+        {/* NAVEGAÇÃO POR SUB-ABAS — scroll lateral no mobile */}
+        <div className="-mx-4 sm:mx-0 overflow-x-auto scrollbar-none">
+          <TabsList
+            className={
+              "flex flex-nowrap items-center gap-2 px-4 sm:px-0 py-1" +
+              " w-max min-w-full h-auto bg-transparent p-0 justify-start rounded-none"
+            }
           >
-            <Layers className="h-3.5 w-3.5" />
-            Planos & Assinatura
-          </TabsTrigger>
-          
-          <TabsTrigger
-            value="faturas"
-            className="flex items-center gap-2 rounded-lg text-xs font-medium px-4 py-2.5 text-muted-foreground data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-md transition-all duration-200 ease-out"
-          >
-            <ReceiptText className="h-3.5 w-3.5" />
-            Histórico de Pagamentos
-          </TabsTrigger>
-        </TabsList>
+            <TabsTrigger
+              value="planos"
+              className={
+                "shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full" +
+                " px-4 py-2 text-xs font-medium cursor-pointer select-none outline-none" +
+                " transition-all duration-200 ease-in-out" +
+                " bg-secondary/50 text-muted-foreground border border-border/50" +
+                " hover:bg-secondary hover:text-foreground hover:shadow-sm hover:border-border" +
+                " data-[state=active]:bg-primary data-[state=active]:text-primary-foreground" +
+                " data-[state=active]:shadow-md data-[state=active]:border-primary/20 data-[state=active]:font-semibold"
+              }
+            >
+              <Layers className="h-3.5 w-3.5 shrink-0" />
+              Planos & Assinatura
+            </TabsTrigger>
+
+            <TabsTrigger
+              value="faturas"
+              className={
+                "shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full" +
+                " px-4 py-2 text-xs font-medium cursor-pointer select-none outline-none" +
+                " transition-all duration-200 ease-in-out" +
+                " bg-secondary/50 text-muted-foreground border border-border/50" +
+                " hover:bg-secondary hover:text-foreground hover:shadow-sm hover:border-border" +
+                " data-[state=active]:bg-primary data-[state=active]:text-primary-foreground" +
+                " data-[state=active]:shadow-md data-[state=active]:border-primary/20 data-[state=active]:font-semibold"
+              }
+            >
+              <ReceiptText className="h-3.5 w-3.5 shrink-0" />
+              Histórico de Pagamentos
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* SUB-ABA 1: PLANOS & ASSINATURA */}
         <TabsContent value="planos" className="space-y-6 focus-visible:outline-none animate-in fade-in slide-in-from-bottom-2 duration-300">

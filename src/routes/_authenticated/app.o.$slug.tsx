@@ -142,22 +142,29 @@ function OrgLayout() {
         isOwnerOrAdmin={isOwnerOrAdmin}
         onSignOut={signOut}
       />
-      <main className="min-w-0 overflow-auto scrollbar-thin bg-surface">
+      {/*
+       * main: pb-20 sm:pb-0 cria a safe area inferior no mobile para que
+       * conteúdo final (botões de envio, formulários) nunca fique soterrado
+       * pela bottom nav fixa. No desktop (sm+) o padding some.
+       */}
+      <main className="min-w-0 overflow-auto scrollbar-thin bg-surface pb-20 sm:pb-0">
         <TopProgressBar />
         <PageFade key={location.pathname}>
           <OrgSidebarContext.Provider value={{ collapsed, setCollapsed }}>
             <Outlet />
           </OrgSidebarContext.Provider>
         </PageFade>
-        <OrgMobileNav
-          slug={slug}
-          activePath={location.pathname}
-          user={user}
-          roleLabel={roleLabel}
-          isOwnerOrAdmin={isOwnerOrAdmin}
-          onSignOut={signOut}
-        />
       </main>
+
+      {/* Bottom nav fora do main → não participa do scroll container */}
+      <OrgMobileNav
+        slug={slug}
+        activePath={location.pathname}
+        user={user}
+        roleLabel={roleLabel}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+        onSignOut={signOut}
+      />
     </div>
   );
 }
