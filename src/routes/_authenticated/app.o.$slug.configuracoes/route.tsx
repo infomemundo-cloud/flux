@@ -32,6 +32,16 @@ export const Route = createFileRoute("/_authenticated/app/o/$slug/configuracoes"
   component: Config,
 });
 
+const TAB_TRIGGER_CLASS =
+  // Reset completo das classes base do shadcn + estilo pílula flutuante
+  "shrink-0 inline-flex items-center justify-center whitespace-nowrap rounded-full px-4 py-2 text-xs sm:text-sm font-medium cursor-pointer select-none outline-none transition-all duration-200 ease-in-out" +
+  // Inativa: card sutil com borda fraca
+  " bg-secondary/50 text-muted-foreground border border-border/50" +
+  // Hover: leve elevação
+  " hover:bg-secondary hover:text-foreground hover:shadow-sm hover:border-border" +
+  // Ativa: destaque primário com sombra
+  " data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md data-[state=active]:border-primary/20 data-[state=active]:font-semibold";
+
 function Config() {
   const { slug } = useParams({ from: "/_authenticated/app/o/$slug/configuracoes" });
   const orgFn = useServerFn(getOrgBySlug);
@@ -57,13 +67,31 @@ function Config() {
         Governança de negócio desta organização: canais, atendimento, macros e financeiro.
       </p>
       <Tabs defaultValue="geral" className="mt-6">
-        <div className="overflow-x-auto scrollbar-thin">
-          <TabsList>
-            <TabsTrigger value="geral">Geral</TabsTrigger>
-            <TabsTrigger value="canais">Canais & Integrações</TabsTrigger>
-            <TabsTrigger value="atendimento">Atendimento</TabsTrigger>
-            <TabsTrigger value="macros">Macros</TabsTrigger>
-            <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
+        {/* Wrapper com scroll lateral nativo — recua nas bordas no mobile */}
+        <div className="-mx-4 sm:mx-0 overflow-x-auto scrollbar-none">
+          <TabsList
+            className={
+              // Reset do inline-flex fixo do shadcn → flex real para scroll funcionar
+              "flex flex-nowrap items-center gap-2 px-4 sm:px-0 py-1.5 w-max min-w-full" +
+              // Zera o fundo e o padding do shadcn
+              " h-auto bg-transparent p-0 justify-start rounded-none"
+            }
+          >
+            <TabsTrigger value="geral" className={TAB_TRIGGER_CLASS}>
+              Geral
+            </TabsTrigger>
+            <TabsTrigger value="canais" className={TAB_TRIGGER_CLASS}>
+              Canais & Integrações
+            </TabsTrigger>
+            <TabsTrigger value="atendimento" className={TAB_TRIGGER_CLASS}>
+              Atendimento
+            </TabsTrigger>
+            <TabsTrigger value="macros" className={TAB_TRIGGER_CLASS}>
+              Macros
+            </TabsTrigger>
+            <TabsTrigger value="financeiro" className={TAB_TRIGGER_CLASS}>
+              Financeiro
+            </TabsTrigger>
           </TabsList>
         </div>
         <TabsContent value="geral" className="mt-5 space-y-6">
