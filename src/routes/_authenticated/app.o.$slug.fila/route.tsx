@@ -97,7 +97,7 @@ function FilaCard({ d, slug }: { d: any; slug: string }) {
     <Link
       to="/app/o/$slug/fila/demandas/$id"
       params={{ slug, id: d.id }}
-      className={`group relative flex gap-3 overflow-hidden rounded-xl py-3 pl-4 pr-3 transition-all duration-150 ${
+      className={`group relative flex gap-3 overflow-hidden rounded-xl py-3 pl-4 pr-3 transition-all duration-150 active:scale-[0.98] ${
         unread
           ? "bg-card dark:bg-popover shadow-[var(--shadow-card)] ring-1 ring-border/60 dark:ring-white/10 dark:shadow-[0_4px_12px_oklch(0_0_0/0.5)] hover:shadow-[var(--shadow-pop)] hover:ring-primary/40"
           : "bg-muted/40 dark:bg-black/20 shadow-none ring-1 ring-transparent hover:bg-muted/60 dark:hover:bg-black/25"

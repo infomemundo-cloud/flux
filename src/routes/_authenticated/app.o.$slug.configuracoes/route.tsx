@@ -34,7 +34,11 @@ export const Route = createFileRoute("/_authenticated/app/o/$slug/configuracoes"
 
 const TAB_TRIGGER_CLASS =
   // Reset completo das classes base do shadcn + estilo pílula flutuante
-  "shrink-0 inline-flex items-center justify-center whitespace-nowrap rounded-full px-4 py-2 text-xs sm:text-sm font-medium cursor-pointer select-none outline-none transition-all duration-200 ease-in-out" +
+  // px-3 py-1.5 (menor que antes) → garante que a 3ª aba fique cortada na
+  // viewport mobile padrão, entregando a affordance de scroll horizontal.
+  // snap-start: cada pílula encaixa suavemente na borda esquerda ao deslizar.
+  // active:scale-95: feedback tátil imediato como app nativo.
+  "shrink-0 snap-start inline-flex items-center justify-center whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium cursor-pointer select-none outline-none transition-all duration-200 ease-in-out active:scale-95" +
   // Inativa: card sutil com borda fraca
   " bg-secondary/50 text-muted-foreground border border-border/50" +
   // Hover: leve elevação
@@ -67,32 +71,44 @@ function Config() {
         Governança de negócio desta organização: canais, atendimento, macros e financeiro.
       </p>
       <Tabs defaultValue="geral" className="mt-6">
-        {/* Wrapper com scroll lateral nativo — recua nas bordas no mobile */}
-        <div className="-mx-4 sm:mx-0 overflow-x-auto scrollbar-none">
-          <TabsList
-            className={
-              // Reset do inline-flex fixo do shadcn → flex real para scroll funcionar
-              "flex flex-nowrap items-center gap-2 px-4 sm:px-0 py-1.5 w-max min-w-full" +
-              // Zera o fundo e o padding do shadcn
-              " h-auto bg-transparent p-0 justify-start rounded-none"
-            }
-          >
-            <TabsTrigger value="geral" className={TAB_TRIGGER_CLASS}>
-              Geral
-            </TabsTrigger>
-            <TabsTrigger value="canais" className={TAB_TRIGGER_CLASS}>
-              Canais & Integrações
-            </TabsTrigger>
-            <TabsTrigger value="atendimento" className={TAB_TRIGGER_CLASS}>
-              Atendimento
-            </TabsTrigger>
-            <TabsTrigger value="macros" className={TAB_TRIGGER_CLASS}>
-              Macros
-            </TabsTrigger>
-            <TabsTrigger value="financeiro" className={TAB_TRIGGER_CLASS}>
-              Financeiro
-            </TabsTrigger>
-          </TabsList>
+        {/*
+         * Wrapper de scroll horizontal com affordance visual:
+         * • -mx-4 sm:mx-0: sangra até as bordas da tela no mobile
+         * • snap-x snap-mandatory: deslize preciso no toque (cada pílula encaixa)
+         * • relative + fade degradê: indica visualmente que há mais abas à direita
+         */}
+        <div className="relative -mx-4 sm:mx-0">
+          {/* Fade degradê à direita — pointer-events-none para não bloquear cliques */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute right-0 top-0 bottom-0 w-10 z-10 bg-gradient-to-l from-background to-transparent sm:hidden"
+          />
+          <div className="overflow-x-auto scrollbar-none snap-x snap-mandatory">
+            <TabsList
+              className={
+                // flex real (não inline-flex) para o scroll funcionar
+                "flex flex-nowrap items-center gap-1.5 px-4 sm:px-0 py-1.5 w-max min-w-full" +
+                // Zera o fundo/padding/altura do shadcn
+                " h-auto bg-transparent p-0 justify-start rounded-none"
+              }
+            >
+              <TabsTrigger value="geral" className={TAB_TRIGGER_CLASS}>
+                Geral
+              </TabsTrigger>
+              <TabsTrigger value="canais" className={TAB_TRIGGER_CLASS}>
+                Canais & Integrações
+              </TabsTrigger>
+              <TabsTrigger value="atendimento" className={TAB_TRIGGER_CLASS}>
+                Atendimento
+              </TabsTrigger>
+              <TabsTrigger value="macros" className={TAB_TRIGGER_CLASS}>
+                Macros
+              </TabsTrigger>
+              <TabsTrigger value="financeiro" className={TAB_TRIGGER_CLASS}>
+                Financeiro
+              </TabsTrigger>
+            </TabsList>
+          </div>
         </div>
         <TabsContent value="geral" className="mt-5 space-y-6">
           <GeralTab

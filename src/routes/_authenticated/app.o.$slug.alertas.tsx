@@ -199,7 +199,7 @@ function AlertasPage() {
               key={d.id}
               to="/app/o/$slug/fila/demandas/$id"
               params={{ slug, id: d.id }}
-              className={`group relative flex items-start gap-3 overflow-hidden rounded-xl border bg-card shadow-[var(--shadow-card)] pl-4 pr-3 py-3.5 transition-all hover:shadow-[var(--shadow-pop)] ${sev.ring}`}
+              className={`group relative flex items-start gap-3 overflow-hidden rounded-xl border bg-card shadow-[var(--shadow-card)] pl-4 pr-3 py-3.5 transition-all active:scale-[0.98] hover:shadow-[var(--shadow-pop)] ${sev.ring}`}
             >
               <span className={`absolute left-0 top-0 h-full w-[3px] ${sev.bar}`} />
               <div className="relative shrink-0 mt-0.5">

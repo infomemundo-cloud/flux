@@ -94,11 +94,10 @@ export function FilaHeaderToolbar({
       <div className="flex items-center gap-0.5 rounded-xl bg-muted/70 p-1 min-w-0 overflow-x-auto scrollbar-thin">
         <button
           onClick={() => onTabChange("fila")}
-          className={`flex shrink-0 items-center gap-0.5 rounded-lg px-1 py-1 text-[11px] font-semibold transition-all ${
-            tab === "fila"
+          className={`flex shrink-0 items-center gap-0.5 rounded-lg px-1 py-1 text-[11px] font-semibold transition-all active:scale-95 ${tab === "fila"
               ? "bg-card text-foreground shadow-[var(--shadow-card)]"
               : "text-muted-foreground hover:text-foreground"
-          }`}
+            }`}
         >
           Fila
           <span className="rounded-full bg-primary/10 px-0.5 py-px text-[10px] font-bold tabular-nums text-primary">
@@ -109,18 +108,16 @@ export function FilaHeaderToolbar({
           onClick={() => onTabChange("minhas")}
           title="Minhas demandas"
           aria-label="Minhas demandas"
-          className={`flex shrink-0 items-center gap-0.5 rounded-lg px-1 py-1 text-[11px] font-semibold transition-all ${
-            tab === "minhas"
+          className={`flex shrink-0 items-center gap-0.5 rounded-lg px-1 py-1 text-[11px] font-semibold transition-all active:scale-95 ${tab === "minhas"
               ? "bg-card text-foreground shadow-[var(--shadow-card)]"
               : "text-muted-foreground hover:text-foreground"
-          }`}
+            }`}
         >
           <UserRound className="h-3.5 w-3.5" />
           {counts.mine > 0 && (
             <span
-              className={`rounded-full px-0.5 py-px text-[10px] font-bold tabular-nums ${
-                tab === "minhas" ? "bg-primary/10 text-primary" : "bg-secondary text-foreground"
-              }`}
+              className={`rounded-full px-0.5 py-px text-[10px] font-bold tabular-nums ${tab === "minhas" ? "bg-primary/10 text-primary" : "bg-secondary text-foreground"
+                }`}
             >
               {counts.mine}
             </span>
@@ -130,18 +127,16 @@ export function FilaHeaderToolbar({
           onClick={() => onTabChange("orfas")}
           title="Sem responsável (órfãs)"
           aria-label="Sem responsável (órfãs)"
-          className={`flex shrink-0 items-center gap-0.5 rounded-lg px-1 py-1 text-[11px] font-semibold transition-all ${
-            tab === "orfas"
+          className={`flex shrink-0 items-center gap-0.5 rounded-lg px-1 py-1 text-[11px] font-semibold transition-all active:scale-95 ${tab === "orfas"
               ? "bg-card text-foreground shadow-[var(--shadow-card)]"
               : "text-muted-foreground hover:text-foreground"
-          }`}
+            }`}
         >
           <CircleDashed className="h-3.5 w-3.5" />
           {counts.orphan > 0 && (
             <span
-              className={`rounded-full px-0.5 py-px text-[10px] font-bold tabular-nums ${
-                tab === "orfas" ? "bg-primary/10 text-primary" : "bg-secondary text-foreground"
-              }`}
+              className={`rounded-full px-0.5 py-px text-[10px] font-bold tabular-nums ${tab === "orfas" ? "bg-primary/10 text-primary" : "bg-secondary text-foreground"
+                }`}
             >
               {counts.orphan}
             </span>
@@ -151,11 +146,10 @@ export function FilaHeaderToolbar({
           onClick={() => onTabChange("atrasadas")}
           title="Atrasadas (SLA estourado)"
           aria-label="Atrasadas (SLA estourado)"
-          className={`flex shrink-0 items-center gap-0.5 rounded-lg px-1 py-1 text-[11px] font-semibold transition-all ${
-            tab === "atrasadas"
+          className={`flex shrink-0 items-center gap-0.5 rounded-lg px-1 py-1 text-[11px] font-semibold transition-all active:scale-95 ${tab === "atrasadas"
               ? "bg-card text-foreground shadow-[var(--shadow-card)]"
               : "text-muted-foreground hover:text-foreground"
-          }`}
+            }`}
         >
           <AlertTriangle
             className={`h-3.5 w-3.5 ${counts.overdue > 0 ? "text-[var(--pill-red-fg)]" : ""}`}
@@ -178,7 +172,7 @@ export function FilaHeaderToolbar({
               <button
                 title="Buscar"
                 aria-label="Buscar"
-                className="relative grid place-items-center h-7 w-7 rounded-lg text-muted-foreground transition hover:bg-card hover:text-foreground hover:shadow-sm"
+                className="relative grid place-items-center h-7 w-7 rounded-lg text-muted-foreground transition-all hover:bg-card hover:text-foreground hover:shadow-sm active:scale-[0.92]"
               >
                 <Search className="h-3.5 w-3.5" />
                 {search && (
@@ -213,7 +207,7 @@ export function FilaHeaderToolbar({
               <button
                 title="Filtrar por status"
                 aria-label="Filtrar por status"
-                className="relative grid place-items-center h-7 w-7 rounded-lg text-muted-foreground transition hover:bg-card hover:text-foreground hover:shadow-sm"
+                className="relative grid place-items-center h-7 w-7 rounded-lg text-muted-foreground transition-all hover:bg-card hover:text-foreground hover:shadow-sm active:scale-[0.92]"
               >
                 <Filter className="h-3.5 w-3.5" />
                 {state && (
@@ -228,9 +222,8 @@ export function FilaHeaderToolbar({
                 <DropdownMenuItem
                   key={s.label}
                   onClick={() => onStateChange(s.v)}
-                  className={`gap-2 text-xs cursor-pointer rounded-lg ${
-                    state === s.v ? "font-semibold text-primary" : ""
-                  }`}
+                  className={`gap-2 text-xs cursor-pointer rounded-lg ${state === s.v ? "font-semibold text-primary" : ""
+                    }`}
                 >
                   <span className={`h-2 w-2 rounded-full shrink-0 ${stateDotColor(s.v)}`} />
                   {s.label}
@@ -245,7 +238,7 @@ export function FilaHeaderToolbar({
               <button
                 title="Mais opções"
                 aria-label="Mais opções"
-                className="grid place-items-center h-7 w-7 rounded-lg text-muted-foreground transition hover:bg-card hover:text-foreground hover:shadow-sm"
+                className="grid place-items-center h-7 w-7 rounded-lg text-muted-foreground transition-all hover:bg-card hover:text-foreground hover:shadow-sm active:scale-[0.92]"
               >
                 <MoreHorizontal className="h-3.5 w-3.5" />
               </button>
