@@ -249,19 +249,19 @@ function FilaPage() {
     queryKey: ["whatsapp-connection", org?.id],
     enabled: !!org?.id,
     retry: false,
-    refetchInterval: 120_000, // idem: badge/empty-state honestos em queda externa
     queryFn: () => connFn({ data: { orgId: org!.id } }),
   });
   const waStatus = conn?.status ?? "disconnected";
-// Estado de acesso da conta (Fase 3) — MESMA queryKey do AccountAccessBanner:
-// cache compartilhado, 1 fetch serve banner + gate do botão "+".
-const accessFn = useServerFn(getAccountAccess);
-const { data: access } = useQuery({
-  queryKey: ["account-access", org?.id],
-  enabled: !!org?.id,
-  retry: false,
-  queryFn: () => accessFn({ data: { orgId: org!.id } }),
-});
+
+  // Estado de acesso da conta (Fase 3) — MESMA queryKey do AccountAccessBanner:
+  // cache compartilhado, 1 fetch serve banner + gate do botão "+".
+  const accessFn = useServerFn(getAccountAccess);
+  const { data: access } = useQuery({
+    queryKey: ["account-access", org?.id],
+    enabled: !!org?.id,
+    retry: false,
+    queryFn: () => accessFn({ data: { orgId: org!.id } }),
+  });
 
   // Fase 3 (§38): card persistente de setup — aparece quando a org está
   // desconectada e o usuário tem papel de gestão (owner/admin). Independente
@@ -332,9 +332,6 @@ const { data: access } = useQuery({
           overdueOnly: tab === "atrasadas",
         },
       }),
-    // Fallback gentil pra estado de leitura de OUTRAS sessões
-    // (markAllRead alheio não gera evento); frescor imediato vem do Realtime.
-    refetchInterval: 60_000,
     enabled: !!org?.id,
   });
 
@@ -354,8 +351,6 @@ const { data: access } = useQuery({
   const hasMore = data.length < total;
 
   // Skeleton SÓ no primeiro load (isLoading = ainda nunca houve resposta).
-  // Refetch em background (poll/invalidação) não pisca mais a lista vazia —
-  // era isso que fazia a fila "recarregar" visualmente a cada ~30s em org vazia.
   const loadingFirstPage = isLoading;
 
   return (
@@ -374,8 +369,7 @@ const { data: access } = useQuery({
             <PanelLeftOpen className="h-4 w-4" />
           </button>
         )}
-        {/* Coluna da Fila — 360px no lg (toolbar extraída + cluster compacto
-            cabem em linha única); sm mantém 330 e a strip rola se preciso. */}
+        {/* Coluna da Fila */}
         {!collapsed && (
           <div
             className={`${hasSelection ? "hidden sm:flex" : "flex"} flex-col w-full sm:shrink-0 sm:w-[330px] lg:w-[360px] border-r border-border/50 bg-background`}
@@ -395,20 +389,16 @@ const { data: access } = useQuery({
                   markingAll={markAll.isPending}
                   onMarkAllRead={() => markAll.mutate()}
                   onNewDemanda={() => {
-                  // ◆ FASE 3 — GATE DE CRIAÇÃO NA UI ◆ grace/suspended nem abrem o modal:
-                  // toast imediato explica o bloqueio. Autoridade segue no createDemanda
-                  // (servidor); isto é só UX. Se o cache ainda carregou (access undefined),
-                  // abre o modal e o servidor barra no submit — segunda linha de defesa.
-                  if (access && access.access_level !== "full") {
-                    toast.error(
-                      access.access_level === "readonly"
-                        ? "Sua conta está em período de carência. Você pode responder às demandas existentes, mas não é possível criar novas demandas até a renovação do plano."
-                        : "Sua conta foi suspensa por inadimplência. Regularize o pagamento para liberar a criação de demandas. O histórico continua disponível para consulta.",
-                    );
-                    return;
-                  }
-                  setShowNew(true);
-                }}
+                    if (access && access.access_level !== "full") {
+                      toast.error(
+                        access.access_level === "readonly"
+                          ? "Sua conta está em período de carência. Você pode responder às demandas existentes, mas não é possível criar novas demandas até a renovação do plano."
+                          : "Sua conta foi suspensa por inadimplência. Regularize o pagamento para liberar a criação de demandas. O histórico continua disponível para consulta.",
+                      );
+                      return;
+                    }
+                    setShowNew(true);
+                  }}
                 />
               </div>
 
@@ -436,11 +426,9 @@ const { data: access } = useQuery({
                 </div>
               )}
 
-              {/* Lista Rolável de Demandas — pt-20 quando card de setup visível
-                  (evita cobrir o primeiro card da lista) */}
+              {/* Lista Rolável de Demandas */}
               <div className={`flex-1 overflow-y-auto scrollbar-thin p-2.5 space-y-2 ${showSetupCard ? "pt-4" : "pt-1"}`}>
                 {loadingFirstPage && <ListSkeleton rows={6} />}
-                {/* Vazio da aba Fila — contextualizado pra primeira viagem */}
                 {!loadingFirstPage && tab === "fila" && data.length === 0 && (
                   <FilaEmptyState
                     hasFilters={!!state || !!debouncedSearch}
@@ -449,7 +437,6 @@ const { data: access } = useQuery({
                     slug={slug}
                   />
                 )}
-                {/* Vazio da aba Minhas */}
                 {!loadingFirstPage && tab === "minhas" && data.length === 0 && (
                   <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
                     <div className="relative">
@@ -466,7 +453,6 @@ const { data: access } = useQuery({
                     </div>
                   </div>
                 )}
-                {/* Vazio da aba Órfãs */}
                 {!loadingFirstPage && tab === "orfas" && data.length === 0 && (
                   <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
                     <div className="relative">
@@ -483,7 +469,6 @@ const { data: access } = useQuery({
                     </div>
                   </div>
                 )}
-                {/* Vazio da aba Atrasadas */}
                 {!loadingFirstPage && tab === "atrasadas" && data.length === 0 && (
                   <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
                     <div className="relative">
@@ -502,7 +487,6 @@ const { data: access } = useQuery({
                     </div>
                   </div>
                 )}
-                {/* Cards da aba atual — ordem de atividade vinda do servidor */}
                 {data.map((d: any) => (
                   <FilaCard key={d.id} d={d} slug={slug} />
                 ))}

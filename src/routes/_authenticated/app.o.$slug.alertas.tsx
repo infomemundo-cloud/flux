@@ -99,7 +99,6 @@ function AlertasPage() {
     queryKey: ["sla-alerts", orgId, windowDays],
     enabled: !!orgId,
     queryFn: () => fn({ data: { orgId: orgId!, staleDays: windowDays } }),
-    refetchInterval: 60000,
   });
 
   const PAGE_SIZE = 20;

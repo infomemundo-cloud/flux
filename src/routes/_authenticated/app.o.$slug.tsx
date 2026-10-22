@@ -79,8 +79,11 @@ function OrgLayout() {
   }, [location.pathname]);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      const u = data.user;
+    // Usa getSession (local storage) em vez de getUser (rede) para evitar
+    // chamadas HTTP redundantes no mount do layout. Dados do perfil são
+    // suficientes para exibição de nome/avatar no sidebar.
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const u = session?.user;
       if (!u) return;
       const meta: any = u.user_metadata ?? {};
       setUser({

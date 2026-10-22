@@ -134,10 +134,6 @@ function DemandaDetail() {
   const { data, isLoading } = useQuery({
     queryKey: ["demanda", id],
     queryFn: () => getFn({ data: { id } }),
-    // Poll de fallback: 30s só pra rede de segurança (frescor imediato vem
-    // do Realtime + append manual abaixo). Sem isso, queda silenciosa do
-    // canal faria o detalhe ficar desatualizado.
-    refetchInterval: 30_000,
   });
 
   // Inicializa estado de paginação quando o getDemanda resolve (ou quando
