@@ -722,37 +722,25 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
     // caminho quente; corretude nunca depende do memo.
     const quota = await checkMessageQuota(supabaseAdmin, tok.org_id);
     if (quota.enforced && !quota.allowed) {
-      // Continuação = existe demanda ABERTA do contato (mesmo critério de
-      // reuso da RPC). limit(1) em vez de maybeSingle: contato pode ter 2+
-      // abertas (criação manual) e maybeSingle erraria com múltiplas linhas.
-      // contactId null ⇒ RPC sempre criaria demanda nova ⇒ trata como nova.
-      let isContinuation = false;
-      if (contactId) {
-        const { data: openRows } = await supabaseAdmin
-          .from("demandas")
-          .select("id")
-          .eq("org_id", tok.org_id)
-          .eq("contact_id", contactId)
-          .neq("state", "concluido")
-          .limit(1);
-        isContinuation = (openRows ?? []).length > 0;
-      }
-      if (!isContinuation) {
-        markSeen(b.message_id);
-        recordWebhookDelivery({
-          tokenId: tok.id,
-          orgId: tok.org_id,
-          outcome: "rejected",
-          action: "account_gated",
-          status: 200,
-          latencyMs: Date.now() - t0,
-          error: `quota_exceeded current=${quota.current} limit=${quota.limit}`,
-        });
-        return new Response(
-          JSON.stringify({ ok: true, ignored: "quota_exceeded" }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        );
-      }
+      // D1 LITERAL: no estouro, TODO message_in pausa — mesmo shape do
+      // grace (readonly): envio ativo e histórico permanecem intactos.
+      // SEM exceção de continuação: demanda antiga aberta não pode virar
+      // buraco infinito na cota (evidência 2026-10-28: 6 msgs atravessaram
+      // demanda aberta com cota 5/5). Memo 60s/org no helper (diretriz v2.4).
+      markSeen(b.message_id);
+      recordWebhookDelivery({
+        tokenId: tok.id,
+        orgId: tok.org_id,
+        outcome: "rejected",
+        action: "account_gated",
+        status: 200,
+        latencyMs: Date.now() - t0,
+        error: `quota_exceeded current=${quota.current} limit=${quota.limit}`,
+      });
+      return new Response(
+        JSON.stringify({ ok: true, ignored: "quota_exceeded" }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
     }
 
     // 2+3. REUSA ABERTA OU CRIA — ATÔMICO via RPC ingest_upsert_demand

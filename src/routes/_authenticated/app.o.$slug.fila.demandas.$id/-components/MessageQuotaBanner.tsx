@@ -64,14 +64,13 @@ export function MessageQuotaBanner({ orgId, slug }: { orgId: string | null; slug
             <span className="font-semibold">
               Limite de {fmt(quota.limit ?? 0)} mensagens do plano atingido ({fmt(quota.current)}).
             </span>{" "}
-            Novas demandas via WhatsApp pausam até o próximo ciclo; envio e histórico continuam
-            liberados.
+            O recebimento de mensagens no WhatsApp pausa até o próximo ciclo; envio e histórico continuam liberados.
           </>
         ) : (
           <>
             <span className="font-semibold">{quota.percentage}% da cota de mensagens usada</span>{" "}
-            ({fmt(quota.current)} de {fmt(quota.limit ?? 0)}). No limite, novas demandas via
-            WhatsApp pausam até o próximo ciclo.
+            ({fmt(quota.current)} de {fmt(quota.limit ?? 0)}). No limite, o recebimento de mensagens no WhatsApp pausa até o próximo ciclo.
+
           </>
         )}{" "}
         <button
