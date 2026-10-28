@@ -1,22 +1,32 @@
 /**
  * Fase 4.7 Item 3 — Contrato Centralizado de Features por Tier.
- * 
- * PROPÓSITO: Fonte única de verdade sobre quais funcionalidades cada plano libera.
- * Consumido por:
- *   - account-access.ts (para retornar objeto de permissões efetivas ao frontend)
- *   - Componentes UI (para habilitar/desabilitar botões e seções condicionalmente)
- *   - Validações backend (para impedir acesso indevido via API direta)
- * 
- * ARQUITETURA (§5 Backend Authority):
- * Este arquivo é puro TypeScript/constantes. Não faz I/O, não acessa banco.
- * A integração com o banco (tabela `tiers.limits`) acontece no server function
- * que mescla este contrato estático com overrides dinâmicos se necessário.
- * 
- * REGRAS DE NEGÓCIO (Baseado em pricing atual R$97/R$197/R$397 + DECISÃO D18):
- * • OPERADORES: Limites rígidos definidos no banco (Free=2, Op=2, Cresc=6, Escala=15).
+ *
+ * PROPÓSITO: Fonte única de verdade para FEATURES QUALITATIVAS e MARKETING
+ * de cada plano. Consumido por:
+ *   - account-access.ts (mescla com limits do banco para permissões efetivas)
+ *   - Componentes UI (habilita/desabilita botões via hasFeature())
+ *   - Validações backend qualitativas (impedir acesso indevido via API direta)
+ *
+ * ARQUITETURA DE DUAS FONTES (§5 Backend Authority):
+ *
+ *   1. LIMITES QUANTITATIVOS (operators, messages_mes):
+ *      Fonte = BANCO (tiers.limits em runtime via resolveAccountAccess).
+ *      Editável via portal admin (/platform_admin/tiers).
+ *      Este arquivo NÃO é a fonte — os valores aqui são snapshots documentais
+ *      e de fallback para UI/marketing.
+ *
+ *   2. FEATURES QUALITATIVAS (aiAgentEnabled, groupIngestEnabled, etc.):
+ *      Fonte = ESTE ARQUIVO (constante, não editável via portal).
+ *      Gates de funcionalidade usam hasFeature(tierCode, featureKey).
+ *
+ *   3. MARKETING/UI (displayName, priceCents, marketingHighlights):
+ *      Fonte = ESTE ARQUIVO.
+ *
+ * REGRAS DE NEGÓCIO (pricing atual + DECISÃO D18):
+ * • OPERADORES: Limites editáveis no banco (Free=2, Op=2, Cresc=6, Escala=15).
+ * • MENSAGENS/MÊS: Limites editáveis no banco (Free=500, Op=1500, Cresc=10k, Escala=35k).
  * • CANAIS WHATSAPP: SEMPRE 1 POR ORG (D18). Cota de instância NÃO é cota de tier.
- *   Qualquer menção a "N canais" foi REMOVIDA para evitar propaganda enganosa técnica.
- * • DIFERENCIAIS REAIS: O upsell justifica-se por IA, Automação, Analytics e Suporte,
+ * • DIFERENCIAIS REAIS: Upsell justifica-se por IA, Automação, Analytics e Suporte,
  *   não por multiplicidade de números de telefone.
  */
 
@@ -28,26 +38,26 @@ export interface TierFeatures {
   code: string;
   displayName: string;
   priceCents: number;
-  
-  // --- LIMITES QUANTITATIVOS (ALINHADOS AO BANCO public.tiers.limits) ---
-  maxTeamMembers: number;       // Limite real de operadores/membros da equipe
-  maxWhatsappChannels: number;  // SEMPRE 1 (Restrição Arquitetural D18)
-  maxActiveDemandas: number | null; // Null = Ilimitado dentro do teto de mensagens
-  
+
+  // --- LIMITES QUANTITATIVOS (snapshot documental — fonte real = banco) ---
+  maxTeamMembers: number;        // Limite real de operadores (banco: operators)
+  maxWhatsappChannels: number;   // SEMPRE 1 (Restrição Arquitetural D18)
+  maxMessagesPerMonth: number;   // Limite de mensagens por período de cobrança (banco: messages_mes)
+
   // --- FEATURES QUALITATIVAS (GATES DE FUNCIONALIDADE) ---
-  aiAgentEnabled: boolean;      // Agente de IA ativo?
-  customSlaRules: boolean;      // Permite configurar regras de SLA próprias?
-  advancedAutoAssign: boolean;  // Usa algoritmos inteligentes de atribuição?
-  advancedAnalytics: boolean;   // Acesso a dashboards completos?
-  prioritySupport: boolean;     // Fila VIP de suporte?
-  groupIngestEnabled: boolean;  // Ingestão de grupos WhatsApp ativada?
-  
+  aiAgentEnabled: boolean;       // Agente de IA ativo?
+  customSlaRules: boolean;       // Permite configurar regras de SLA próprias?
+  advancedAutoAssign: boolean;   // Usa algoritmos inteligentes de atribuição?
+  advancedAnalytics: boolean;    // Acesso a dashboards completos?
+  prioritySupport: boolean;      // Fila VIP de suporte?
+  groupIngestEnabled: boolean;   // Ingestão de grupos WhatsApp ativada?
+
   // --- MARKETING / UI ---
   marketingHighlights: string[]; // Bullets exibidos nos cards de plano
 }
 
 // ============================================================================
-// CONTRATO CENTRALIZADO (VERDADE ABSOLUTA PARA UI/GATES)
+// CONTRATO CENTRALIZADO (VERDADE PARA UI/GATES QUALITATIVOS)
 // ============================================================================
 
 export const TIER_CONTRACTS: Record<string, TierFeatures> = {
@@ -55,9 +65,9 @@ export const TIER_CONTRACTS: Record<string, TierFeatures> = {
     code: "free",
     displayName: "Teste Grátis",
     priceCents: 0,
-    maxTeamMembers: 2,          // Banco: operators=2
-    maxWhatsappChannels: 1,     // D18: Fixo
-    maxActiveDemandas: 500,     // Estimativa conservadora baseada em messages_mes=500
+    maxTeamMembers: 2,           // Banco: operators=2
+    maxWhatsappChannels: 1,      // D18: Fixo
+    maxMessagesPerMonth: 500,    // Banco: messages_mes=500
     aiAgentEnabled: false,
     customSlaRules: false,
     advancedAutoAssign: false,
@@ -66,6 +76,7 @@ export const TIER_CONTRACTS: Record<string, TierFeatures> = {
     groupIngestEnabled: false,
     marketingHighlights: [
       "Até 2 operadores",
+      "500 mensagens/mês",
       "1 canal WhatsApp dedicado",
       "Recursos básicos de atendimento",
       "Experimente antes de comprar",
@@ -75,10 +86,10 @@ export const TIER_CONTRACTS: Record<string, TierFeatures> = {
   operacao: {
     code: "operacao",
     displayName: "Operação",
-    priceCents: 9700,           // R$ 97,00
-    maxTeamMembers: 2,          // Banco: operators=2 (Corrigido de 5)
-    maxWhatsappChannels: 1,     // D18: Fixo
-    maxActiveDemandas: 1500,    // Baseado em messages_mes=1500
+    priceCents: 9700,            // R$ 97,00
+    maxTeamMembers: 2,           // Banco: operators=2
+    maxWhatsappChannels: 1,      // D18: Fixo
+    maxMessagesPerMonth: 1500,   // Banco: messages_mes=1500
     aiAgentEnabled: false,
     customSlaRules: false,
     advancedAutoAssign: false,
@@ -86,7 +97,8 @@ export const TIER_CONTRACTS: Record<string, TierFeatures> = {
     prioritySupport: false,
     groupIngestEnabled: false,
     marketingHighlights: [
-      "Até 2 operadores",       // Corrigido para bater com o banco
+      "Até 2 operadores",
+      "1.500 mensagens/mês",
       "1 canal WhatsApp dedicado",
       "Fila básica e macros",
       "SLA padrão (24h)",
@@ -96,10 +108,10 @@ export const TIER_CONTRACTS: Record<string, TierFeatures> = {
   crescimento: {
     code: "crescimento",
     displayName: "Crescimento",
-    priceCents: 19700,          // R$ 197,00
-    maxTeamMembers: 6,          // Banco: operators=6 (Corrigido de 20)
-    maxWhatsappChannels: 1,     // D18: Fixo (Corrigido de 3)
-    maxActiveDemandas: 10000,   // Baseado em messages_mes=10000
+    priceCents: 19700,           // R$ 197,00
+    maxTeamMembers: 6,           // Banco: operators=6
+    maxWhatsappChannels: 1,      // D18: Fixo
+    maxMessagesPerMonth: 10000,  // Banco: messages_mes=10000
     aiAgentEnabled: true,
     customSlaRules: true,
     advancedAutoAssign: true,
@@ -107,34 +119,36 @@ export const TIER_CONTRACTS: Record<string, TierFeatures> = {
     prioritySupport: false,
     groupIngestEnabled: false,
     marketingHighlights: [
-      "Até 6 operadores",       // Corrigido para bater com o banco
-      "Agente IA básico incluído", // Diferencial real vs Operação
-      "Regras de SLA customizadas", // Diferencial real
-      "Auto-atribuição inteligente", // Diferencial real
-      "1 canal WhatsApp dedicado", // Substituiu "3 canais"
+      "Até 6 operadores",
+      "10.000 mensagens/mês",
+      "1 canal WhatsApp dedicado",
+      "Agente IA básico incluído",
+      "Regras de SLA customizadas",
+      "Auto-atribuição inteligente",
     ],
   },
 
   escala: {
     code: "escala",
     displayName: "Escala",
-    priceCents: 39700,          // R$ 397,00
-    maxTeamMembers: 15,         // Banco: operators=15 (Corrigido de Infinity)
-    maxWhatsappChannels: 1,     // D18: Fixo (Corrigido de 10)
-    maxActiveDemandas: null,    // Ilimitado (dentro do teto de 35k msgs/mês)
+    priceCents: 39700,           // R$ 397,00
+    maxTeamMembers: 15,          // Banco: operators=15
+    maxWhatsappChannels: 1,      // D18: Fixo
+    maxMessagesPerMonth: 35000,  // Banco: messages_mes=35000
     aiAgentEnabled: true,
     customSlaRules: true,
     advancedAutoAssign: true,
-    advancedAnalytics: true,    // Diferencial exclusivo
-    prioritySupport: true,      // Diferencial exclusivo
-    groupIngestEnabled: true,   // Diferencial exclusivo
+    advancedAnalytics: true,     // Diferencial exclusivo
+    prioritySupport: true,       // Diferencial exclusivo
+    groupIngestEnabled: true,    // Diferencial exclusivo
     marketingHighlights: [
-      "Até 15 operadores",      // Corrigido para bater com o banco
-      "IA avançada + treinamento", // Diferencial real
-      "Analytics completo e relatórios", // Diferencial real
-      "Suporte prioritário VIP", // Diferencial real
-      "Grupos WhatsApp Ativados", // Diferencial técnico real
-      "1 canal WhatsApp dedicado", // Substituiu "10 canais"
+      "Até 15 operadores",
+      "35.000 mensagens/mês",
+      "1 canal WhatsApp dedicado",
+      "IA avançada + treinamento",
+      "Analytics completo e relatórios",
+      "Suporte prioritário VIP",
+      "Grupos WhatsApp Ativados",
     ],
   },
 };
@@ -156,7 +170,7 @@ export function getTierFeatures(tierCode: string | null | undefined): TierFeatur
 
 /**
  * Verifica se um tier específico tem acesso a uma feature booleana.
- * Útil para checks rápidos em componentes UI.
+ * Útil para checks rápidos em componentes UI (IA, SLA custom, grupos, etc.).
  */
 export function hasFeature(
   tierCode: string | null | undefined,
@@ -176,22 +190,25 @@ export function hasFeature(
 
 /**
  * Verifica se um valor numérico está dentro do limite do tier.
+ *
+ * ATENÇÃO: para gates quantitativos de enforcement real (bloqueio de ingest
+ * por cota de mensagens), use `checkMessageQuota` do `quota.ts` que lê
+ * `tiers.limits` DIRETO DO BANCO em runtime — este helper serve apenas
+ * para gates qualitativos/operadores onde o contrato TS é suficiente.
  */
 export function isWithinLimit(
   tierCode: string | null | undefined,
-  limitKey: keyof Pick<TierFeatures, "maxTeamMembers" | "maxWhatsappChannels" | "maxActiveDemandas">,
+  limitKey: keyof Pick<TierFeatures, "maxTeamMembers" | "maxWhatsappChannels" | "maxMessagesPerMonth">,
   currentValue: number
 ): boolean {
   const features = getTierFeatures(tierCode);
   const limit = features[limitKey];
-  if (limit === null || limit === Infinity) return true;
   return currentValue < limit;
 }
 
 /**
  * Lista todos os tiers disponíveis ordenados por preço (para UI de upgrade).
  */
-
 export function getOrderedTiers(): TierFeatures[] {
   return Object.values(TIER_CONTRACTS).sort((a, b) => a.priceCents - b.priceCents);
 }

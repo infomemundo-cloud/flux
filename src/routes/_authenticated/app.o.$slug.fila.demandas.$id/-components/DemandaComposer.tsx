@@ -24,6 +24,7 @@ import {
   type QuickReply,
 } from "@/lib/quick-replies.functions";
 import { EmojiPicker } from "./EmojiPicker";
+import { MessageQuotaBanner } from "./MessageQuotaBanner";
 import { cn } from "@/lib/utils";
 
 export type PendingAttachment = {
@@ -60,6 +61,7 @@ function extForMime(mime: string): string {
 
 type DemandaComposerProps = {
   orgId: string | null;
+  slug: string;
   hasWhatsapp: boolean;
   viaWhatsapp: boolean;
   onViaWhatsappChange: (v: boolean) => void;
@@ -95,6 +97,7 @@ type DemandaComposerProps = {
  */
 export function DemandaComposer({
   orgId,
+  slug,
   hasWhatsapp,
   viaWhatsapp,
   onViaWhatsappChange,
@@ -344,6 +347,9 @@ export function DemandaComposer({
 
   return (
     <div className="relative z-20 shrink-0 border-t border-border/50 bg-card p-2.5 sm:p-3">
+      {/* DT-09 Parte 2: banner escalonado de cota (80/95/100) — só conta full */}
+      <MessageQuotaBanner orgId={orgId} slug={slug} />
+
       {/* Banner de reply (citação) */}
       {replyTo && (
         <div className="mb-2 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">

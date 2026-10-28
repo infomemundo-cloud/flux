@@ -203,17 +203,9 @@ function getDowngradeLosses(
       `Canais WhatsApp: de ${formatLimit(from.maxWhatsappChannels)} para ${formatLimit(to.maxWhatsappChannels)}`,
     );
 
-  if (from.maxActiveDemandas === null && to.maxActiveDemandas !== null) {
+  if (to.maxMessagesPerMonth < from.maxMessagesPerMonth) {
     losses.push(
-      `Demandas ativas: de ilimitado para ${formatLimit(to.maxActiveDemandas)}`,
-    );
-  } else if (
-    from.maxActiveDemandas !== null &&
-    to.maxActiveDemandas !== null &&
-    to.maxActiveDemandas < from.maxActiveDemandas
-  ) {
-    losses.push(
-      `Demandas ativas: de ${formatLimit(from.maxActiveDemandas)} para ${formatLimit(to.maxActiveDemandas)}`,
+      `Mensagens/mês: de ${formatLimit(from.maxMessagesPerMonth)} para ${formatLimit(to.maxMessagesPerMonth)}`,
     );
   }
 

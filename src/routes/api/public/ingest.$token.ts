@@ -9,6 +9,7 @@ import {
 import { resolveAutoAssignment } from "@/lib/demandas/assignment";
 import { recordWebhookDelivery } from "@/lib/webhook-delivery-log";
 import { resolveAccountAccess } from "@/lib/billing/account-access";
+import { checkMessageQuota } from "@/lib/billing/quota";
 
 const Body = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -713,7 +714,48 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
           }
         }
 
-        // 2+3. REUSA ABERTA OU CRIA — ATÔMICO via RPC ingest_upsert_demand
+        // ◆ DT-09 PARTE 2 — COTA DE MENSAGENS (D1) ◆ estouro de cota bloqueia
+    // só RECEBIMENTO de demanda NOVA; demanda existente continua recebendo
+    // (continuação de conversa nunca é punida) e envio ativo permanece
+    // intacto (o gate de cota vive só aqui, nunca no send).
+    // Memo 60s/org dentro do helper (diretriz v2.4): 1 COUNT/min/org no
+    // caminho quente; corretude nunca depende do memo.
+    const quota = await checkMessageQuota(supabaseAdmin, tok.org_id);
+    if (quota.enforced && !quota.allowed) {
+      // Continuação = existe demanda ABERTA do contato (mesmo critério de
+      // reuso da RPC). limit(1) em vez de maybeSingle: contato pode ter 2+
+      // abertas (criação manual) e maybeSingle erraria com múltiplas linhas.
+      // contactId null ⇒ RPC sempre criaria demanda nova ⇒ trata como nova.
+      let isContinuation = false;
+      if (contactId) {
+        const { data: openRows } = await supabaseAdmin
+          .from("demandas")
+          .select("id")
+          .eq("org_id", tok.org_id)
+          .eq("contact_id", contactId)
+          .neq("state", "concluido")
+          .limit(1);
+        isContinuation = (openRows ?? []).length > 0;
+      }
+      if (!isContinuation) {
+        markSeen(b.message_id);
+        recordWebhookDelivery({
+          tokenId: tok.id,
+          orgId: tok.org_id,
+          outcome: "rejected",
+          action: "account_gated",
+          status: 200,
+          latencyMs: Date.now() - t0,
+          error: `quota_exceeded current=${quota.current} limit=${quota.limit}`,
+        });
+        return new Response(
+          JSON.stringify({ ok: true, ignored: "quota_exceeded" }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+    }
+
+    // 2+3. REUSA ABERTA OU CRIA — ATÔMICO via RPC ingest_upsert_demand
         // (advisory lock por org+contato em UMA transação): dois webhooks
         // paralelos do MESMO contato (rajada/encaminhada — caso Diana, 171ms
         // de janela) não criam mais duas demandas; o segundo espera o lock

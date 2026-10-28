@@ -377,6 +377,9 @@ function DemandaDetail() {
       // Não invalida a query: o Realtime vai appendar a mensagem nova no
       // estado local. Invalidar resetaria o scroll e re-assinaria 20 mídias.
       qc.invalidateQueries({ queryKey: ["demandas"] });
+      // Cota de mensagens: refresh direcionado pós-envio (intenção do
+      // usuário, §2.1) — o banner 80/95/100 acompanha sem polling.
+      qc.invalidateQueries({ queryKey: ["message-quota", org?.id] });
     },
     onError: (e) => {
       toast.error(friendlyError(e));
@@ -467,6 +470,7 @@ function DemandaDetail() {
         />
         <DemandaComposer
           orgId={org?.id ?? null}
+          slug={slug}
           hasWhatsapp={!!d.whatsapp_jid}
           viaWhatsapp={viaWhatsapp}
           onViaWhatsappChange={setViaWhatsapp}
