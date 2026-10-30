@@ -7,6 +7,8 @@ import { friendlyError } from "@/lib/friendly-error";
 import {
   listTenants,
   setTenantTrial,
+  forceCancelSubscription,
+  overrideTenantTier,
   type TenantRow,
   type TenantAction,
 } from "@/lib/platform-admin/tenants.functions";
@@ -19,6 +21,8 @@ export const Route = createFileRoute("/platform_admin/_protected/_tenants/tenant
 function TenantsPage() {
   const listFn = useServerFn(listTenants);
   const actionFn = useServerFn(setTenantTrial);
+  const forceCancelFn = useServerFn(forceCancelSubscription);
+  const overrideFn = useServerFn(overrideTenantTier);
   const qc = useQueryClient();
 
   const { data, isPending, isError, error, refetch } = useQuery({
@@ -47,14 +51,41 @@ function TenantsPage() {
     onError: (e) => toast.error(friendlyError(e)),
   });
 
+  // DT-09 Parte 3 — ações de billing. Diferente das 5 de trial (determinísticas,
+  // optimistic via plan()), estas dependem de estado DERIVADO da view
+  // (effective_state pós-cancel pode ser "trial" se houver trial residual; MRR
+  // novo vem de tiers.price_cents do banco). Então: invalidate suave, zero
+  // optimistic local — o refetch vê o estado real (memo do backend já invalidado
+  // no handler). Ação rara de admin; custo do refetch irrelevante em 2 orgs.
+  const forceCancelMut = useMutation({
+    mutationFn: (args: { orgId: string; reason: string }) =>
+      forceCancelFn({ data: { orgId: args.orgId, reason: args.reason } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tenants"] });
+      toast.success("Assinatura cancelada no MP. Acesso bloqueado.");
+    },
+    onError: (e) => toast.error(friendlyError(e)),
+  });
+
+  const overrideMut = useMutation({
+    mutationFn: (args: { orgId: string; toTierCode: string; reason: string }) =>
+      overrideFn({ data: { orgId: args.orgId, toTierCode: args.toTierCode, reason: args.reason } }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["tenants"] });
+      toast.success(`Tier ajustado para ${res.to_tier_code}. ${res.mp_divergence_warning}`);
+    },
+    onError: (e) => toast.error(friendlyError(e)),
+  });
+
   return (
     <div className="space-y-4 p-4">
       <header className="space-y-1">
         <h1 className="text-sm font-semibold">Tenants</h1>
         <p className="text-xs text-muted-foreground">
-          Gestão de organizações — ciclo de vida (trial/grace/suspended/grandfather). Ações auditadas
-          em <code className="text-[10px]">admin_audit_log</code>. Estado efetivo é derivado pelo
-          mesmo helper do banner de acesso.
+          Gestão de organizações — ciclo de vida (trial/grace/suspended/grandfather) + ações de
+          billing (forçar cancelamento MP / override de tier local). Ações auditadas em{" "}
+          <code className="text-[10px]">admin_audit_log</code>. Estado efetivo e MRR derivados do
+          mesmo helper/view do banner de acesso.
         </p>
       </header>
 
@@ -78,7 +109,19 @@ function TenantsPage() {
           onAction={(orgId, action, new_trial, new_state) =>
             mutation.mutate({ orgId, action, new_trial, new_state })
           }
-          busyOrgId={mutation.isPending ? mutation.variables?.orgId : null}
+          onForceCancel={(orgId, reason) => forceCancelMut.mutate({ orgId, reason })}
+          onOverrideTier={(orgId, toTierCode, reason) =>
+            overrideMut.mutate({ orgId, toTierCode, reason })
+          }
+          busyOrgId={
+            mutation.isPending
+              ? mutation.variables?.orgId
+              : forceCancelMut.isPending
+                ? forceCancelMut.variables?.orgId
+                : overrideMut.isPending
+                  ? overrideMut.variables?.orgId
+                  : null
+          }
         />
       )}
     </div>

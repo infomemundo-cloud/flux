@@ -174,3 +174,34 @@ export const slaAlerts = createServerFn({ method: "GET" })
       .sort((a: any, b: any) => a.last_activity_at.localeCompare(b.last_activity_at));
     return stale;
   });
+
+/**
+ * Contagem leve de demandas paradas (SLA) para a sidebar e header.
+ * Executa uma contagem direta via head: true (zero payload, sem join em contacts
+ * e sem busca de histórico em demanda_events).
+ */
+export const getSlaAlertCount = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ orgId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await assertMember(context.supabase, data.orgId, context.userId);
+    const { data: orgRow } = await context.supabase
+      .from("organizations")
+      .select("sla_enabled, sla_max_inactivity_hours")
+      .eq("id", data.orgId)
+      .maybeSingle();
+
+    if (orgRow?.sla_enabled === false) return { count: 0 };
+    const hours = orgRow?.sla_max_inactivity_hours ?? 24;
+    const cutoff = new Date(Date.now() - hours * 3600000).toISOString();
+
+    const { count, error } = await context.supabase
+      .from("demandas")
+      .select("id", { count: "exact", head: true })
+      .eq("org_id", data.orgId)
+      .not("state", "in", "(aguardando_revisao_humana,concluido)")
+      .lt("updated_at", cutoff);
+
+    if (error) throw new Error(error.message);
+    return { count: count ?? 0 };
+  });

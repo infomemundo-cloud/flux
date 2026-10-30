@@ -27,13 +27,21 @@ const formatTrial = (iso: string | null, state: TenantRow["effective_state"]) =>
   return `${days}d`;
 };
 
+// DT-09 Parte 3 (D-2): receita em BRL; "—" quando 0 (sem paid L30D / sem sub viva).
+const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+const formatCents = (cents: number) => (cents > 0 ? brl.format(cents / 100) : "—");
+
 export function TenantsTable({
   tenants,
   onAction,
+  onForceCancel,
+  onOverrideTier,
   busyOrgId,
 }: {
   tenants: TenantRow[];
   onAction: (orgId: string, action: TenantAction, new_trial: string | null, new_state: TenantRow["effective_state"]) => void;
+  onForceCancel: (orgId: string, reason: string) => void;
+  onOverrideTier: (orgId: string, toTierCode: string, reason: string) => void;
   busyOrgId: string | null;
 }) {
   return (
@@ -47,6 +55,8 @@ export function TenantsTable({
             <th className="px-3 py-2 font-medium">Trial</th>
             <th className="px-3 py-2 font-medium">Membros</th>
             <th className="px-3 py-2 font-medium">Abertas</th>
+            <th className="px-3 py-2 font-medium" title="Invoices paid nos últimos 30 dias (receita realizada)">Realizada 30d</th>
+            <th className="px-3 py-2 font-medium" title="tiers.price_cents da assinatura viva (MRR projetado)">MRR</th>
             <th className="px-3 py-2" />
           </tr>
         </thead>
@@ -84,11 +94,15 @@ export function TenantsTable({
                 </td>
                 <td className="px-3 py-2 tabular-nums">{t.member_count}</td>
                 <td className="px-3 py-2 tabular-nums">{t.open_demands}</td>
+                <td className="px-3 py-2 tabular-nums text-muted-foreground">{formatCents(t.realized_l30d_cents)}</td>
+                <td className="px-3 py-2 tabular-nums font-medium">{formatCents(t.mrr_projected_cents)}</td>
                 <td className="px-3 py-2 text-right">
                   <TenantActionsMenu
                     tenant={t}
                     disabled={isBusy}
                     onAction={(action, new_trial, new_state) => onAction(t.id, action, new_trial, new_state)}
+                    onForceCancel={(reason) => onForceCancel(t.id, reason)}
+                    onOverrideTier={(toTierCode, reason) => onOverrideTier(t.id, toTierCode, reason)}
                   />
                 </td>
               </tr>

@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, useLocation, useParams } from "@tanstack/react-router";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { ListSkeleton } from "@/components/skeletons";
 import { listDemandas, createDemanda, markAllDemandasRead } from "@/lib/demandas/demandas.functions";
 import { getOrgBySlug, getOnboardingState } from "@/lib/orgs.functions";
@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   Wifi,
   WifiOff,
+  Loader2,
 } from "lucide-react";
 import { formatRelative } from "@/components/demandas-ui";
 import { FilaSidebarContext } from "@/lib/demandas/fila-sidebar-context";
@@ -34,7 +35,11 @@ export const Route = createFileRoute("/_authenticated/app/o/$slug/fila")({
   component: FilaPage,
 });
 
-const PAGE_SIZE = 20;
+// Configuração inteligente de paginação inicial e tetos de segurança
+const INITIAL_PAGE_SIZE = 10;
+const PAGE_INCREMENT = 10;
+/** Teto rígido = max do zod no servidor. Evita request inválida. */
+const MAX_LIMIT = 100;
 
 function isOverdueDemanda(d: any) {
   return (
@@ -302,10 +307,8 @@ function FilaPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  // Paginação por LIMIT crescente (não por páginas cacheadas): cada clique em
-  // "Mais demandas" refaz UMA query com limit = carregados + 20, devolvendo a
-  // lista inteira de um único snapshot do servidor.
-  const [limit, setLimit] = useState(PAGE_SIZE);
+  // Paginação inteligente por LIMIT com tamanho inicial enxuto (INITIAL_PAGE_SIZE)
+  const [limit, setLimit] = useState(INITIAL_PAGE_SIZE);
   const [showNew, setShowNew] = useState(false);
 
   useEffect(() => {
@@ -313,12 +316,12 @@ function FilaPage() {
     return () => clearTimeout(t);
   }, [search]);
 
-  // Mudou aba/filtro/busca/org → volta pro primeiro "lote".
+  // Mudou aba/filtro/busca/org → volta pro primeiro "lote" enxuto.
   useEffect(() => {
-    setLimit(PAGE_SIZE);
+    setLimit(INITIAL_PAGE_SIZE);
   }, [tab, state, debouncedSearch, org?.id]);
 
-  const { data: result, isFetching, isLoading } = useQuery({
+  const { data: result, isFetching, isLoading, isPlaceholderData } = useQuery({
     queryKey: ["demandas", org?.id, tab, state, debouncedSearch, limit],
     queryFn: () =>
       listFn({
@@ -333,6 +336,7 @@ function FilaPage() {
         },
       }),
     enabled: !!org?.id,
+    placeholderData: keepPreviousData,
   });
 
   const markAll = useMutation({
@@ -350,8 +354,31 @@ function FilaPage() {
   const counts = result?.counts ?? { fila: 0, mine: 0, orphan: 0, overdue: 0 };
   const hasMore = data.length < total;
 
-  // Skeleton SÓ no primeiro load (isLoading = ainda nunca houve resposta).
-  const loadingFirstPage = isLoading;
+  // Ref e Observer para o Infinite Scroll automático com teto rígido
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const currentRef = loadMoreRef.current;
+    if (!currentRef) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0];
+        if (first.isIntersecting && hasMore && !isFetching && limit < MAX_LIMIT) {
+          setLimit((l) => Math.min(l + PAGE_INCREMENT, MAX_LIMIT));
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(currentRef);
+    return () => {
+      if (currentRef) observer.unobserve(currentRef);
+    };
+  }, [hasMore, isFetching, limit]);
+
+  // Skeleton SÓ no primeiro load (ignorando placeholder data para evitar piscar)
+  const loadingFirstPage = isLoading && !isPlaceholderData;
 
   return (
     <FilaSidebarContext.Provider value={{ collapsed, setCollapsed }}>
@@ -392,7 +419,7 @@ function FilaPage() {
                     if (access && access.access_level !== "full") {
                       toast.error(
                         access.access_level === "readonly"
-                          ? "Sua conta está em período de carência. Você pode responder às demandas existentes, mas não é possível criar novas demandas até a renovação do plano."
+                          ? "Sua conta está em período de carência. Você pode responder às demandas existentes, mas não é possível criar novas demandas até a renovação du plano."
                           : "Sua conta foi suspensa por inadimplência. Regularize o pagamento para liberar a criação de demandas. O histórico continua disponível para consulta.",
                       );
                       return;
@@ -412,7 +439,7 @@ function FilaPage() {
                         Configure seu WhatsApp
                       </div>
                       <div className="mt-0.5 text-[11px] text-amber-800 dark:text-amber-200">
-                        Conecte o WhatsApp da sua organização pra começar a receber demandas automaticamente.
+                        Conecte o WhatsApp da sua organização pra receber demandas automaticamente.
                       </div>
                       <Link
                         to="/app/onboarding/$slug"
@@ -490,15 +517,30 @@ function FilaPage() {
                 {data.map((d: any) => (
                   <FilaCard key={d.id} d={d} slug={slug} />
                 ))}
-                {hasMore && !loadingFirstPage && (
-                  <div className="py-2 flex justify-center">
-                    <button
-                      onClick={() => setLimit((l) => l + PAGE_SIZE)}
-                      disabled={isFetching}
-                      className="h-8 px-4 rounded-xl bg-card text-xs font-medium text-foreground shadow-[var(--shadow-card)] ring-1 ring-border/40 transition hover:shadow-[var(--shadow-pop)] hover:ring-primary/30 disabled:opacity-60"
-                    >
-                      {isFetching ? "Carregando..." : `Mais demandas (${data.length}/${total})`}
-                    </button>
+
+                {/* Sentinela de rolagem infinita automática */}
+                {hasMore && !loadingFirstPage && limit < MAX_LIMIT && (
+                  <div ref={loadMoreRef} className="py-3 flex items-center justify-center">
+                    {isFetching && (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                        <span>Carregando mais...</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Fim real da lista */}
+                {!loadingFirstPage && !hasMore && data.length > 0 && (
+                  <div className="py-2 text-center text-[10px] text-muted-foreground/60">
+                    Fim da lista · {data.length} demanda{data.length === 1 ? "" : "s"}
+                  </div>
+                )}
+
+                {/* Teto atingido com mais itens no servidor */}
+                {!loadingFirstPage && hasMore && limit >= MAX_LIMIT && (
+                  <div className="py-2 text-center text-[10px] text-muted-foreground/70">
+                    Exibindo {data.length} de {total} · refine a busca ou os filtros para ir além
                   </div>
                 )}
               </div>

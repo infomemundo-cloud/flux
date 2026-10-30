@@ -3,13 +3,11 @@ import {
   ArrowDownWideNarrow,
   ArrowRight,
   Check,
-  ClipboardList,
   Filter,
   GitBranch,
   History,
   Inbox,
   LayoutDashboard,
-  Mail,
   MessageCircle,
   Plus,
   Search,
@@ -81,32 +79,32 @@ function Reveal({
 function ProductMockup() {
   const queue = [
     {
-      initials: "W",
-      name: "Wagner",
+      initials: "C",
+      name: "Carlos",
       time: "há 2 h",
       preview: "Preciso remarcar a entrega de hoje…",
       stripe: "var(--state-aguardando)",
       pip: true,
     },
     {
-      initials: "E",
-      name: "Emplast",
+      initials: "J",
+      name: "Juliana",
       time: "há 5 min",
-      preview: "Orçamento do rack de aço carbono",
+      preview: "Orçamento do pedido de amanhã",
       stripe: "var(--state-novo)",
       pip: true,
     },
     {
-      initials: "R",
-      name: "Rute Lopes",
+      initials: "M",
+      name: "Marcos",
       time: "há 26 min",
       preview: "vai demorar ainda?",
       stripe: "var(--state-novo)",
       pip: false,
     },
     {
-      initials: "S",
-      name: "Sergio Soares",
+      initials: "F",
+      name: "Fernanda",
       time: "há 1 h",
       preview: "[Imagem]",
       stripe: "var(--state-analise)",
@@ -218,9 +216,9 @@ function ProductMockup() {
             <div className="flex items-center justify-between border-b border-border px-2.5 py-1.5">
               <div className="flex min-w-0 items-center gap-1.5">
                 <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-secondary text-[8px] font-bold text-foreground">
-                  W
+                  C
                 </span>
-                <span className="truncate text-[10px] font-semibold text-foreground">Wagner</span>
+                <span className="truncate text-[10px] font-semibold text-foreground">Carlos</span>
                 <span className="hidden rounded font-mono text-[8px] text-muted-foreground min-[420px]:inline">
                   DM-038F39
                 </span>
@@ -235,7 +233,7 @@ function ProductMockup() {
                 Preciso remarcar a entrega de hoje…
               </div>
               <div className="ml-auto max-w-[85%] rounded-lg rounded-tr-none border border-primary/20 bg-primary/10 px-2 py-1 text-[9px] text-foreground">
-                Oi Wagner! Já estou vendo aqui pra você ✔
+                Oi Carlos! Já estou vendo aqui pra você ✔
               </div>
             </div>
             <div className="mt-auto flex items-center gap-1.5 border-t border-border px-2.5 py-1.5">
@@ -270,13 +268,11 @@ function Landing() {
   const integrations = [
     { icon: MessageCircle, label: "WhatsApp" },
     { icon: Zap, label: "Evolution API" },
-    { icon: Webhook, label: "Webhooks" },
-    { icon: Mail, label: "E-mail" },
-    { icon: ClipboardList, label: "Formulários" },
+    { icon: Webhook, label: "Webhooks / API" },
   ];
   const kpis = [
     { icon: ShieldCheck, title: "100% Auditado", desc: "Toda transição registra autor e horário." },
-    { icon: Inbox, title: "Atendimento Centralizado", desc: "WhatsApp, e-mail e formulários numa fila só." },
+    { icon: Inbox, title: "Atendimento Centralizado", desc: "WhatsApp e webhooks de qualquer sistema numa fila só." },
     { icon: Timer, title: "Gestão de SLA em Tempo Real", desc: "Atrasos sobem pro topo antes de virar reclamação." },
   ];
   /** Coluna editorial ao lado do mockup: o que olhar na janela. */
@@ -310,7 +306,7 @@ function Landing() {
     {
       icon: MessageCircle,
       title: "Canais de entrada",
-      desc: "Webhook público conecta WhatsApp (via Evolution API), e-mail, formulários e qualquer sistema externo.",
+      desc: "Webhook público conecta WhatsApp (via Evolution API) e qualquer sistema externo que envie eventos.",
       tint: "bg-[var(--pill-brand-bg)] text-[var(--pill-brand-fg)]",
     },
     {
@@ -372,13 +368,13 @@ function Landing() {
         <Reveal>
           <div className="max-w-3xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-primary">
-              <span className="h-1.5 w-1.5 rounded-full bg-primary" /> Motor de demandas multi-canal
+              <span className="h-1.5 w-1.5 rounded-full bg-primary" /> Motor de demandas
             </div>
             <h1 className="mt-6 text-4xl lg:text-6xl font-extrabold tracking-tight leading-[1.05]">
               Nada importante <span className="text-primary">esquecido</span> — de qualquer conversa até a resolução.
             </h1>
             <p className="mt-6 text-lg text-muted-foreground max-w-2xl">
-              Fluxo é o motor que transforma conversas de WhatsApp, e-mail, formulários e APIs em demandas com estado,
+              Fluxo é o motor que transforma conversas de WhatsApp e chamadas de API (webhooks) em demandas com estado,
               prazo, responsável e histórico completo.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
@@ -426,7 +422,7 @@ function Landing() {
               <div className="mt-3 space-y-2.5 text-[11px] text-muted-foreground">
                 <div className="flex items-center gap-2.5">
                   <span className="relative grid h-5 w-5 shrink-0 place-items-center rounded-full bg-secondary">
-                    <span className="text-[8px] font-bold text-foreground">W</span>
+                    <span className="text-[8px] font-bold text-foreground">C</span>
                     <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-destructive" />
                   </span>
                   Ponto vermelho = atrasada ou urgente (sobe pro topo)
@@ -532,15 +528,15 @@ function Landing() {
                   <span className="pill-red inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-bold">
                     <span className="h-1.5 w-1.5 rounded-full bg-[var(--pill-red-fg)] animate-alert-blink" /> SLA estourado · 2h
                   </span>
-                  <span className="text-[11px] text-muted-foreground">DM-1102 · Wagner</span>
+                  <span className="text-[11px] text-muted-foreground">DM-1102 · Carlos</span>
                 </div>
                 <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
                   <span className="pill-amber rounded-full px-2 py-0.5 text-[10px] font-bold">Vence em 4h</span>
-                  <span className="text-[11px] text-muted-foreground">DM-0977 · Emplast</span>
+                  <span className="text-[11px] text-muted-foreground">DM-0977 · Juliana</span>
                 </div>
                 <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
                   <span className="pill-green rounded-full px-2 py-0.5 text-[10px] font-bold">Dentro do prazo</span>
-                  <span className="text-[11px] text-muted-foreground">DM-0954 · Rute Lopes</span>
+                  <span className="text-[11px] text-muted-foreground">DM-0954 · Marcos</span>
                 </div>
               </div>
               <p className="mt-3 text-[11px] text-muted-foreground">Alertas aparecem antes do cliente perceber o atraso.</p>

@@ -297,52 +297,54 @@ async function handleContactsUpdate(
   payload: z.infer<typeof ContactsUpdatePayload>,
 ): Promise<void> {
   const items = Array.isArray(payload.data) ? payload.data : [payload.data];
+  const jids = items.map((i) => i.remoteJid).filter(Boolean);
+  if (jids.length === 0) return;
+
+  // TETO por payload (rajada gigante de contacts.update ao conectar número)
+  const BATCH_CAP = 200;
+  const capped = jids.slice(0, BATCH_CAP);
+
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+  // 1 SELECT batch em vez de N selects individuais
+  const { data: found, error: findErr } = await supabaseAdmin
+    .from("contacts")
+    .select("id, external_id, name, avatar_url")
+    .eq("org_id", orgId)
+    .in("external_id", capped);
+
+  if (findErr) {
+    console.error("[ingest] falha no batch select de contatos", { orgId, error: findErr });
+    return;
+  }
+
+  const byJid = new Map((found ?? []).map((r) => [r.external_id, r]));
+
   for (const item of items) {
-    const isGroup = item.remoteJid.endsWith("@g.us");
-    const hasPhoto = typeof item.profilePicUrl === "string" || item.profilePicUrl === null;
-    const hasName = typeof item.pushName === "string" && item.pushName.trim().length > 0;
-    if (!hasPhoto && !hasName) continue;
-    const { data: found, error: findErr } = await (
-      await import("@/integrations/supabase/client.server")
-    ).supabaseAdmin
-      .from("contacts")
-      .select("id")
-      .eq("org_id", orgId)
-      .eq("external_id", item.remoteJid)
-      .maybeSingle();
-    if (findErr) {
-      console.error("[ingest] falha ao buscar contato para atualização", {
-        org_id: orgId,
-        remoteJid: item.remoteJid,
-        error: findErr,
-      });
-      continue;
-    }
-    if (!found) continue;
-    const patch: Record<string, any> = {};
-    if (hasPhoto) {
+    const existing = byJid.get(item.remoteJid);
+    if (!existing) continue;
+
+    // SKIP quando nada muda de fato (Evolution re-emite contacts.update
+    // periodicamente com mesmos valores — 0 writes desnecessários)
+    const patch: Record<string, unknown> = {};
+    if (typeof item.profilePicUrl === "string" && item.profilePicUrl !== existing.avatar_url) {
+      patch.avatar_url = item.profilePicUrl;
       patch.avatar_fetched_at = new Date().toISOString();
-      if (typeof item.profilePicUrl === "string" && item.profilePicUrl.trim()) {
-        patch.avatar_url = item.profilePicUrl.trim();
-      }
     }
-    // GRUPO: nunca aplicar pushName como nome (é o nome do último
-    // participante). Nome de grupo só via fetchGroupSubject ou edição manual.
-    if (hasName && !isGroup) {
-      patch.name = item.pushName!.trim();
+    const isGroup = item.remoteJid.endsWith("@g.us");
+    if (!isGroup && typeof item.pushName === "string" && item.pushName.trim() && item.pushName.trim() !== existing.name) {
+      patch.name = item.pushName.trim();
     }
-    // Se não sobrou nada no patch (grupo só com pushName), pula o update.
     if (Object.keys(patch).length === 0) continue;
-    const { error: updErr } = await (
-      await import("@/integrations/supabase/client.server")
-    ).supabaseAdmin
+
+    const { error: updErr } = await supabaseAdmin
       .from("contacts")
       .update(patch as never)
-      .eq("id", found.id);
+      .eq("id", existing.id);
+
     if (updErr) {
-      console.error("[ingest] falha ao atualizar contato", {
-        contact_id: found.id,
-        remoteJid: item.remoteJid,
+      console.error("[ingest] falha ao atualizar contato no batch", {
+        contact_id: existing.id,
         error: updErr,
       });
     }

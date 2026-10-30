@@ -9,7 +9,7 @@ import { InfoTip } from "@/components/info-tip";
 import { Badge } from "@/components/ui/badge";
 import { Lock } from "lucide-react";
 import { getAccountAccess } from "@/lib/billing/account-access";
-import { hasFeature } from "@/lib/billing/tier-contracts"; // 👈 AGORA UTILIZADO CORRETAMENTE
+import { hasFeature } from "@/lib/billing/tier-contracts";
 
 /**
  * Card de regras de atendimento em grupos (linguagem de gestor):
@@ -17,10 +17,21 @@ import { hasFeature } from "@/lib/billing/tier-contracts"; // 👈 AGORA UTILIZA
  * - ATIVAR exige confirmação em modal com aviso de sobrecarga;
  * - DESATIVAR é imediato;
  * - Persiste em organizations.allow_group_ingest.
- * 
+ *
  * FASE 4.7 ITEM 3 (Gate de Features):
  * • Recurso EXCLUSIVO para plano 'escala'.
  * • Planos 'operacao' e 'crescimento': Switch desabilitado + Badge ESCALA.
+ *
+ * FASE 4.9 (decisão de fase, 2026-10-28): grupos OFF para TODOS os tiers.
+ * A Evolution está travada em WEBHOOK_IGNORE_GROUPS (infra estrutural: vale
+ * pra toda instância nova/atual, não é toggle reversível por acidente). O
+ * machinery de grupo no ingest fica DORMENTE DE PROPÓSITO — preservado pra
+ * quando mudarmos de ideia (ele já respeita tok.allowGroup e, sem tráfego,
+ * nunca dispara; não tocamos no ingest). O contrato TS mantém
+ * groupIngestEnabled como promessa de futuro (escala=true), mas a GUI trava
+ * AQUI via GROUPS_GLOBALLY_DISABLED. Enquanto a flag for true, o badge é
+ * "Em breve" (não "Escala") e o parágrafo não promete upgrade. Reativação =
+ * false aqui + destravar Evolution; o gate por tier volta a mandar sozinho.
  */
 export function GroupRulesSection({
   orgId,
@@ -34,7 +45,7 @@ export function GroupRulesSection({
   const qc = useQueryClient();
   const setFn = useServerFn(setAllowGroupIngest);
   const accessFn = useServerFn(getAccountAccess);
-  
+
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   // Query de Acesso (compartilha cache com outros cards da página)
@@ -69,19 +80,30 @@ export function GroupRulesSection({
     },
   });
 
-  // 👇 LÓGICA DE GATE ESTRITA VIA CONTRATO CENTRALIZADO
+  // 👇 LÓGICA DE GATE: contrato por tier + kill-switch da fase.
   const tierCode = access?.tierCode ?? "operacao";
-  const canUseGroups = hasFeature(tierCode, "groupIngestEnabled"); // ✅ Consulta correta ao contrato
-  const isLocked = !canUseGroups;
+  const canUseGroups = hasFeature(tierCode, "groupIngestEnabled");
+  // Grupos OFF para TODOS os tiers nesta fase (ver doc-comment). A flag
+  // subordinada ao contrato: quando virar false, o gate por tier (escala)
+  // volta a valer sem retrabalho — o machinery fica preservado.
+  const GROUPS_GLOBALLY_DISABLED = true;
+  const isLocked = GROUPS_GLOBALLY_DISABLED || !canUseGroups;
 
   function handleChange(v: boolean) {
     if (v && isLocked) {
-      toast.info("Faça upgrade para o plano Escala para habilitar atendimento em grupos.", {
-        description: "Vá em Configurações > Financeiro para ver os planos disponíveis.",
-      });
+      if (GROUPS_GLOBALLY_DISABLED) {
+        toast.info("Atendimento em grupos chega em breve.", {
+          description:
+            "Estamos preparando o suporte a grupos com controle de carga de mídia.",
+        });
+      } else {
+        toast.info("Faça upgrade para o plano Escala para habilitar atendimento em grupos.", {
+          description: "Vá em Configurações > Financeiro para ver os planos disponíveis.",
+        });
+      }
       return;
     }
-    
+
     if (v) {
       setConfirmOpen(true);
       return;
@@ -96,23 +118,36 @@ export function GroupRulesSection({
           <div className="flex items-center gap-1.5">
             <h3 className="text-sm font-semibold">Atendimento em Grupos do WhatsApp</h3>
             <InfoTip text="Quando ativado, conversas de grupos criam chamados com o nome do grupo e identificam o cliente que enviou a mensagem." />
-            
-            {/* Badge específico indicando o plano necessário */}
-            {isLocked && (
-              <Badge variant="outline" className="h-5 px-1.5 text-[9px] font-bold uppercase tracking-wider border-violet-500/30 text-violet-500 bg-violet-500/10 gap-1 ml-1">
-                <Lock className="h-2.5 w-2.5" />
-                Escala
-              </Badge>
-            )}
+
+            {/* Pill "Em breve" (neutro, idioma do UpcomingChannels) enquanto a
+                fase trava todos os tiers. O Badge violeta + Lock só volta se a
+                flag global virar false e o gate por tier assumir — aí o cadeado
+                faz sentido de novo ("bloqueado por plano", não "em breve"). */}
+            {isLocked &&
+              (GROUPS_GLOBALLY_DISABLED ? (
+                <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Em breve
+                </span>
+              ) : (
+                <Badge
+                  variant="outline"
+                  className="h-5 px-1.5 text-[9px] font-bold uppercase tracking-wider border-violet-500/30 text-violet-500 bg-violet-500/10 gap-1 ml-1"
+                >
+                  <Lock className="h-2.5 w-2.5" />
+                  Escala
+                </Badge>
+              ))}
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {isLocked
-              ? "Recurso exclusivo do plano Escala. Automatize triagem de mensagens de grupos diretamente na sua fila."
+              ? GROUPS_GLOBALLY_DISABLED
+                ? "Em breve: triagem de mensagens de grupos direto na sua fila."
+                : "Recurso exclusivo do plano Escala. Automatize triagem de mensagens de grupos diretamente na sua fila."
               : "Permitir que mensagens enviadas em grupos gerem chamados automaticamente na fila da equipe."
             }
           </p>
         </div>
-        
+
         <Switch
           checked={isLocked ? false : enabled}
           disabled={toggle.isPending || isLocked}

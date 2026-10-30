@@ -1,4 +1,5 @@
-import { CalendarPlus, CalendarClock, RotateCcw, Shield, Ban } from "lucide-react";
+import { CalendarPlus, CalendarClock, RotateCcw, Shield, Ban, CircleSlash, ArrowLeftRight } from "lucide-react";
+import { toast } from "sonner";
 import { RowMenu } from "@/components/row-menu";
 import type { TenantRow, TenantAction } from "@/lib/platform-admin/tenants.functions";
 
@@ -13,10 +14,14 @@ export function TenantActionsMenu({
   tenant,
   disabled,
   onAction,
+  onForceCancel,
+  onOverrideTier,
 }: {
   tenant: TenantRow;
   disabled: boolean;
   onAction: (action: TenantAction, new_trial: string | null, new_state: TenantRow["effective_state"]) => void;
+  onForceCancel: (reason: string) => void;
+  onOverrideTier: (toTierCode: string, reason: string) => void;
 }) {
   const now = Date.now();
   const base = Math.max(now, tenant.trial_ends_at ? new Date(tenant.trial_ends_at).getTime() : now);
@@ -81,6 +86,62 @@ export function TenantActionsMenu({
       onClick: () => {
         const p = plan("suspend");
         onAction("suspend", p.new_trial, p.new_state);
+      },
+    },
+    // ── DT-09 Parte 3 — ações de billing (superadmin) ──────────────────
+    // Só fazem sentido com assinatura viva (effective_state === "active").
+    // confirm/prompt inline: o RowMenu não embute confirmação (itens de
+    // trial disparam direto), então a fricção de ações destrutivas mora aqui.
+    {
+      label: "Forçar cancelamento (MP)",
+      icon: <CircleSlash className="h-3.5 w-3.5" />,
+      danger: true,
+      disabled: disabled || tenant.effective_state !== "active",
+      onClick: () => {
+        if (
+          !confirm(
+            `Cancelar a assinatura da org "${tenant.name}" NO MERCADO PAGO AGORA?
+
+` +
+            `O preapproval será cancelado no MP e o acesso cai para bloqueado imediatamente. ` +
+            `Ação auditada e IRREVERSÍVEL pela UI (reativação só via checkout do tenant).`,
+          )
+        )
+          return;
+        const reason = window.prompt("Motivo do cancelamento forçado (mín. 3 caracteres):")?.trim();
+        if (!reason || reason.length < 3) {
+          toast.error("Motivo obrigatório (mín. 3 caracteres).");
+          return;
+        }
+        onForceCancel(reason);
+      },
+    },
+    {
+      label: "Ajustar tier (override local)",
+      icon: <ArrowLeftRight className="h-3.5 w-3.5" />,
+      disabled: disabled || tenant.effective_state !== "active",
+      onClick: () => {
+        const toTierCode = window.prompt(
+          `Novo tier (código exato):
+operacao | crescimento | escala | free`,
+        )?.trim();
+        if (!toTierCode) return;
+        const reason = window.prompt("Motivo do override (mín. 3 caracteres):")?.trim();
+        if (!reason || reason.length < 3) {
+          toast.error("Motivo obrigatório (mín. 3 caracteres).");
+          return;
+        }
+        if (
+          !confirm(
+            `Override LOCAL de tier para "${toTierCode}".
+
+` +
+            `⚠️ A cobrança no MP PERMANECE no tier antigo até a próxima reconciliação/checkout. ` +
+            `Use para corrigir estado travado, NÃO para troca comercial.`,
+          )
+        )
+          return;
+        onOverrideTier(toTierCode, reason);
       },
     },
   ];

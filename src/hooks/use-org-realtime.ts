@@ -25,7 +25,7 @@ export function useOrgRealtime({ orgId, onNewDemanda }: Options) {
   useEffect(() => {
     if (!orgId) return;
 
-    const debouncedInvalidate = (includeAggregates: boolean) => {
+    const debouncedInvalidate = (includeAggregates: boolean, delayMs = 1500) => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       
       timeoutRef.current = setTimeout(() => {
@@ -34,7 +34,7 @@ export function useOrgRealtime({ orgId, onNewDemanda }: Options) {
           qc.invalidateQueries({ queryKey: ["dashboard"] });
           qc.invalidateQueries({ queryKey: ["alertas"] });
         }
-      }, 1500); // Agrupa todas as mensagens/eventos em uma única chamada a cada 1.5s
+      }, delayMs);
     };
 
     const channel = supabase
@@ -44,8 +44,17 @@ export function useOrgRealtime({ orgId, onNewDemanda }: Options) {
         { event: "INSERT", schema: "public", table: "demandas", filter: `org_id=eq.${orgId}` },
         (payload) => {
           const row = (payload.new ?? {}) as { id?: string; title?: string; protocol?: string };
-          debouncedInvalidate(true);
+          debouncedInvalidate(true, 500);
           onNewDemanda?.(row ?? {});
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "demandas", filter: `org_id=eq.${orgId}` },
+        () => {
+          // Invalida contador de SLA e reposiciona o card no topo
+          qc.invalidateQueries({ queryKey: ["sla-alert-count", orgId] });
+          debouncedInvalidate(false, 1500);
         },
       )
       .on(
@@ -53,12 +62,19 @@ export function useOrgRealtime({ orgId, onNewDemanda }: Options) {
         { event: "INSERT", schema: "public", table: "demanda_events", filter: `org_id=eq.${orgId}` },
         (payload) => {
           const row = (payload.new ?? {}) as { demanda_id?: string; kind?: string };
-          if (row.demanda_id) {
-            // Invalidação pontual do detalhe pode ser imediata ou debounced
-            qc.invalidateQueries({ queryKey: ["demanda", row.demanda_id] });
-          }
           const isSystem = !!(row.kind && SYSTEM_EVENT_KINDS.has(row.kind));
-          debouncedInvalidate(isSystem);
+
+          if (isSystem) {
+            if (row.demanda_id) {
+              qc.invalidateQueries({ queryKey: ["demanda", row.demanda_id] });
+            }
+            debouncedInvalidate(true, 1000);
+          } else {
+            // Mensagens comuns (message_in/message_out):
+            // Não invalida a query de detalhe (chat preserva append-only via demanda-live-${id})
+            // e agrupa a atualização da fila com debounce de 5s para conversas ativas.
+            debouncedInvalidate(false, 5000);
+          }
         },
       )
       .subscribe();
