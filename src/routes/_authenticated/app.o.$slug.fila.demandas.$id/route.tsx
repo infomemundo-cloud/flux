@@ -138,14 +138,13 @@ function DemandaDetail() {
 
   // Inicializa estado de paginação quando o getDemanda resolve (ou quando
   // o id muda — reset completo pra não misturar eventos de demandas distintas).
-  // MERGE SEGURO: se o usuário já carregou páginas anteriores (hasPrepended),
-  // preservamos o estado local — só atualizamos a demanda (metadata) e não
-  // tocamos nos eventos já paginados. Isso evita reset de scroll e
-  // re-assinatura de mídias em cada refetch de 30s.
+  // MERGE REATIVO: refetches de ["demanda", id] só acrescentam eventos novos
+  // (dedup por id + ordem cronológica), sem sobrescrever páginas antigas,
+  // sem resetar scroll e sem re-assinar mídias já carregadas.
   useEffect(() => {
     if (!data) return;
+
     if (currentIdRef.current !== id) {
-      // Nova demanda: reset completo
       currentIdRef.current = id;
       setMobilePropsOpen(false);
       setEventsInitialized(false);
@@ -156,22 +155,71 @@ function DemandaDetail() {
       setEventsInitialized(true);
       return;
     }
-    // Mesma demanda: preserva o estado paginado (não sobrescreve eventos)
-    // Só atualiza os atores (caso o servidor tenha resolvido algum novo)
+
     if (data.actors) {
       setActors((prev) => ({ ...prev, ...data.actors }));
     }
+
     if (!eventsInitialized) {
       setEvents(data.events ?? []);
       setOlderCursor(data.olderCursor ?? null);
       setEventsInitialized(true);
+      return;
     }
-  }, [data, id, eventsInitialized]);
+
+    if (data.events?.length) {
+      setEvents((prev) => {
+        const byId = new Map<string, any>(prev.map((e) => [e.id, e] as [string, any]));
+        let changed = false;
+
+        for (const incoming of data.events as any[]) {
+          const existing = byId.get(incoming.id);
+          if (!existing) {
+            byId.set(incoming.id, incoming);
+            changed = true;
+            continue;
+          }
+
+          // Se o refetch trouxe URL assinada para um evento que o Realtime
+          // tinha inserido sem assinatura (ou com assinatura diferente),
+          // reconcilia sem duplicar.
+          if (
+            incoming.media_url_signed &&
+            (!existing.media_url_signed || existing.media_url_signed !== incoming.media_url_signed)
+          ) {
+            byId.set(incoming.id, {
+              ...existing,
+              ...incoming,
+              media_thumb_signed: incoming.media_thumb_signed ?? existing.media_thumb_signed,
+            });
+            changed = true;
+          }
+        }
+
+        if (!changed) return prev;
+
+        return Array.from(byId.values()).sort((a, b) => {
+          const ta = a.created_at ? Date.parse(a.created_at) : 0;
+          const tb = b.created_at ? Date.parse(b.created_at) : 0;
+          if (ta !== tb) return ta - tb;
+          return String(a.id).localeCompare(String(b.id));
+        });
+      });
+    }
+
+    // Sem páginas antigas carregadas, o cursor pode acompanhar a janela nova
+    // do servidor. Com páginas antigas, preservamos o cursor local para não
+    // perder histórico já navegado.
+    if (!hasPrepended) {
+      setOlderCursor(data.olderCursor ?? null);
+    }
+  }, [data, id, eventsInitialized, hasPrepended]);
 
   // Realtime APPEND-only: nova mensagem/evento na demanda vai pro fim de
   // `events` sem invalidar a query (não re-assina 20 mídias, não re-resolve
-  // atores, não reseta o scroll). Canal específico pra esta demanda
-  // (diferente do org-wide, pra não conflitar com invalidações de lista).
+  // atores, não reseta o scroll). O callback de subscribe reconcilia a janela
+  // de handshake com um único refetch por abertura da conversa — não por
+  // mensagem.
   useEffect(() => {
     if (!data?.demanda?.org_id) return;
     const orgId = data.demanda.org_id;
@@ -188,19 +236,16 @@ function DemandaDetail() {
         (payload) => {
           const newRow = payload.new as any;
           if (!newRow) return;
-          // Dedup por id (Realtime pode entregar evento que já está no estado
-          // inicial do getDemanda, em race condition de primeiro load).
+
           setEvents((prev) => {
             if (prev.some((e) => e.id === newRow.id)) return prev;
             return [...prev, newRow];
           });
-          // Merge do ator (se novo) via server function (evita import de
-          // client.server em rota client).
+
           const uid = newRow.actor_id;
           if (uid) {
             setActors((prev) => {
               if (prev[uid]) return prev;
-              // Resolve assíncrono via server function.
               actorFn({ data: { orgId, userId: uid } })
                 .then((actor) => {
                   setActors((p) => ({ ...p, [uid]: actor }));
@@ -211,8 +256,7 @@ function DemandaDetail() {
               return prev;
             });
           }
-          // Assina mídia do evento novo via server function (evita import
-          // de media-storage em rota client).
+
           if (newRow.media_url) {
             signMediaFn({
               data: {
@@ -235,14 +279,20 @@ function DemandaDetail() {
           }
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          qc.invalidateQueries({ queryKey: ["demanda", id] });
+        }
+      });
+
     return () => {
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, data?.demanda?.org_id]);
 
-  // Carrega lote anterior (scroll pra cima).
+  // Carrega lote anterior (scroll pra cima), com dedup por id e ordem
+  // cronológica — evita duplicata se um refetch reconciliar a janela nova.
   const loadMore = useCallback(async () => {
     if (!olderCursor || loadingMore) return;
     setLoadingMore(true);
@@ -250,7 +300,18 @@ function DemandaDetail() {
       const res = await olderFn({
         data: { demandaId: id, before: olderCursor },
       });
-      setEvents((prev) => [...(res.events ?? []), ...prev]);
+      setEvents((prev) => {
+        const byId = new Map<string, any>(prev.map((e) => [e.id, e] as [string, any]));
+        for (const incoming of (res.events ?? []) as any[]) {
+          if (!byId.has(incoming.id)) byId.set(incoming.id, incoming);
+        }
+        return Array.from(byId.values()).sort((a, b) => {
+          const ta = a.created_at ? Date.parse(a.created_at) : 0;
+          const tb = b.created_at ? Date.parse(b.created_at) : 0;
+          if (ta !== tb) return ta - tb;
+          return String(a.id).localeCompare(String(b.id));
+        });
+      });
       setOlderCursor(res.olderCursor ?? null);
       setHasPrepended(true);
       if (res.actors) {
