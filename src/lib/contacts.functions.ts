@@ -95,7 +95,11 @@ export const listOrgTags = createServerFn({ method: "GET" })
     const { data: rows, error } = await supabaseAdmin
       .from("contacts")
       .select("tags")
-      .eq("org_id", data.orgId);
+      .eq("org_id", data.orgId)
+      .not("tags", "is", null)
+      .neq("tags", "[]")
+      .order("created_at", { ascending: false })
+      .limit(200);
     if (error) throw new Error(error.message);
     const seen = new Map<string, ContactTag>();
     for (const r of rows ?? []) {

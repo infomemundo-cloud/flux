@@ -47,7 +47,12 @@ export const listDemandas = createServerFn({ method: "GET" })
       role === "operador" && (data.scope ?? "all") === "all"
         ? "mine_or_orphan"
         : (data.scope ?? "all");
-    // 1. Monta a query com os filtros, mas SEM o .range() ainda
+    // "Agora" único: alimenta o filtro SQL de overdue (aba Atrasadas) E o
+    // badge overdueCount — mesma âncora temporal nos dois, sem drift de ms.
+    const nowIso = new Date().toISOString();
+    // 1. Builder com TODOS os filtros + ordenação + paginação no banco.
+    //    O { count: "exact" } devolve o total do conjunto filtrado no header
+    //    Content-Range (1 request, não N) — é o `total` da paginação da aba.
     let q = context.supabase
       .from("demandas")
       .select(
@@ -64,13 +69,29 @@ export const listDemandas = createServerFn({ method: "GET" })
     else if (effectiveScope === "mine_or_orphan")
       q = q.or(`assignee_id.eq.${context.userId},assignee_id.is.null`);
     if (data.search) q = q.ilike("title", `%${data.search}%`);
-    const { data: rows, error } = await q;
+    // Overdue no banco (era rows.filter(isOverdue) em memória). Predicado
+    // idêntico ao isOverdue antigo e ao badge overdueCount: due_at vencido
+    // ∧ state ≠ concluido (revisão-humana vencida entra, como antes).
+    if (data.overdueOnly) {
+      q = q.lt("due_at", nowIso).neq("state", "concluido");
+    }
+    // Ordenação + paginação no banco (era working.sort(activityOf) +
+    // working.slice). PARIDADE EXATA com o activityOf em JS: vale o invariante
+    // updated_at ≥ last_message_at sempre — o RPC ingest_upsert_demand iguala
+    // os dois na mensagem (updated_at = p_message_at) e update de estado só
+    // AVANÇA updated_at; nunca há caminho que suba last_message_at sem subir
+    // updated_at junto. Logo max(lm, up) ≡ up, e ORDER BY updated_at DESC é o
+    // mesmo sort. O tiebreak por id dá ordem total determinística (necessário
+    // pro .range() não pular/duplicar linhas em empates de updated_at; a query
+    // original não tinha ORDER BY, então empates já eram ordem de heap).
+    q = q
+      .order("updated_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(data.offset, data.offset + data.limit - 1);
+    const { data: rows, count, error } = await q;
     if (error) throw new Error(error.message);
-    const now = Date.now();
     // 2. Contagens das 4 abas via head counts (independentes da paginação e
     //    do escopo atual): os badges nunca mentem ao trocar de aba.
-    const isOverdue = (r: any) =>
-      !!r.due_at && new Date(r.due_at).getTime() < now && r.state !== "concluido";
     const baseCount = () => {
       let c = context.supabase
         .from("demandas")
@@ -86,7 +107,6 @@ export const listDemandas = createServerFn({ method: "GET" })
       role === "operador"
         ? c.or(`assignee_id.eq.${context.userId},assignee_id.is.null`)
         : c;
-    const nowIso = new Date(now).toISOString();
     const [filaCount, mineCount, orphanCount, overdueCount] = await Promise.all([
       withRoleScope(baseCount()).then((r) => r.count ?? 0),
       baseCount().eq("assignee_id", context.userId).then((r) => r.count ?? 0),
@@ -102,23 +122,11 @@ export const listDemandas = createServerFn({ method: "GET" })
       orphan: orphanCount,
       overdue: overdueCount,
     };
-    const overdueAll = (rows ?? []).filter(isOverdue);
-    // 3. Conjunto de trabalho da aba atual + ordenação por ÚLTIMA ATIVIDADE
-    //    = max(last_message_at, updated_at) — mesma chave que o card exibe
-    //    (activityIso), então posição e data visível nunca discordam.
-    //    Com as abas, não existe mais "atrasadas primeiro" no sort: na aba
-    //    Fila elas vivem na posição natural de atividade (borda carmim nelas).
-    const activityOf = (r: any) => {
-      const lm = r.last_message_at ? new Date(r.last_message_at).getTime() : 0;
-      const up = r.updated_at ? new Date(r.updated_at).getTime() : 0;
-      return Math.max(lm, up);
-    };
-    const working = data.overdueOnly ? overdueAll : (rows ?? []);
-    working.sort((a: any, b: any) => activityOf(b) - activityOf(a));
-    // 4. Paginação manual no array já ordenado (snapshot único por query)
-    const paginatedRows = working.slice(data.offset, data.offset + data.limit);
+    // 3. rows JÁ É o lote da aba, na ordem de atividade, pós-range no banco.
+    //    Os passos de não-lidas (4) e assignees (5) operam sobre ele como antes.
+    const paginatedRows = rows ?? [];
     const ids = paginatedRows.map((r: any) => r.id as string);
-    // 5. NÃO LIDAS POR USUÁRIO: última message_in da demanda vs viewed_at
+    // 4. NÃO LIDAS POR USUÁRIO: última message_in da demanda vs viewed_at
     //    deste membro em demanda_views. Sem view = nunca aberta = não lida.
     //    Service role porque demanda_views tem RLS default-deny (policies só
     //    pra uso futuro via client; hoje tudo passa por aqui).
@@ -148,7 +156,7 @@ export const listDemandas = createServerFn({ method: "GET" })
         r.unread = !!li && (!vw || li > vw);
       }
     }
-    // 6. Resolve nomes dos responsáveis em batch (apenas dos itens paginados)
+    // 5. Resolve nomes dos responsáveis em batch (apenas dos itens paginados)
     const assignees: Record<string, { id: string; name: string }> = {};
     const assigneeIds = [
       ...new Set((paginatedRows ?? []).map((r: any) => r.assignee_id).filter(Boolean) as string[]),
@@ -171,9 +179,10 @@ export const listDemandas = createServerFn({ method: "GET" })
     return {
       rows: paginatedRows,
       assignees,
-      // total = tamanho da ABA atual (paginação); counts = badges das 4
-      // abas (fila/mine/orphan/overdue), sempre do escopo completo filtrado.
-      total: working.length,
+      // total = tamanho da ABA atual (paginação), agora do count do banco
+      // (era working.length em memória); counts = badges das 4 abas (fila/
+      // mine/orphan/overdue), sempre do escopo completo filtrado.
+      total: count ?? 0,
       counts,
       offset: data.offset,
       limit: data.limit,
