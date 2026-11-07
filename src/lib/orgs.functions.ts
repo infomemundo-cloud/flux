@@ -14,6 +14,8 @@ import { z } from "zod";
  * pela query slaAlerts, badge da sidebar e página de Alertas.
  * Distribuição automática: updateAutoAssignSettings (owner/admin) — regra
  * consumida pelo serviço em src/lib/demandas/assignment.ts, chamado pelo ingest.
+ * Cobranças Pix: updateOrgPixKey (owner/admin) — chave bruta colada pelo
+ * gestor (gerada fora, no banco dele); consumida pelo composer do chat.
  * Onboarding: getOnboardingState (estado derivado pra wizard/card) e
  * dismissOnboarding (owner/admin; controla só o auto-abrir do wizard —
  * a orientação persistente na fila nunca some até conectar).
@@ -76,7 +78,7 @@ export const getOrgBySlug = createServerFn({ method: "GET" })
     const { data: org, error } = await context.supabase
       .from("organizations")
       .select(
-        "id, name, slug, logo_url, allow_group_ingest, sla_enabled, sla_max_inactivity_hours, auto_assign_enabled, auto_assign_mode, last_assigned_user_id",
+        "id, name, slug, logo_url, allow_group_ingest, sla_enabled, sla_max_inactivity_hours, auto_assign_enabled, auto_assign_mode, last_assigned_user_id, pix_key",
       )
       .eq("slug", data.slug)
       .maybeSingle();
@@ -269,10 +271,6 @@ export const deleteOrganization = createServerFn({ method: "POST" })
 // Regras de ingestão: atendimento em grupos (@g.us)
 // ============================================================================
 
-// ============================================================================
-// Regras de ingestão: atendimento em grupos (@g.us)
-// ============================================================================
-
 /**
  * Liga/desliga a ingestão de mensagens de grupos.
  * Default de produto: DESLIGADO (grupos = firehose de mídia + dado de
@@ -382,6 +380,37 @@ export const updateAutoAssignSettings = createServerFn({ method: "POST" })
   });
 
 // ============================================================================
+// Cobranças Pix: chave da org (armazenamento burro, zero geração)
+// ============================================================================
+
+/**
+ * Guarda a chave Pix EXATAMENTE como o gestor colou (trim é o único
+ * tratamento). A chave é gerada FORA, no banco dele — nós não geramos,
+ * não validamos formato, não normalizamos, não perguntamos tipo/cidade.
+ * null remove. Guard owner/admin via assertOrgAdmin.
+ */
+export const updateOrgPixKey = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        orgId: z.string().uuid(),
+        pixKey: z.string().trim().max(120).nullable(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await assertOrgAdmin(context.supabase, data.orgId, context.userId);
+    const { error } = await supabaseAdmin
+      .from("organizations")
+      .update({ pix_key: data.pixKey })
+      .eq("id", data.orgId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ============================================================================
 // Onboarding guiado (ciclo 1, §38): estado derivado + dismiss por org
 // ============================================================================
 
@@ -404,7 +433,6 @@ export const getOnboardingState = createServerFn({ method: "GET" })
       .maybeSingle();
     if (memErr) throw new Error(memErr.message);
     if (!mem) throw new Error("Sem acesso");
-
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: wa } = await supabaseAdmin
       .from("whatsapp_settings")
@@ -416,7 +444,6 @@ export const getOnboardingState = createServerFn({ method: "GET" })
       .select("onboarding_dismissed_at")
       .eq("id", data.orgId)
       .maybeSingle();
-
     return {
       connected: wa?.connection_status === "connected",
       status: (wa?.connection_status as string) ?? "disconnected",

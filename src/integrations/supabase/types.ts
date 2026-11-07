@@ -916,6 +916,9 @@ export type Database = {
           logo_url: string | null
           name: string
           onboarding_dismissed_at: string | null
+          pix_city: string | null
+          pix_key: string | null
+          pix_type: string | null
           sla_enabled: boolean
           sla_max_inactivity_hours: number
           slug: string
@@ -934,6 +937,9 @@ export type Database = {
           logo_url?: string | null
           name: string
           onboarding_dismissed_at?: string | null
+          pix_city?: string | null
+          pix_key?: string | null
+          pix_type?: string | null
           sla_enabled?: boolean
           sla_max_inactivity_hours?: number
           slug: string
@@ -952,6 +958,9 @@ export type Database = {
           logo_url?: string | null
           name?: string
           onboarding_dismissed_at?: string | null
+          pix_city?: string | null
+          pix_key?: string | null
+          pix_type?: string | null
           sla_enabled?: boolean
           sla_max_inactivity_hours?: number
           slug?: string

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
+  Banknote,
+  Copy,
   Lock,
   MessageCircle,
   Mic,
@@ -23,6 +25,7 @@ import {
   listQuickReplies,
   type QuickReply,
 } from "@/lib/quick-replies.functions";
+import { getOrgBySlug } from "@/lib/orgs.functions";
 import { EmojiPicker } from "./EmojiPicker";
 import { MessageQuotaBanner } from "./MessageQuotaBanner";
 import { cn } from "@/lib/utils";
@@ -82,18 +85,22 @@ type DemandaComposerProps = {
  * Área 3 do detalhe: toggle WhatsApp/Interno, banner de citação, textarea
  * que cresce, EMOJIS (picker próprio, inserção no caret com foco restaurado
  * e popover persistente pra inserção múltipla), macros (respostas rápidas
- * da org), anexo funcional, gravação de áudio (MediaRecorder).
- *
- * Ordem da barra de ações: [😊 emoji] → [/ macros] → [📎 anexo] →
+ * da org), PIX (mensagem única com a chave bruta da org + valor livre),
+ * anexo funcional, gravação de áudio (MediaRecorder).
+ * Ordem da barra de ações: [😊 emoji] → [/ macros] → [💰 Pix] → [📎 anexo] →
  * [🎤 gravador] → [➤ enviar].
- *
+ * Pix (spec travada): UMA bolha só, chave isolada na última linha; valor é
+ * texto livre digitado pelo vendedor (sem parse, sem fixação); o sistema não
+ * gera código nenhum — a chave vem crua de organizations.pix_key. O ícone de
+ * copiar SÓ a chave vive na bolha message_out do histórico (MessageBubble)
+ * e no popover; no WhatsApp do cliente, bolha de texto é texto (long-press).
  * Gravador (spec travada + stop explícito):
- * - Mic substitui o textarea pelo painel: dot vermelho pulsante + cronômetro;
- * - STOP (ícone quadrado) = interrompe a gravação e GERA O PREVIEW (player +
- *   duração + KB) antes do envio — não envia nada sozinho;
- * - Lixeira = descarta sem anexar;
- * - Permissão negada ou navegador sem suporte → toast discreto, composer
- *   intacto no modo texto.
+ * Mic substitui o textarea pelo painel: dot vermelho pulsante + cronômetro;
+ * STOP (ícone quadrado) = interrompe a gravação e GERA O PREVIEW (player +
+ * duração + KB) antes do envio — não envia nada sozinho;
+ * Lixeira = descarta sem anexar;
+ * Permissão negada ou navegador sem suporte → toast discreto, composer
+ * intacto no modo texto.
  */
 export function DemandaComposer({
   orgId,
@@ -115,7 +122,6 @@ export function DemandaComposer({
 }: DemandaComposerProps) {
   // Estado local reativo instantâneo para alternância de canais (0ms de latência)
   const [currentViaWhatsapp, setCurrentViaWhatsapp] = useState(viaWhatsapp);
-
   useEffect(() => {
     setCurrentViaWhatsapp(viaWhatsapp);
   }, [viaWhatsapp]);
@@ -179,7 +185,7 @@ export function DemandaComposer({
   }, [macros, macroQuery]);
 
   /**
-   * Insere texto (emoji ou macro) NA POSIÇÃO DO CARET e restaura foco +
+   * Insere texto (emoji, macro ou Pix) NA POSIÇÃO DO CARET e restaura foco +
    * caret logo após o trecho inserido. O rAF garante que o DOM já tenha o
    * value novo antes de reposicionar o cursor.
    */
@@ -210,6 +216,28 @@ export function DemandaComposer({
     setMacroCreating(true);
     setMacroLabel(macroQuery.trim());
     setMacroContent("");
+  };
+
+  // ── Pix (chave bruta da org via cache compartilhado ["org", slug]) ──
+  // MESMA queryKey do route → zero request novo (serve da RAM).
+  const orgFn = useServerFn(getOrgBySlug);
+  const { data: orgPix } = useQuery({
+    queryKey: ["org", slug],
+    queryFn: () => orgFn({ data: { slug } }),
+    enabled: !!slug,
+  });
+  const [pixOpen, setPixOpen] = useState(false);
+  const [pixValue, setPixValue] = useState("");
+  const pixKey = orgPix?.pix_key ?? null;
+  // Bolha ÚNICA: saudação + valor livre (opcional) + chave isolada na
+  // última linha (fácil de selecionar/copiar linha a linha no desktop).
+  const pixText = pixKey
+    ? `Olá! Segue o Pix para pagamento 🙌\n${pixValue.trim() ? `Valor: ${pixValue.trim()}\n` : ""}Chave Pix: ${pixKey}`
+    : "";
+  const insertPix = () => {
+    if (!pixKey) return;
+    insertAtCursor(pixText);
+    setPixOpen(false);
   };
 
   // ── Gravador ────────────────────────────────────────────────────
@@ -554,118 +582,173 @@ export function DemandaComposer({
                       <Slash className="h-4 w-4" />
                     </button>
                   </PopoverTrigger>
-                <PopoverContent align="end" className="w-72 rounded-xl p-1.5">
-                  {macroCreating ? (
-                    <div className="space-y-1.5">
-                      <input
-                        autoFocus
-                        value={macroLabel}
-                        onChange={(e) => setMacroLabel(e.target.value)}
-                        placeholder="Nome da macro (ex.: boas-vindas)"
-                        maxLength={60}
-                        className="h-8 w-full rounded-md border border-border/60 bg-background px-2 text-[11px] outline-none transition focus:border-primary/50"
-                      />
-                      <textarea
-                        value={macroContent}
-                        onChange={(e) => setMacroContent(e.target.value)}
-                        placeholder="Texto que será inserido no composer..."
-                        rows={3}
-                        maxLength={4000}
-                        className="w-full resize-none rounded-md border border-border/60 bg-background p-2 text-[11px] outline-none transition focus:border-primary/50"
-                      />
-                      <div className="flex items-center justify-between">
-                        <button
-                          type="button"
-                          onClick={() => setMacroCreating(false)}
-                          className="text-[10px] text-muted-foreground transition hover:text-foreground"
-                        >
-                          Voltar
-                        </button>
-                        <button
-                          type="button"
-                          disabled={
-                            !macroLabel.trim() || !macroContent.trim() || createMacro.isPending
-                          }
-                          onClick={() =>
-                            createMacro.mutate({
-                              label: macroLabel.trim(),
-                              content: macroContent.trim(),
-                            })
-                          }
-                          className="h-7 rounded-md bg-primary px-2.5 text-[10px] font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-50"
-                        >
-                          {createMacro.isPending ? "Salvando..." : "Salvar macro"}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="relative mb-1">
-                        <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+                  <PopoverContent align="end" className="w-72 rounded-xl p-1.5">
+                    {macroCreating ? (
+                      <div className="space-y-1.5">
                         <input
                           autoFocus
-                          value={macroQuery}
-                          onChange={(e) => setMacroQuery(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && filteredMacros[0]) {
-                              e.preventDefault();
-                              pickMacro(filteredMacros[0]);
-                            }
-                          }}
-                          placeholder="Buscar macro..."
-                          className="h-8 w-full rounded-md border border-border/60 bg-background pl-7 pr-2 text-[11px] outline-none transition focus:border-primary/50"
+                          value={macroLabel}
+                          onChange={(e) => setMacroLabel(e.target.value)}
+                          placeholder="Nome da macro (ex.: boas-vindas)"
+                          maxLength={60}
+                          className="h-8 w-full rounded-md border border-border/60 bg-background px-2 text-[11px] outline-none transition focus:border-primary/50"
                         />
-                      </div>
-                      <div className="max-h-48 overflow-y-auto scrollbar-thin">
-                        {filteredMacros.map((m) => (
-                          <div
-                            key={m.id}
-                            className="group/macro flex items-start gap-2 rounded-md px-2 py-1.5 transition hover:bg-secondary"
+                        <textarea
+                          value={macroContent}
+                          onChange={(e) => setMacroContent(e.target.value)}
+                          placeholder="Texto que será inserido no composer..."
+                          rows={3}
+                          maxLength={4000}
+                          className="w-full resize-none rounded-md border border-border/60 bg-background p-2 text-[11px] outline-none transition focus:border-primary/50"
+                        />
+                        <div className="flex items-center justify-between">
+                          <button
+                            type="button"
+                            onClick={() => setMacroCreating(false)}
+                            className="text-[10px] text-muted-foreground transition hover:text-foreground"
                           >
-                            <button
-                              type="button"
-                              onClick={() => pickMacro(m)}
-                              className="min-w-0 flex-1 text-left"
-                            >
-                              <div className="truncate text-[11px] font-semibold text-foreground">
-                                {m.label}
-                              </div>
-                              <div className="line-clamp-2 text-[10px] text-muted-foreground">
-                                {m.content}
-                              </div>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => deleteMacro.mutate(m.id)}
-                              title="Excluir macro"
-                              aria-label="Excluir macro"
-                              className="mt-0.5 hidden h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground/70 transition hover:bg-destructive/10 hover:text-destructive group-hover/macro:grid"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
-                          </div>
-                        ))}
-                        {filteredMacros.length === 0 && (
-                          <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
-                            Nenhuma macro encontrada.
-                          </div>
-                        )}
+                            Voltar
+                          </button>
+                          <button
+                            type="button"
+                            disabled={
+                              !macroLabel.trim() || !macroContent.trim() || createMacro.isPending
+                            }
+                            onClick={() =>
+                              createMacro.mutate({
+                                label: macroLabel.trim(),
+                                content: macroContent.trim(),
+                              })
+                            }
+                            className="h-7 rounded-md bg-primary px-2.5 text-[10px] font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-50"
+                          >
+                            {createMacro.isPending ? "Salvando..." : "Salvar macro"}
+                          </button>
+                        </div>
                       </div>
-                      <div className="mt-1 border-t border-border/50 pt-1">
+                    ) : (
+                      <>
+                        <div className="relative mb-1">
+                          <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+                          <input
+                            autoFocus
+                            value={macroQuery}
+                            onChange={(e) => setMacroQuery(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && filteredMacros[0]) {
+                                e.preventDefault();
+                                pickMacro(filteredMacros[0]);
+                              }
+                            }}
+                            placeholder="Buscar macro..."
+                            className="h-8 w-full rounded-md border border-border/60 bg-background pl-7 pr-2 text-[11px] outline-none transition focus:border-primary/50"
+                          />
+                        </div>
+                        <div className="max-h-48 overflow-y-auto scrollbar-thin">
+                          {filteredMacros.map((m) => (
+                            <div
+                              key={m.id}
+                              className="group/macro flex items-start gap-2 rounded-md px-2 py-1.5 transition hover:bg-secondary"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => pickMacro(m)}
+                                className="min-w-0 flex-1 text-left"
+                              >
+                                <div className="truncate text-[11px] font-semibold text-foreground">
+                                  {m.label}
+                                </div>
+                                <div className="line-clamp-2 text-[10px] text-muted-foreground">
+                                  {m.content}
+                                </div>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteMacro.mutate(m.id)}
+                                title="Excluir macro"
+                                aria-label="Excluir macro"
+                                className="mt-0.5 hidden h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground/70 transition hover:bg-destructive/10 hover:text-destructive group-hover/macro:grid"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ))}
+                          {filteredMacros.length === 0 && (
+                            <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+                              Nenhuma macro encontrada.
+                            </div>
+                          )}
+                        </div>
+                        <div className="mt-1 border-t border-border/50 pt-1">
+                          <button
+                            type="button"
+                            onClick={openCreate}
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] font-medium text-primary transition hover:bg-secondary"
+                          >
+                            <Plus className="h-3 w-3 shrink-0" />
+                            Criar resposta rápida
+                            {macroQuery.trim() ? ` “${macroQuery.trim()}”` : ""}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </PopoverContent>
+                </Popover>
+                {/* Pix: UMA bolha com a chave bruta da org + valor livre */}
+                <Popover open={pixOpen} onOpenChange={setPixOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      title="Cobrança Pix"
+                      aria-label="Cobrança Pix"
+                      className="grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                    >
+                      <Banknote className="h-4 w-4" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-72 rounded-xl p-3 space-y-2">
+                    {!pixKey ? (
+                      <div className="text-[11px] text-muted-foreground">
+                        Nenhuma chave Pix cadastrada. Um gestor cadastra em Configurações →
+                        Financeiro → Cobranças Pix.
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-[11px] font-semibold text-foreground">
+                            Cobrança Pix
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void navigator.clipboard.writeText(pixKey);
+                              toast.success("Chave Pix copiada.");
+                            }}
+                            className="inline-flex items-center gap-1 rounded-md border border-border/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                          >
+                            <Copy className="h-3 w-3" /> Copiar chave
+                          </button>
+                        </div>
+                        <input
+                          value={pixValue}
+                          onChange={(e) => setPixValue(e.target.value)}
+                          placeholder="Valor (opcional, livre): 55,00"
+                          className="h-8 w-full rounded-md border border-border/60 bg-background px-2 text-[11px] outline-none transition focus:border-primary/50"
+                        />
                         <button
                           type="button"
-                          onClick={openCreate}
-                          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] font-medium text-primary transition hover:bg-secondary"
+                          onClick={insertPix}
+                          className="h-7 w-full rounded-md bg-primary text-[10px] font-semibold text-primary-foreground transition hover:brightness-110"
                         >
-                          <Plus className="h-3 w-3 shrink-0" />
-                          Criar resposta rápida
-                          {macroQuery.trim() ? ` “${macroQuery.trim()}”` : ""}
+                          Inserir mensagem no composer
                         </button>
-                      </div>
-                    </>
-                  )}
-                </PopoverContent>
-              </Popover>
+                        <div className="whitespace-pre-line rounded-md bg-secondary/50 p-2 text-[10px] text-muted-foreground">
+                          {pixText}
+                        </div>
+                      </>
+                    )}
+                  </PopoverContent>
+                </Popover>
                 <button
                   type="button"
                   onClick={handleAttach}

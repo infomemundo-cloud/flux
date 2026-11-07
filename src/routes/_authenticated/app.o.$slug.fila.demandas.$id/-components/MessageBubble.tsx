@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import {
   CheckCircle2,
+  Copy,
   Download,
   FileText,
   Image as ImageIcon,
@@ -11,6 +12,7 @@ import {
   Video,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 
 /** Snapshot da mensagem citada (reply estilo WhatsApp). */
 export type QuotedRef = { author?: string; content?: string; kind?: string };
@@ -42,6 +44,23 @@ function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${bytes} B`;
+}
+
+/**
+ * Extrai a chave Pix do template do composer (linha "Chave Pix: ...").
+ * Retorna null se não houver linha compatível → botão de copiar não aparece.
+ * Tolerante a espaços extras e variação de casing no prefixo.
+ */
+function extractPixKey(content: string | null | undefined): string | null {
+  if (!content) return null;
+  const match = /Chave\s+Pix\s*:\s*(.+)$/im.exec(content);
+  const value = match?.[1]?.trim();
+  return value && value.length > 0 ? value : null;
+}
+
+/** True se a linha é a linha da chave do template Pix. */
+function isPixKeyLine(line: string): boolean {
+  return /^Chave\s+Pix\s*:/i.test(line);
 }
 
 /**
@@ -145,6 +164,10 @@ function MediaFallback({
  * existe (PROPRIETÁRIO/OPERADOR...); quando não existe, entra o badge de TIPO
  * (CLIENTE / NOTA INTERNA / EQUIPE). Mídia no padrão WhatsApp Web com src
  * congelado (StableAudio/StableImg) — poll de 8s não recarrega nada.
+ * COPIAR CHAVE PIX: em message_out que contêm a linha "Chave Pix: ...", a
+ * própria linha ganha um botão pill destacado AO LADO da chave (flex-wrap:
+ * em tela estreita desce pra baixo dela). Copia SÓ a chave — feedback verde
+ * "Copiada!" por 1,5s + toast. Nas demais bolhas, nada muda.
  */
 export function MessageBubble({
   avatar,
@@ -178,6 +201,7 @@ export function MessageBubble({
   const [lightbox, setLightbox] = useState(false);
   const [imgBroken, setImgBroken] = useState(false);
   const [thumbBroken, setThumbBroken] = useState(false);
+  const [pixCopied, setPixCopied] = useState(false);
 
   /**
    * Identidade ESTÁVEL dos objetos no Storage: o caminho da URL assinada
@@ -189,10 +213,19 @@ export function MessageBubble({
   const mediaStableKey = media?.url ? media.url.split("?")[0] : null;
   const thumbStableKey = media?.thumbUrl ? media.thumbUrl.split("?")[0] : null;
 
+  // Chave Pix extraída do template (null = não é cobrança Pix).
+  const pixKey = isOutgoing && !isInternal ? extractPixKey(content) : null;
+
   useEffect(() => {
     setImgBroken(false);
     setThumbBroken(false);
   }, [mediaStableKey, thumbStableKey]);
+
+  // Reset do feedback de "copiado" quando a mensagem muda (evita estado
+  // preso ao navegar entre demandas ou após nova cobrança ser enviada).
+  useEffect(() => {
+    setPixCopied(false);
+  }, [pixKey]);
 
   useEffect(() => {
     if (!lightbox) return;
@@ -218,6 +251,19 @@ export function MessageBubble({
           .filter(Boolean)
           .join(" · ")
       : null;
+
+  const handleCopyPixKey = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!pixKey) return;
+    try {
+      await navigator.clipboard.writeText(pixKey);
+      setPixCopied(true);
+      toast.success("Chave Pix copiada");
+      window.setTimeout(() => setPixCopied(false), 1500);
+    } catch {
+      toast.error("Não foi possível copiar. Selecione manualmente.");
+    }
+  };
 
   return (
     <li className={`group relative flex gap-2.5 pt-2 ${isClient ? "" : "sm:pl-8"}`}>
@@ -382,7 +428,43 @@ export function MessageBubble({
             <MediaFallback label="Mídia indisponível" reason={media.failedReason} onRetry={onRetryMedia} />
           ))}
         {content && (
-          <div className="mt-1.5 whitespace-pre-wrap break-words text-sm text-foreground/90">{content}</div>
+          <div className="mt-1.5 whitespace-pre-wrap break-words text-sm text-foreground/90">
+            {pixKey
+              ? // Cobrança Pix: renderiza linha a linha; a linha da chave ganha
+                // o botão pill destacado AO LADO (flex-wrap desce em mobile).
+                // As quebras de linha voltam como "\n" (whitespace-pre-wrap).
+                content.split("\n").map((line, i, arr) => (
+                  <Fragment key={i}>
+                    {isPixKeyLine(line) ? (
+                      <span className="inline-flex flex-wrap items-center gap-2 gap-y-1">
+                        <span className="font-semibold">{line}</span>
+                        <button
+                          type="button"
+                          onClick={handleCopyPixKey}
+                          title={pixCopied ? "Chave copiada" : "Copiar chave Pix"}
+                          aria-label={pixCopied ? "Chave copiada" : "Copiar chave Pix"}
+                          className={
+                            pixCopied
+                              ? "inline-flex items-center gap-1.5 rounded-lg border border-[var(--pill-green-fg)]/50 bg-[var(--pill-green-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--pill-green-fg)] transition active:scale-95"
+                              : "inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary transition hover:border-primary/60 hover:bg-primary/20 active:scale-95"
+                          }
+                        >
+                          {pixCopied ? (
+                            <CheckCircle2 className="h-4 w-4" strokeWidth={2.4} />
+                          ) : (
+                            <Copy className="h-4 w-4" strokeWidth={2.2} />
+                          )}
+                          {pixCopied ? "Copiada!" : "Copiar chave"}
+                        </button>
+                      </span>
+                    ) : (
+                      line
+                    )}
+                    {i < arr.length - 1 ? "\n" : null}
+                  </Fragment>
+                ))
+              : content}
+          </div>
         )}
       </div>
       {lightbox && media?.url && (
