@@ -19,8 +19,7 @@ type Options = {
 export function useOrgRealtime({ orgId, onNewDemanda }: Options) {
   const qc = useQueryClient();
 
-  // Refs de controle do debounce — NO TOPO DO HOOK (Rules of Hooks:
-  // useRef dentro de useEffect quebra em runtime e no lint).
+  // Refs de controle do debounce — NO TOPO DO HOOK (Rules of Hooks)
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const fireAtRef = useRef<number>(0);
 
@@ -28,10 +27,9 @@ export function useOrgRealtime({ orgId, onNewDemanda }: Options) {
     if (!orgId) return;
 
     // Deadline mínimo: evento novo NUNCA adia um invalidate já agendado
-    // (sem isso, conversa movimentada reagenda o timer para sempre).
     const debouncedInvalidate = (includeAggregates: boolean, delayMs = 1500) => {
       const planned = Date.now() + delayMs;
-      if (timeoutRef.current && fireAtRef.current <= planned) return; // já existe prazo mais cedo
+      if (timeoutRef.current && fireAtRef.current <= planned) return;
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       fireAtRef.current = planned;
       timeoutRef.current = setTimeout(() => {
@@ -41,8 +39,6 @@ export function useOrgRealtime({ orgId, onNewDemanda }: Options) {
         if (includeAggregates) {
           qc.invalidateQueries({ queryKey: ["dashboard"] });
           qc.invalidateQueries({ queryKey: ["alertas"] });
-          // Key REAL da página Alertas (["sla-alerts", orgId, janela]).
-          // ["alertas"] nunca casou com ela — gap de sincronia antigo.
           qc.invalidateQueries({ queryKey: ["sla-alerts"] });
         }
       }, delayMs);
@@ -64,7 +60,6 @@ export function useOrgRealtime({ orgId, onNewDemanda }: Options) {
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "demandas", filter: `org_id=eq.${orgId}` },
         () => {
-          // Invalida contador de SLA e reposiciona o card no topo
           qc.invalidateQueries({ queryKey: ["sla-alert-count", orgId] });
           debouncedInvalidate(false, 1500);
         },
@@ -82,22 +77,28 @@ export function useOrgRealtime({ orgId, onNewDemanda }: Options) {
             }
             debouncedInvalidate(true, 1000);
           } else {
-            // Fila é BARATA (1 server fn, sem assinatura de mídia): atualiza no
-            // frame, sem esperar debounce. O refetch PESADO do detalhe continua
-            // proibido por mensagem (chat é append-only via demanda-live-${id}).
+            // Mensagem nova: invalida fila IMEDIATAMENTE (barato: 1 server fn)
             qc.invalidateQueries({ queryKey: ["demandas"] });
             qc.invalidateQueries({ queryKey: ["sla-alert-count", orgId] });
-            // Agregados com debounce; o ["demandas"] extra aqui é reconciliação
-            // de segurança barata por rajada (5s), não por mensagem.
             debouncedInvalidate(true, 5000);
           }
         },
       )
       .subscribe((status) => {
-        // Canal não é mais cego: status visível no console e reconcile em falha
-        // (mesmo padrão que salvou o canal do detalhe).
-        console.info("[org-live] status", status);
+        console.info("[org-live] status", status, new Date().toISOString());
+        
+        // RECONCILE NO HANDSHAKE: quando o canal finalmente fica SUBSCRIBED,
+        // invalida a fila para compensar frames perdidos DURANTE o handshake
+        // (janela de ~1-2s onde o tenant estava reinicializando).
+        if (status === "SUBSCRIBED") {
+          console.info("[org-live] reconcile pós-handshake: invalidando fila");
+          qc.invalidateQueries({ queryKey: ["demandas"] });
+          qc.invalidateQueries({ queryKey: ["sla-alert-count", orgId] });
+        }
+        
+        // Reconcile em falha (mesmo padrão do canal do detalhe)
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn("[org-live] canal falhou, reconcile forçado");
           qc.invalidateQueries({ queryKey: ["demandas"] });
         }
       });
