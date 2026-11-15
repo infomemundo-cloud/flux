@@ -2,11 +2,28 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { ArrowRight, Inbox, Loader2, Lock, Mail, MessageCircle, ShieldCheck } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  Copy,
+  Inbox,
+  Loader2,
+  Lock,
+  Mail,
+  MessageCircle,
+  ShieldCheck,
+} from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
-    meta: [{ title: "Entrar — Fluxo" }, { name: "description", content: "Acesse o painel do Fluxo." }],
+    meta: [
+      { title: "Entrar — Fluxo" },
+      {
+        name: "description",
+        content:
+          "Acesse sua organização no Fluxo: fila única para WhatsApp e webhooks, SLA vivo e histórico auditado.",
+      },
+    ],
   }),
   component: AuthPage,
 });
@@ -35,39 +52,38 @@ function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
-/**
- * Logo + badge de marca.
- * dark = painel esquerdo (fundo navy); fixedLight = coluna direita, que é
- * light fixa em todos os temas (marca legível sobre o slate sem depender
- * de tokens de tema).
- */
-function BrandMark({ dark, fixedLight }: { dark?: boolean; fixedLight?: boolean }) {
-  const iconBox = dark
-    ? "bg-sky-500/15 ring-1 ring-sky-400/30"
-    : fixedLight
-      ? "bg-sky-600/10 ring-1 ring-sky-600/25"
-      : "bg-sky-600/10 ring-1 ring-sky-600/25 dark:bg-sky-500/15 dark:ring-sky-400/30";
-  const iconColor = dark ? "text-sky-300" : fixedLight ? "text-sky-600" : "text-sky-600 dark:text-sky-300";
-  const nameColor = dark ? "text-white" : fixedLight ? "text-slate-900" : "text-foreground";
-  const badgeClass = dark
-    ? "border border-white/15 bg-white/10 text-sky-200"
-    : fixedLight
-      ? "border border-slate-200 bg-slate-100 text-slate-500"
-      : "border border-border bg-secondary text-muted-foreground";
+function BrandMark({ onBrand }: { onBrand?: boolean }) {
   return (
     <div className="flex items-center gap-2.5">
-      <span className={`grid h-9 w-9 place-items-center rounded-xl ${iconBox}`}>
-        <Inbox className={`h-5 w-5 ${iconColor}`} strokeWidth={2.2} />
-      </span>
-      <span className={`text-lg font-bold tracking-tight ${nameColor}`}>Fluxo</span>
       <span
-        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${badgeClass}`}
+        className={`grid h-9 w-9 place-items-center rounded-xl ${
+          onBrand ? "bg-white/15 ring-1 ring-white/25" : "bg-primary/10 ring-1 ring-primary/25"
+        }`}
       >
-        SaaS Platform
+        <Inbox className={`h-5 w-5 ${onBrand ? "text-white" : "text-primary"}`} strokeWidth={2.2} />
+      </span>
+      <span className={`text-lg font-bold tracking-tight ${onBrand ? "text-white" : "text-foreground"}`}>
+        Fluxo
+      </span>
+      <span
+        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+          onBrand
+            ? "border border-white/20 bg-white/10 text-white/80"
+            : "border border-border bg-secondary text-muted-foreground"
+        }`}
+      >
+        Motor de demandas
       </span>
     </div>
   );
 }
+
+const BRAND_BULLETS = [
+  "Fila única: WhatsApp, webhooks e APIs no mesmo lugar",
+  "SLA vivo: atrasos sobem pro topo antes do cliente reclamar",
+  "Cobrança Pix com chave copiável em um toque",
+  "Histórico auditado: autor e horário em cada ação",
+];
 
 function AuthPage() {
   const navigate = useNavigate();
@@ -99,7 +115,7 @@ function AuthPage() {
           options: { emailRedirectTo: window.location.origin + "/app" },
         });
         if (error) throw error;
-        toast.success("Conta criada. Entrando...");
+        toast.success("Conta criada com sucesso! Entrando...");
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -124,7 +140,6 @@ function AuthPage() {
     }
   }
 
-  /** Recuperação de senha real: Supabase envia o e-mail com redirect pro /auth. */
   async function handleForgot() {
     if (!email.trim()) {
       toast.error("Digite seu e-mail no campo acima para recuperar a senha.");
@@ -153,138 +168,130 @@ function AuthPage() {
   }
 
   return (
-    /* min-h-dvh = altura real do viewport (sem contar chrome do navegador).
-       Layout compacto por padrão (cabe em ~640–768px de altura sem rolagem);
-       o visual generoso volta como realce em telas altas (min-height:860px). */
     <div className="grid min-h-dvh bg-background lg:grid-cols-2">
-      {/* ─────────────────────────────────────────────────────────────
-          PAINEL ESQUERDO — branding fixo dark (superfície de marca,
-          independente do tema): gradiente + malha de grade + glow.
-          Em telas baixas o mockup aparece em versão reduzida (sem a
-          citação e sem o chip flutuante); em telas altas, completo.
-      ───────────────────────────────────────────────────────────── */}
-      <div className="relative hidden overflow-hidden bg-slate-950 p-8 lg:flex lg:flex-col lg:justify-between [@media(min-height:860px)]:p-12">
-        {/* Malha de grade suave */}
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(148,163,184,0.07)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.07)_1px,transparent_1px)] bg-[size:32px_32px]" />
-        {/* Gradiente radial sky no topo + glow inferior */}
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(2,132,199,0.28),transparent_55%)]" />
-        <div className="pointer-events-none absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-sky-500/15 blur-3xl" />
+      {/* ── PAINEL DE MARCA ── */}
+      <div className="relative hidden overflow-hidden bg-primary p-10 lg:flex lg:flex-col lg:justify-between xl:p-14">
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.06)_1px,transparent_1px)] bg-[size:32px_32px]" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(255,255,255,0.14),transparent_55%)]" />
+        <div className="pointer-events-none absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-white/10 blur-3xl" />
 
-        {/* Header: logo + badge */}
         <div className="relative z-10">
-          <BrandMark dark />
+          <BrandMark onBrand />
         </div>
 
-        {/* Copy principal + mockup glassmorphism da Fila */}
-        <div className="relative z-10 space-y-6 [@media(min-height:860px)]:space-y-10">
+        <div className="relative z-10 space-y-8">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-white [@media(min-height:860px)]:text-4xl">
-              Nada importante esquecido.
+            <h1 className="max-w-md text-3xl font-bold leading-tight tracking-tight text-white xl:text-4xl">
+              Nenhuma conversa esquecida. Nenhum cliente no vácuo.
             </h1>
-            <p className="mt-3 max-w-md text-slate-300 [@media(min-height:860px)]:mt-4">
-              Conversas viram demandas. Demandas têm estado, prazo e responsável. Tudo fica registrado.
+            <p className="mt-4 max-w-md text-sm leading-relaxed text-white/80">
+              O Fluxo transforma mensagens e chamadas de API em demandas com dono, prazo e
+              histórico completo. Sua equipe abre o painel sabendo por onde começar.
             </p>
           </div>
-          {/* Proof-of-product: card glass simulando um evento real da Fila */}
+
           <div className="relative max-w-sm">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-3 shadow-[0_24px_60px_-24px_rgba(2,132,199,0.45)] backdrop-blur-md [@media(min-height:860px)]:p-4">
+            <div className="rounded-2xl border border-white/15 bg-white/10 p-4 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.45)] backdrop-blur-md">
               <div className="flex items-center justify-between">
-                <span className="font-mono text-[11px] font-semibold text-sky-300">DM-038F39</span>
-                <span className="text-[11px] text-slate-400">há 3 min</span>
+                <span className="font-mono text-[11px] font-semibold text-white/70">DM-038F39</span>
+                <span className="text-[11px] text-white/60">há 3 min</span>
               </div>
-              <div className="mt-2 flex-2.5 flex items-center gap-2.5">
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-700/80 text-[11px] font-bold text-slate-100">
-                  W
-                </span>
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold text-white">Wagner</div>
-                  <div className="mt-0.5 flex items-center gap-1.5">
-                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                    <span className="text-[11px] text-slate-300">Aguardando resposta</span>
-                  </div>
+              <div className="mt-3 space-y-2">
+                <div className="max-w-[85%] rounded-xl rounded-tl-none bg-white/10 px-3 py-1.5 text-[11px] leading-relaxed text-white/90">
+                  Preciso remarcar a entrega de hoje…
+                </div>
+                <div className="ml-auto max-w-[90%] rounded-xl rounded-tr-none bg-white/15 px-3 py-1.5 text-[11px] leading-relaxed text-white">
+                  Segue o Pix pra remarcação 🙌
+                  <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                    <span className="font-semibold">Chave Pix: 95159606300</span>
+                    <span className="inline-flex items-center gap-1 rounded-md bg-white/20 px-1.5 py-0.5 text-[9px] font-semibold">
+                      <Copy className="h-2.5 w-2.5" /> Copiar chave
+                    </span>
+                  </span>
                 </div>
               </div>
-              {/* Citação do mockup: só em telas altas (economiza ~40px) */}
-              <div className="mt-3 hidden truncate rounded-lg bg-slate-900/60 px-2.5 py-1.5 text-[11px] text-slate-300 [@media(min-height:860px)]:block">
-                "Preciso remarcar a entrega de hoje…"
-              </div>
             </div>
-            {/* Chip flutuante: só em telas altas (não soma altura na sua) */}
-            <div className="absolute -bottom-5 -right-4 hidden items-center gap-2 rounded-xl border border-white/10 bg-slate-900/85 px-3 py-2 backdrop-blur-md [@media(min-height:860px)]:flex">
-              <MessageCircle className="h-3.5 w-3.5 text-emerald-400" />
-              <span className="text-[11px] font-medium text-slate-300">WhatsApp conectado</span>
+            <div className="absolute -bottom-4 -right-3 flex items-center gap-2 rounded-xl border border-white/15 bg-black/20 px-3 py-2 backdrop-blur-md">
+              <MessageCircle className="h-3.5 w-3.5 text-emerald-300" />
+              <span className="text-[11px] font-medium text-white/90">WhatsApp conectado</span>
             </div>
           </div>
+
+          <ul className="space-y-2.5">
+            {BRAND_BULLETS.map((b) => (
+              <li key={b} className="flex items-center gap-2.5 text-sm text-white/90">
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-white/15">
+                  <Check className="h-3 w-3 text-white" strokeWidth={3} />
+                </span>
+                {b}
+              </li>
+            ))}
+          </ul>
         </div>
 
-        {/* Footer do painel: status do sistema + selo de integração */}
-        <div className="relative z-10 flex items-center gap-4 text-xs text-slate-400">
+        <div className="relative z-10 flex items-center gap-4 text-xs text-white/70">
           <span className="inline-flex items-center gap-2">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-300" />
             Todos os sistemas operacionais
           </span>
-          <span className="h-3 w-px bg-slate-700" />
+          <span className="h-3 w-px bg-white/20" />
           <span className="inline-flex items-center gap-1.5">
-            <ShieldCheck className="h-3.5 w-3.5 text-sky-400" />
-            Integração WhatsApp via Evolution API
+            <ShieldCheck className="h-3.5 w-3.5 text-white/80" />
+            Dados isolados por organização (RLS)
           </span>
         </div>
       </div>
 
-      {/* ─────────────────────────────────────────────────────────────
-          PAINEL DIREITO — coluna light fixa (slate) com o formulário em
-          card branco elevado. Compacto por padrão; generoso em telas altas.
-      ───────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-center bg-slate-50 p-5 sm:p-8 [@media(min-height:860px)]:p-10">
+      {/* ── COLUNA DO FORMULÁRIO ── */}
+      <div className="flex items-center justify-center bg-background p-5 sm:p-8">
         <div className="w-full max-w-md">
-          {/* Marca no mobile (painel esquerdo some abaixo de lg) */}
-          <div className="mb-5 flex justify-center lg:hidden [@media(min-height:860px)]:mb-6">
-            <BrandMark fixedLight />
+          <div className="mb-6 flex justify-center lg:hidden">
+            <BrandMark />
           </div>
 
           {checking ? (
             <div className="flex h-64 items-center justify-center">
-              <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           ) : (
             <>
-              {/* Card do formulário */}
-              <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xl shadow-slate-200/50 sm:p-8 [@media(min-height:860px)]:p-10">
-                <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-                  {mode === "signin" ? "Bem-vindo de volta" : "Crie sua conta"}
+              <div className="rounded-2xl border border-border bg-card p-6 shadow-[var(--shadow-pop)] sm:p-8">
+                <h1 className="text-2xl font-bold tracking-tight text-foreground">
+                  {mode === "signin" ? "Bem-vindo de volta" : "Crie sua organização"}
                 </h1>
-                <p className="mt-1 text-sm text-slate-500 [@media(min-height:860px)]:mt-1.5">
+                <p className="mt-1.5 text-sm text-muted-foreground">
                   {mode === "signin"
-                    ? "Insira suas credenciais para gerenciar a fila de demandas."
-                    : "Comece a transformar conversas em demandas hoje."}
+                    ? "Entre para continuar atendendo pela fila."
+                    : "Leva menos de um minuto. Sem cartão de crédito."}
                 </p>
 
-                {/* Botão Google (SVG oficial + acabamento refinado) */}
                 <button
                   type="button"
                   onClick={handleGoogle}
-                  className="mt-6 flex h-10 w-full items-center justify-center gap-2.5 rounded-lg border border-slate-200 bg-white font-medium text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50/50 active:scale-[0.99] [@media(min-height:860px)]:mt-8 [@media(min-height:860px)]:h-11"
+                  className="mt-6 flex h-10 w-full items-center justify-center gap-2.5 rounded-lg border border-border bg-card font-medium text-foreground shadow-sm transition hover:bg-secondary active:scale-[0.99]"
                 >
                   <GoogleIcon className="h-[18px] w-[18px]" />
                   Continuar com Google
                 </button>
 
-                {/* Divisor */}
-                <div className="my-5 flex items-center gap-3 [@media(min-height:860px)]:my-6">
-                  <div className="h-px flex-1 bg-slate-200" />
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Ou continuar com e-mail
+                <div className="my-5 flex items-center gap-3">
+                  <div className="h-px flex-1 bg-border" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    ou continue com e-mail
                   </span>
-                  <div className="h-px flex-1 bg-slate-200" />
+                  <div className="h-px flex-1 bg-border" />
                 </div>
 
-                <form className="space-y-3 [@media(min-height:860px)]:space-y-4" onSubmit={handleEmail}>
+                <form className="space-y-4" onSubmit={handleEmail}>
                   <div>
-                    <label htmlFor="email" className="mb-1 block text-xs font-semibold text-slate-700 [@media(min-height:860px)]:mb-1.5">
-                      E-mail corporativo
+                    <label
+                      htmlFor="email"
+                      className="mb-1.5 block text-xs font-semibold text-foreground"
+                    >
+                      E-mail
                     </label>
                     <div className="relative">
-                      <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
                       <input
                         id="email"
                         type="email"
@@ -292,28 +299,31 @@ function AuthPage() {
                         placeholder="voce@empresa.com"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-9 pr-3 text-sm text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-500/20 [@media(min-height:860px)]:h-11"
+                        className="h-10 w-full rounded-lg border border-border/60 bg-background pl-9 pr-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/60 focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <div className="mb-1 flex items-center justify-between [@media(min-height:860px)]:mb-1.5">
-                      <label htmlFor="password" className="text-xs font-semibold text-slate-700">
+                    <div className="mb-1.5 flex items-center justify-between">
+                      <label
+                        htmlFor="password"
+                        className="text-xs font-semibold text-foreground"
+                      >
                         Senha
                       </label>
                       {mode === "signin" && (
                         <button
                           type="button"
                           onClick={handleForgot}
-                          className="text-xs font-semibold text-sky-600 transition hover:text-sky-700"
+                          className="text-xs font-semibold text-primary transition hover:underline"
                         >
                           Esqueceu a senha?
                         </button>
                       )}
                     </div>
                     <div className="relative">
-                      <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
                       <input
                         id="password"
                         type="password"
@@ -322,16 +332,18 @@ function AuthPage() {
                         placeholder="••••••••"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-9 pr-3 text-sm text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-500/20 [@media(min-height:860px)]:h-11"
+                        className="h-10 w-full rounded-lg border border-border/60 bg-background pl-9 pr-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/60 focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
                       />
                     </div>
+                    {mode === "signup" && (
+                      <p className="mt-1 text-[11px] text-muted-foreground">Mínimo de 6 caracteres.</p>
+                    )}
                   </div>
 
-                  {/* Botão de ação com seta */}
                   <button
                     type="submit"
                     disabled={loading}
-                    className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-sky-600 font-semibold text-white shadow-md shadow-sky-600/20 transition-all hover:bg-sky-500 active:bg-sky-700 disabled:pointer-events-none disabled:opacity-60 [@media(min-height:860px)]:h-11"
+                    className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary font-semibold text-primary-foreground shadow-[var(--shadow-card)] transition hover:brightness-110 active:scale-[0.99] disabled:pointer-events-none disabled:opacity-60"
                   >
                     {loading && <Loader2 className="h-4 w-4 animate-spin" />}
                     {loading
@@ -340,25 +352,32 @@ function AuthPage() {
                         : "Criando conta..."
                       : mode === "signin"
                         ? "Entrar"
-                        : "Criar conta"}
+                        : "Criar conta grátis"}
                     {!loading && <ArrowRight className="h-4 w-4" />}
                   </button>
                 </form>
               </div>
 
-              {/* Rodapé e links — centralizados abaixo do card */}
-              <p className="mt-5 text-center text-sm text-slate-500 [@media(min-height:860px)]:mt-6">
+              <p className="mt-4 flex items-center justify-center gap-2 text-center text-[11px] text-muted-foreground">
+                <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-primary" />
+                Ambiente seguro · toda ação é auditada com autor e horário
+              </p>
+
+              <p className="mt-5 text-center text-sm text-muted-foreground">
                 {mode === "signin" ? "Ainda não tem conta?" : "Já tem conta?"}{" "}
                 <button
                   type="button"
                   onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-                  className="font-semibold text-sky-600 transition hover:text-sky-700"
+                  className="font-semibold text-primary transition hover:underline"
                 >
                   {mode === "signin" ? "Cadastre-se" : "Entrar"}
                 </button>
               </p>
-              <div className="mt-2 text-center [@media(min-height:860px)]:mt-3">
-                <Link to="/" className="text-xs text-slate-400 transition hover:text-slate-600">
+              <div className="mt-2 text-center">
+                <Link
+                  to="/"
+                  className="text-xs text-muted-foreground/70 transition hover:text-foreground"
+                >
                   ← Voltar para o site
                 </Link>
               </div>

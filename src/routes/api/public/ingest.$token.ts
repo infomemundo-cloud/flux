@@ -235,6 +235,101 @@ function markSeen(id: string | null | undefined): void {
 const lastUsedTouch = new Map<string, number>();
 
 /**
+ * Busca o avatar (foto de perfil) do contato na Evolution.
+ * Usa /chat/profilePictureUrl (Evolution v2) com fallbacks.
+ * Retorna a URL pública da foto ou null se não houver.
+ */
+async function fetchContactAvatar(
+  serverUrl: string,
+  apikey: string,
+  jid: string,
+  instance: string,
+): Promise<string | null> {
+  const base = serverUrl.replace(/\/+$/, "");
+  const encodedJid = encodeURIComponent(jid);
+  const candidates: { url: string; kind: string }[] = [
+    { url: `${base}/chat/profilePictureUrl/${encodedJid}?instance=${instance}`, kind: "v2-profilePictureUrl" },
+    { url: `${base}/chat/getProfilePictureUrl/${encodedJid}?instance=${instance}`, kind: "v2-getProfilePictureUrl" },
+  ];
+  const tried: string[] = [];
+  for (const c of candidates) {
+    try {
+      const res = await fetch(c.url, { headers: { apikey } });
+      if (!res.ok) {
+        tried.push(`${c.kind}:${res.status}`);
+        continue;
+      }
+      const json: any = await res.json();
+      const url = json?.url ?? json?.data?.url ?? json?.response?.url;
+      if (typeof url === "string" && url.trim()) return url.trim();
+      tried.push(`${c.kind}:sem-url`);
+    } catch {
+      tried.push(`${c.kind}:erro`);
+    }
+  }
+  console.warn("[ingest] não consegui buscar o avatar do contato", {
+    jid,
+    instance,
+    tried,
+  });
+  return null;
+}
+
+/**
+ * Busca assíncrona de avatar no upsert do contato (MESSAGES_UPSERT).
+ * Gate: só busca se `avatar_url IS NULL` E (`avatar_fetched_at IS NULL` ou > 14 dias).
+ * Claim-then-fetch: grava `avatar_fetched_at` primeiro (reserva), depois busca.
+ * Fire-and-forget: não bloqueia o ingest principal; falha só loga.
+ */
+async function maybeFetchAvatar(
+  orgId: string,
+  contactId: string,
+  jid: string,
+  instance: string,
+  serverUrl: string | null,
+  apikey: string | null,
+): Promise<void> {
+  if (!serverUrl || !apikey) return;
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  
+  // 1. Lê o estado atual do contato
+  const { data: contact } = await supabaseAdmin
+    .from("contacts")
+    .select("avatar_url, avatar_fetched_at")
+    .eq("id", contactId)
+    .maybeSingle();
+  
+  if (!contact) return;
+  
+  // 2. Gate: só busca se nunca buscou OU buscou há mais de 14 dias
+  const fetchedAt = contact.avatar_fetched_at ? new Date(contact.avatar_fetched_at).getTime() : 0;
+  const daysSinceFetch = (Date.now() - fetchedAt) / (1000 * 60 * 60 * 24);
+  if (contact.avatar_url || (daysSinceFetch < 14 && fetchedAt > 0)) return;
+  
+  // 3. Claim: reserva o fetched_at (evita duplicata em rajada)
+  await supabaseAdmin
+    .from("contacts")
+    .update({ avatar_fetched_at: new Date().toISOString() } as never)
+    .eq("id", contactId);
+  
+  // 4. Fetch: busca na Evolution (não bloqueia nada; falha só loga)
+  const avatarUrl = await fetchContactAvatar(serverUrl, apikey, jid, instance);
+  if (avatarUrl) {
+    const { error } = await supabaseAdmin
+      .from("contacts")
+      .update({ avatar_url: avatarUrl } as never)
+      .eq("id", contactId);
+    if (error) {
+      console.error("[ingest] avatar fetch ok mas update falhou", {
+        contact_id: contactId,
+        error: error.message,
+      });
+    }
+  }
+  // Se avatarUrl é null, deixa fetched_at marcado (não re-tenta em 14 dias)
+}
+
+/**
  * Busca o SUBJECT (nome real) do grupo na Evolution.
  * Rotas candidatas cobrem Evolution v2 (`/group/info` nas duas ordens),
  * v1 (`/group/findGroupInfos/{instance}?groupJid=...`) e v2 sem instance.
@@ -713,6 +808,34 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
               });
             }
             contactId = c?.id ?? null;
+          }
+          
+          // ◆ BUSCA DE AVATAR (MESSAGES_UPSERT como gatilho primário) ◆
+          // Gate: só busca se avatar_url IS NULL E (avatar_fetched_at IS NULL
+          // ou > 14 dias). Claim-then-fetch: grava fetched_at primeiro (reserva),
+          // depois busca. Fire-and-forget: não bloqueia o ingest principal.
+          if (
+            contactId &&
+            !isGroup &&
+            b.whatsapp_jid &&
+            b.instance_name &&
+            b.evolution_server_url &&
+            b.evolution_apikey
+          ) {
+            // Fire-and-forget: não await, não bloqueia o response
+            maybeFetchAvatar(
+              tok.org_id,
+              contactId,
+              b.whatsapp_jid,
+              b.instance_name,
+              b.evolution_server_url,
+              b.evolution_apikey,
+            ).catch((err) => {
+              console.error("[ingest] maybeFetchAvatar falhou (non-blocking)", {
+                contact_id: contactId,
+                error: err?.message,
+              });
+            });
           }
         }
 

@@ -70,6 +70,7 @@ function Config() {
       <p className="text-xs text-muted-foreground sm:text-sm">
         Governança de negócio desta organização: canais, atendimento, macros e financeiro.
       </p>
+
       <Tabs defaultValue="geral" className="mt-6">
         {/*
          * Wrapper de scroll horizontal com affordance visual:
@@ -87,7 +88,7 @@ function Config() {
             <TabsList
               className={
                 // flex real (não inline-flex) para o scroll funcionar
-                "flex flex-nowrap items-center gap-1.5 px-4 sm:px-0 py-1.5 w-max min-w-full" +
+                "flex flex-nowrap items-center gap-1.5 px-4 sm:px-0 py-1.5 w-max min-w-full " +
                 // Zera o fundo/padding/altura do shadcn
                 " h-auto bg-transparent p-0 justify-start rounded-none"
               }
@@ -110,6 +111,7 @@ function Config() {
             </TabsList>
           </div>
         </div>
+
         <TabsContent value="geral" className="mt-5 space-y-6">
           <GeralTab
             orgId={org.id}
@@ -119,6 +121,7 @@ function Config() {
             isOwner={org.role === "owner"}
           />
         </TabsContent>
+
         <TabsContent value="canais" className="mt-5 space-y-6">
           <CanaisTab
             orgId={org.id}
@@ -127,6 +130,7 @@ function Config() {
             allowGroupIngest={org.allow_group_ingest ?? false}
           />
         </TabsContent>
+
         <TabsContent value="atendimento" className="mt-5 space-y-6">
           <AtendimentoTab
             orgId={org.id}
@@ -137,14 +141,13 @@ function Config() {
             autoAssignMode={(org.auto_assign_mode ?? "round_robin") as "round_robin" | "least_busy"}
           />
         </TabsContent>
+
         <TabsContent value="macros" className="mt-5">
           <MacrosTab orgId={org.id} />
         </TabsContent>
+
         <TabsContent value="financeiro" className="mt-5 space-y-6">
-          <FinanceiroTab
-            orgId={org.id}
-            isOwner={org.role === "owner"}
-        />
+          <FinanceiroTab orgId={org.id} isOwner={org.role === "owner"} pixKey={org.pix_key ?? null} />
         </TabsContent>
       </Tabs>
     </div>

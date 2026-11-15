@@ -141,7 +141,13 @@ export function DemandaHistory({
 
   function scrollToBottom() {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    // Segundo passe no próximo frame: pega altura que chega tarde
+    // (layout de pill/emoji/mídia) e garante o fim real da conversa.
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
   }
 
   function handleScroll() {
@@ -150,8 +156,13 @@ export function DemandaHistory({
     pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 64;
   }
 
-  // Auto-scroll quando chega evento novo NO FINAL (append por Realtime).
-  // Detecta append: events.length cresceu E o último evento mudou de id.
+  // Auto-scroll quando chega evento novo NO FINAL (append por Realtime
+  // ou merge de refetch). Dois gatilhos independentes:
+  // 1) pinned (usuário estava no fim) → qualquer evento novo rola;
+  // 2) envio PRÓPRIO (message_out) → SEMPRE rola, mesmo com o usuário
+  //    lendo histórico acima — padrão WhatsApp Web: quem envia vê a
+  //    própria mensagem na hora. ERA O BUG: sem isso, o send dependia
+  //    só de pinned e a bolha ficava escondida abaixo da dobra.
   useEffect(() => {
     if (!mounted) {
       setMounted(true);
@@ -162,10 +173,9 @@ export function DemandaHistory({
       return;
     }
     if (events.length > lastCountRef.current) {
-      // Se pinned, rola pro fim (nova mensagem chegou e usuário estava
-      // olhando o fim). Se não pinned (usuário lendo histórico), não
-      // faz nada — a mensagem nova entra silenciosamente no fim.
-      if (pinnedRef.current) scrollToBottom();
+      const last = events[events.length - 1];
+      const isOwnSend = last?.kind === "message_out";
+      if (pinnedRef.current || isOwnSend) scrollToBottom();
     }
     lastCountRef.current = events.length;
   }, [events, mounted]);
