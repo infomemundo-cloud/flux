@@ -1080,6 +1080,10 @@ export const Route = createFileRoute("/api/public/ingest/$token")({
             message_id: b.message_id ?? null,
             participant_name: b.participant_name ?? null,
             participant_jid: b.participant_jid ?? null,
+            // Nome do contato embutido no frame Realtime: o toast do layout
+            // recebe quem falou sem query extra. Em grupos, coexiste com
+            // participant_name (subject vs. remetente real).
+            contact_name: b.contact?.name ?? null,
             media_kind: b.media?.kind ?? null,
             media_failed: mediaFailed,
             media_seconds: mediaSeconds,

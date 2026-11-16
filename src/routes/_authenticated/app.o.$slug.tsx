@@ -1,11 +1,11 @@
 import { createFileRoute, Outlet, useNavigate, useParams, useLocation } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { getOrgBySlug, getOnboardingState } from "@/lib/orgs.functions";
 import { supabase } from "@/integrations/supabase/client";
-import { useOrgRealtime } from "@/hooks/use-org-realtime";
+import { useOrgRealtime, type IncomingMessageEvent } from "@/hooks/use-org-realtime";
 import { useSidebarCollapsed } from "@/hooks/use-sidebar-collapsed";
 import { OrgSidebar } from "@/components/org-sidebar";
 import { OrgMobileNav } from "@/components/org-mobile-nav";
@@ -93,6 +93,9 @@ function OrgLayout() {
     });
   }, []);
 
+  // Cooldown por demanda: conversa ativa não vira metralhadora de toasts.
+  const lastMsgToastAtRef = useRef<Map<string, number>>(new Map());
+
   const onNewDemanda = useCallback(
     (d: { title?: string; protocol?: string }) => {
       setNewCount((c) => c + 1);
@@ -103,7 +106,49 @@ function OrgLayout() {
     },
     [navigate, slug],
   );
-  useOrgRealtime({ orgId: org?.id, onNewDemanda });
+
+  // ◆ NOTIFICAÇÃO "CHEGOU MENSAGEM" (demanda existente OU nova via mensagem) ◆
+  // Suprime quando o usuário JÁ está olhando a conversa (padrão WhatsApp Web)
+  // e aplica cooldown de 8s por demanda. window.location (não state de rota)
+  // mantém o callback estável — o canal nem re-assina mais (refs no hook).
+  const onNewMessage = useCallback(
+    (msg: IncomingMessageEvent) => {
+      const did = msg.demandaId;
+      if (!did) return;
+      if (window.location.pathname.includes(`/fila/demandas/${did}`)) return;
+      const now = Date.now();
+      const last = lastMsgToastAtRef.current.get(did) ?? 0;
+      if (now - last < 8000) return;
+      lastMsgToastAtRef.current.set(did, now);
+      setNewCount((c) => c + 1);
+      let text = msg.content?.trim();
+      if (!text) {
+        if (msg.mediaKind === "audioMessage") text = "🎤 Mensagem de áudio";
+        else if (msg.mediaKind === "imageMessage") text = "📷 Foto";
+        else if (msg.mediaKind === "videoMessage") text = "🎥 Vídeo";
+        else if (msg.mediaKind === "documentMessage") text = `📄 ${msg.fileName || "Documento"}`;
+        else if (msg.mediaKind === "stickerMessage") text = "🎭 Figurinha";
+        else text = "Nova mensagem recebida";
+      }
+      // Grupo: remetente real + subject; 1:1: nome do contato.
+      const sender =
+        msg.participantName && msg.contactName && msg.participantName !== msg.contactName
+          ? `${msg.participantName} · ${msg.contactName}`
+          : msg.contactName || "Nova mensagem";
+      toast.success(sender, {
+        description: text.slice(0, 120),
+        duration: 6000,
+        action: {
+          label: "Abrir conversa",
+          onClick: () =>
+            navigate({ to: "/app/o/$slug/fila/demandas/$id", params: { slug, id: did } }),
+        },
+      });
+    },
+    [navigate, slug],
+  );
+
+  useOrgRealtime({ orgId: org?.id, onNewDemanda, onNewMessage });
 
   async function signOut() {
     await supabase.auth.signOut();
