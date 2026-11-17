@@ -12,10 +12,9 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { ThemeCycleButton, UserMenu } from "@/components/user-menu";
 import { useSlaAlertCount } from "@/lib/demandas/use-sla-alert-count";
+import { FlxMark } from "@/components/flx-mark";
 
 // Fonte única da navegação da org — usada aqui e no OrgMobileNav.
-// Adicionar uma rota nova (ex: módulo financeiro) é mexer só nesta lista.
-// `adminOnly` esconde o item de quem não é owner/admin (flag vem do layout).
 export type OrgNavItem = {
   segment: string;
   label: string;
@@ -43,15 +42,6 @@ type OrgSidebarProps = {
   onSignOut: () => void;
 };
 
-/**
- * Sidebar desktop da org — redesign "Umbler uTalk": itens com cantos
- * arredondados generosos (rounded-xl), hover/active em transparência suave
- * sobre a sidebar aveludada, badges em pílula e ícones com micro-scaling
- * no hover. Sem bordas duras: a separação vem do fundo e das sombras.
- * Badges operacionais: Fila (novas mensagens, primary) e Alertas SLA
- * (demandas paradas, destructive) — pill quando expandido, dot quando
- * recolhido; zero = não renderiza (interface limpa).
- */
 export function OrgSidebar({
   slug,
   activePath,
@@ -65,15 +55,29 @@ export function OrgSidebar({
 }: OrgSidebarProps) {
   const slaCount = useSlaAlertCount(slug);
   const visibleItems = ORG_NAV_ITEMS.filter((n) => !n.adminOnly || isOwnerOrAdmin);
+  
   return (
     <aside className="hidden sm:flex h-screen flex-col justify-between overflow-hidden sticky top-0 left-0 bg-sidebar text-sidebar-foreground border-r border-sidebar-border/40">
-      {!collapsed && (
-        <div className="shrink-0 pt-5 pb-2 px-4">
-          <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/45">
-            Operação
-          </div>
+      
+      {/* Topo: Marca / Logo transparente com adaptação para o estado collapsed */}
+      <div className={`shrink-0 pt-5 pb-3 flex items-center ${collapsed ? "justify-center px-2" : "px-4 gap-3"}`}>
+        <div className="shrink-0 transition-transform duration-200 hover:scale-105 cursor-pointer">
+          <FlxMark tone="mono" className="h-8 w-8 text-white drop-shadow-sm" />
         </div>
-      )}
+
+        {/* Nome da Marca (Some perfeitamente quando o menu está colapsado) */}
+        {!collapsed && (
+          <div className="flex flex-col min-w-0">
+            <span className="text-sm font-bold tracking-tight text-white truncate">
+              Fluxo
+            </span>
+            <span className="text-[10px] font-medium text-white/60 tracking-wide uppercase">
+              flxapp.cloud
+            </span>
+          </div>
+        )}
+      </div>
+
       <nav className="flex-1 overflow-y-auto space-y-1 px-3 py-1">
         {visibleItems.map((n) => {
           const to = `/app/o/${slug}/${n.segment}`;
@@ -111,7 +115,8 @@ export function OrgSidebar({
                 strokeWidth={1.9}
               />
               {!collapsed && <span className="truncate">{n.label}</span>}
-              {/* Badge da Fila: mensagens novas (primary) */}
+              
+              {/* Badges de Fila e Alertas */}
               {isFila && newCount > 0 && !collapsed && (
                 <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-sidebar-primary px-2 py-0.5 text-[10px] font-bold tabular-nums text-sidebar-primary-foreground">
                   <Bell className="h-3 w-3" /> {newCount}
@@ -120,7 +125,6 @@ export function OrgSidebar({
               {isFila && newCount > 0 && collapsed && (
                 <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-sidebar-primary" />
               )}
-              {/* Badge de Alertas SLA: demandas paradas (destructive) */}
               {isAlertas && slaCount > 0 && !collapsed && (
                 <span
                   aria-label={`${slaCount} demandas paradas`}
@@ -139,8 +143,8 @@ export function OrgSidebar({
           );
         })}
       </nav>
-      {/* Footer: único lugar com o toggle de collapse — não existe mais um
-          segundo botão no topo. Fica sempre ao lado do ThemeCycleButton. */}
+
+      {/* Footer com UserMenu, Tema e Toggle */}
       <div className="mt-auto shrink-0 border-t border-sidebar-border/60 bg-sidebar p-2.5">
         <div className={`flex items-center gap-1.5 ${collapsed ? "flex-col" : ""}`}>
           <div className="min-w-0 flex-1">
