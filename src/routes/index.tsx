@@ -20,7 +20,6 @@ import {
   Timer,
   TriangleAlert,
   Users,
-  Wallet,
   Webhook,
   Zap,
 } from "lucide-react";
@@ -30,11 +29,11 @@ import { supabase } from "@/integrations/supabase/client";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Fluxo — nenhuma conversa esquecida" },
+      { title: "Flux — atendimento organizado para equipes" },
       {
         name: "description",
         content:
-          "O Fluxo transforma mensagens de WhatsApp e webhooks em demandas com dono, prazo e histórico. Sua equipe sabe por onde começar; seu cliente nunca fala com o vácuo.",
+          "O Flux organiza os atendimentos do WhatsApp em uma fila compartilhada, com responsáveis, prazos e histórico para equipes que precisam acompanhar cada solicitação.",
       },
     ],
   }),
@@ -91,7 +90,7 @@ function Reveal({
 
 /**
  * Mockup FIEL ao produto real (fila + conversa aberta), com a bolha de
- * cobrança Pix e o pill "Copiar chave" — o mesmo que o operador vê no
+ * acompanhamento do atendimento e o pill "Acompanhamento" — o mesmo que o operador vê no
  * histórico. Réplica de anatomia, não de dados: nomes/conteúdos ilustrativos.
  * - sidebar AZUL sólida (bg-primary) com tile ativo e dot de alerta;
  * - header da fila com pílulas de contagem (atrasadas em pill vermelho);
@@ -102,33 +101,33 @@ function ProductMockup() {
   const queue = [
     {
       initials: "C",
-      name: "Carlos",
+      name: "Carlos Mendes",
       time: "há 2 min",
-      preview: "Preciso remarcar a entrega de hoje…",
+      preview: "Meu pedido ainda será entregue hoje?",
       stripe: "var(--pill-red-fg)",
       unread: true,
     },
     {
       initials: "J",
-      name: "Juliana",
+      name: "Juliana Costa",
       time: "há 5 min",
-      preview: "Orçamento do pedido de amanhã",
+      preview: "Pode enviar o orçamento atualizado?",
       stripe: "var(--state-novo)",
       unread: true,
     },
     {
       initials: "M",
-      name: "Marcos",
+      name: "Marcos Lima",
       time: "21/10/2026",
-      preview: "vai demorar ainda?",
+      preview: "Conseguiram verificar meu chamado?",
       stripe: "var(--pill-red-fg)",
       unread: false,
     },
     {
       initials: "F",
-      name: "Fernanda",
+      name: "Fernanda Alves",
       time: "05/10/2026",
-      preview: "Obrigada, resolvido! 🙏",
+      preview: "Perfeito, obrigado pelo retorno!",
       stripe: "var(--state-resolvido)",
       unread: false,
     },
@@ -264,7 +263,7 @@ function ProductMockup() {
               </div>
             </div>
           </div>
-          {/* Conversa aberta — bolhas reais + cobrança Pix com pill de copiar */}
+          {/* Conversa aberta — bolhas reais + acompanhamento do atendimento com identificação do responsável */}
           <div className="flex flex-col bg-background">
             <div className="flex items-center justify-between border-b border-border px-3 py-2">
               <div className="flex min-w-0 items-center gap-2">
@@ -272,7 +271,7 @@ function ProductMockup() {
                   C
                 </span>
                 <div className="min-w-0">
-                  <div className="truncate text-[11px] font-semibold text-foreground">Carlos</div>
+                  <div className="truncate text-[11px] font-semibold text-foreground">Carlos Mendes</div>
                   <div className="truncate font-mono text-[9px] text-muted-foreground">DM-038F39</div>
                 </div>
               </div>
@@ -285,23 +284,23 @@ function ProductMockup() {
               {/* Bolha do cliente */}
               <div className="max-w-[88%] rounded-xl border border-border border-l-[3px] border-l-[var(--pill-green-fg)] bg-card px-3 py-1.5 text-[10px] text-foreground shadow-[var(--shadow-card)]">
                 <div className="mb-0.5 flex items-center gap-1 text-[9px] text-muted-foreground">
-                  <span className="font-semibold text-foreground">Carlos</span>
+                  <span className="font-semibold text-foreground">Carlos Mendes</span>
                   <span className="pill-green rounded px-1 py-px text-[8px] font-bold">Cliente</span>
                   <span>· há 2 min</span>
                 </div>
                 Preciso remarcar a entrega de hoje…
               </div>
-              {/* Bolha do agente com cobrança Pix + pill de copiar (recurso real) */}
+              {/* Bolha do agente com acompanhamento do atendimento + identificação do responsável (recurso real) */}
               <div className="ml-auto max-w-[88%] rounded-xl border border-primary/20 border-l-[3px] border-l-primary bg-primary/[0.04] px-3 py-1.5 text-[10px] text-foreground">
                 <div className="mb-0.5 flex items-center justify-end gap-1 text-[9px] text-muted-foreground">
                   <span>agora</span>
                   <span className="pill-brand rounded px-1 py-px text-[8px] font-bold">Você</span>
                 </div>
-                Oi Carlos! Sem problema 👍 Segue o Pix da remarcação:
+                Oi Carlos! Já confirmei com a equipe. Sua entrega está reagendada para amanhã. 👍
                 <span className="mt-1 flex flex-wrap items-center gap-1.5">
-                  <span className="font-semibold">Chave Pix: 95159606300</span>
+                  <span className="font-semibold">Responsável: Ana Paula</span>
                   <span className="inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[8px] font-semibold text-primary">
-                    <Copy className="h-2.5 w-2.5" /> Copiar chave
+                    <Check className="h-2.5 w-2.5" /> Acompanhamento
                   </span>
                 </span>
               </div>
@@ -363,7 +362,7 @@ function Landing() {
     { icon: Webhook, label: "Webhooks / API" },
   ];
   const kpis = [
-    { icon: ShieldCheck, title: "100% auditado", desc: "Toda ação registra autor e horário." },
+    { icon: ShieldCheck, title: "Histórico registrado", desc: "Ações importantes ficam registradas com autor e horário." },
     { icon: Inbox, title: "Uma fila só", desc: "WhatsApp e webhooks no mesmo lugar." },
     { icon: Timer, title: "SLA vivo", desc: "O alerta aparece antes do cliente reclamar." },
   ];
@@ -371,45 +370,45 @@ function Landing() {
     {
       icon: ArrowDownWideNarrow,
       tint: "pill-brand",
-      title: "A fila se organiza sozinha",
-      desc: "Atrasadas e urgentes sobem pro topo. Ninguém precisa lembrar de nada — o painel lembra.",
+      title: "A equipe sabe por onde começar",
+      desc: "As conversas ficam em uma fila compartilhada, com prioridade para o que precisa de atenção.",
     },
     {
-      icon: MessageCircle,
+      icon: Users,
       tint: "pill-green",
-      title: "Você lê antes de abrir",
-      desc: "A prévia da última mensagem conta o que ficou prometido. Zero “do que estamos falando mesmo?”.",
+      title: "Cada solicitação tem responsável",
+      desc: "A equipe consegue identificar quem está cuidando de cada atendimento e acompanhar o andamento.",
     },
     {
       icon: Timer,
       tint: "pill-red",
-      title: "O SLA avisa antes do cliente",
-      desc: "Conversa parada vira alerta visível — e some sozinho assim que alguém responde.",
+      title: "Prazos ficam visíveis",
+      desc: "Os alertas de SLA ajudam a perceber conversas que estão paradas e precisam de atenção.",
     },
     {
-      icon: Copy,
+      icon: History,
       tint: "pill-violet",
-      title: "Cobrar sem constrangimento",
-      desc: "Um clique monta a mensagem com a sua chave Pix e o valor. O cliente copia a chave em um toque.",
+      title: "O histórico acompanha a conversa",
+      desc: "Mensagens e atualizações ficam reunidas para a equipe retomar o atendimento com contexto.",
     },
   ];
   const dayMoments = [
     {
-      time: "08:12",
-      title: "“Chegou mensagem nova.”",
-      desc: "O WhatsApp tocou? Virou demanda na hora — com nome do contato, histórico e prévia. Ninguém anotou nada: aconteceu sozinho.",
+      time: "09:12",
+      title: "“Chegou um pedido de orçamento.”",
+      desc: "A mensagem do cliente aparece na fila compartilhada, com a conversa e o histórico disponíveis para a equipe.",
       tint: "pill-green",
     },
     {
-      time: "14:40",
-      title: "“Alguém ficou pra trás.”",
-      desc: "Conversa parada há mais tempo que o seu SLA? Sobe pro topo e acende o alerta. Respondeu? O alerta some sozinho.",
-      tint: "pill-red",
+      time: "10:05",
+      title: "“A Ana ficou responsável.”",
+      desc: "A solicitação é atribuída a uma pessoa da equipe. Todos conseguem identificar quem está acompanhando o cliente.",
+      tint: "pill-brand",
     },
     {
-      time: "18:47",
-      title: "“Ficou pra amanhã.”",
-      desc: "Estado, prazo e responsável registrados em dois cliques. Amanhã a fila abre já sabendo de tudo — inclusive do que você prometeu.",
+      time: "14:30",
+      title: "“O gestor acompanha o andamento.”",
+      desc: "O prazo e o status ficam visíveis. Se a conversa ficar parada, o alerta ajuda a equipe a agir antes que ela seja esquecida.",
       tint: "pill-amber",
     },
   ];
@@ -417,45 +416,46 @@ function Landing() {
     {
       icon: ShieldCheck,
       tint: "pill-brand",
-      title: "Auditoria de verdade",
-      desc: "Cada mudança de estado, atribuição ou mensagem registra autor e horário. Se alguém perguntar “quem fez isso?”, a resposta existe.",
+      title: "Ações registradas",
+      desc: "Mudanças de status, atribuições e mensagens ficam registradas com autor e horário, facilitando o acompanhamento.",
     },
     {
       icon: Lock,
       tint: "pill-violet",
-      title: "Seus dados, no seu espaço",
-      desc: "Cada organização é um tenant isolado, com permissões por papel aplicadas no banco (RLS). Seus dados não se misturam com os de ninguém.",
+      title: "Espaço separado por empresa",
+      desc: "Cada organização possui seu próprio ambiente, com acesso controlado de acordo com as permissões da equipe.",
     },
     {
       icon: History,
       tint: "pill-amber",
-      title: "Histórico que não mente",
-      desc: "Mensagens, mídias, notas internas e mudanças de estado ficam na linha do tempo da demanda — consultáveis para sempre.",
+      title: "Histórico do atendimento",
+      desc: "A equipe pode consultar o contexto da conversa e acompanhar o que aconteceu ao longo da solicitação.",
     },
     {
-      icon: Wallet,
+      icon: Users,
       tint: "pill-green",
-      title: "Cota sem surpresa",
-      desc: "O uso de mensagens aparece no painel com avisos em 80%, 95% e 100%. Nenhum bloqueio silencioso, nenhuma fatura misteriosa.",
+      title: "Visão compartilhada",
+      desc: "O gestor e os colaboradores acompanham a mesma fila, sem depender de mensagens repassadas entre celulares.",
     },
   ];
   const steps = [
     {
       n: "1",
-      title: "Crie sua organização",
-      desc: "Um nome e um clique. Sem cartão de crédito, sem ligação de vendas.",
+      title: "Crie o espaço da sua empresa",
+      desc: "Cadastre sua organização e convide as pessoas que participam do atendimento.",
     },
     {
       n: "2",
-      title: "Conecte um canal",
-      desc: "WhatsApp via Evolution API ou webhook do seu sistema. O token você gera no próprio painel.",
+      title: "Conecte o WhatsApp",
+      desc: "Configure a integração disponível para receber as conversas no Flux. Você também pode conectar webhooks e API.",
     },
     {
       n: "3",
-      title: "Atenda pela fila",
-      desc: "Ordem, alertas, histórico e cobrança: o Fluxo segura tudo isso pra você.",
+      title: "Organize o trabalho da equipe",
+      desc: "Acompanhe as conversas, distribua responsabilidades e veja o que ainda precisa ser resolvido.",
     },
   ];
+
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -466,7 +466,7 @@ function Landing() {
             <span className="grid h-7 w-7 place-items-center rounded-lg bg-primary">
               <Inbox className="h-4 w-4 text-primary-foreground" strokeWidth={2.2} />
             </span>
-            Fluxo
+            Flux
           </div>
           <nav className="flex items-center gap-2 text-sm">
             {isAuthed ? (
@@ -496,7 +496,7 @@ function Landing() {
                   to="/auth"
                   className="rounded-lg bg-primary px-3.5 py-2 font-medium text-primary-foreground shadow-sm transition hover:brightness-110"
                 >
-                  Começar grátis
+                  Testar grátis
                 </Link>
               </>
             )}
@@ -504,51 +504,55 @@ function Landing() {
         </div>
       </header>
 
-      {/* ── HERO: cena + promessa + produto real ── */}
-      <section className="mx-auto max-w-6xl px-6 pb-16 pt-20">
+      {/* ── HERO: posicionamento para equipes que compartilham o WhatsApp ── */}
+      <section className="mx-auto max-w-6xl px-6 pb-16 pt-14 lg:pt-20">
         <Reveal>
-          <div className="max-w-3xl">
+          <div className="max-w-4xl">
             <div className="pill-brand inline-flex items-center gap-2 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-widest">
               <span className="h-1.5 w-1.5 rounded-full bg-[var(--pill-brand-fg)]" />
-              Atendimento que não depende de memória
+              Atendimento compartilhado para empresas
             </div>
             <h1 className="mt-6 text-4xl font-extrabold leading-[1.08] tracking-tight lg:text-6xl">
-              A mensagem chegou às 18h47 de sexta.{" "}
-              <span className="text-primary">Ela não vai se perder.</span>
+              Seu WhatsApp tem várias conversas.{" "}
+              <span className="text-primary">Sua equipe sabe quem está cuidando de cada uma?</span>
             </h1>
-            <p className="mt-6 max-w-2xl text-base leading-relaxed text-muted-foreground">
-              O Fluxo transforma conversas de WhatsApp e chamadas de API em demandas com dono,
-              prazo e histórico completo. Sua equipe abre o painel sabendo exatamente por onde
-              começar — e o seu cliente nunca mais fala com o vácuo.
+            <p className="mt-6 max-w-3xl text-base leading-relaxed text-muted-foreground lg:text-lg">
+              O Flux reúne os atendimentos em uma fila compartilhada para sua equipe distribuir
+              responsabilidades, acompanhar prazos e consultar o histórico de cada cliente.
+              Assim, o gestor sabe o que está pendente e quem está cuidando de cada solicitação.
             </p>
-            <div className="mt-8 flex flex-wrap gap-3">
+            <div className="mt-7 flex flex-wrap gap-3">
               <Link
                 to={isAuthed ? "/app" : "/auth"}
                 className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-3 font-medium text-primary-foreground shadow-[var(--shadow-pop)] transition hover:brightness-110"
               >
-                Criar minha organização <ArrowRight className="h-4 w-4" />
+                Experimentar gratuitamente <ArrowRight className="h-4 w-4" />
               </Link>
               <a
                 href="#como-funciona"
                 className="inline-flex items-center gap-2 rounded-lg border border-border px-5 py-3 transition hover:bg-secondary"
               >
-                Ver o Fluxo por dentro
+                Ver como funciona
               </a>
             </div>
             <p className="mt-4 text-xs text-muted-foreground">
-              Grátis por 7 dias · Sem cartão de crédito · Seus dados isolados por organização
+              7 dias grátis · Sem cartão de crédito · Ideal para equipes que atendem pelo WhatsApp
             </p>
+            <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-medium text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-primary" /> Fila compartilhada</span>
+              <span className="inline-flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-primary" /> Responsáveis definidos</span>
+              <span className="inline-flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-primary" /> Prazos e histórico</span>
+            </div>
           </div>
         </Reveal>
 
-        <div className="mt-16 grid gap-10 lg:grid-cols-5 lg:items-center">
+        <div className="mt-12 grid gap-10 lg:grid-cols-5 lg:items-center">
           <Reveal delay={100} className="lg:col-span-3">
             <ProductMockup />
           </Reveal>
-
           <Reveal delay={200} className="lg:col-span-2">
             <div className="text-[11px] font-bold uppercase tracking-widest text-primary">
-              Abriu o painel? Então já sabe o que fazer.
+              Mais controle para quem coordena. Mais clareza para quem atende.
             </div>
             <ul className="mt-6 space-y-4">
               {panelPoints.map(({ icon: Icon, tint, title, desc }) => (
@@ -609,10 +613,9 @@ function Landing() {
       {/* ── UM DIA COM O FLUXO (narrativa) ── */}
       <section className="mx-auto max-w-6xl px-6 py-20">
         <Reveal>
-          <h2 className="text-3xl font-bold tracking-tight">Um dia qualquer, com o Fluxo ligado</h2>
+          <h2 className="text-3xl font-bold tracking-tight">Como o atendimento pode funcionar com o Flux</h2>
           <p className="mt-2 max-w-2xl text-muted-foreground">
-            Sem ritual novo, sem treinamento: a mensagem entra, o Fluxo organiza, sua equipe
-            responde. É assim que sente-se na prática.
+            Veja uma situação comum: uma solicitação chega, alguém assume o atendimento e o gestor consegue acompanhar o andamento.
           </p>
         </Reveal>
         <div className="mt-10 grid gap-4 md:grid-cols-3">
@@ -639,7 +642,7 @@ function Landing() {
       <section id="como-funciona" className="border-y border-border bg-card/40 py-20">
         <div className="mx-auto max-w-6xl px-6">
           <Reveal>
-            <h2 className="text-3xl font-bold tracking-tight">O motor por dentro</h2>
+            <h2 className="text-3xl font-bold tracking-tight">O que sua equipe consegue acompanhar</h2>
             <p className="mt-2 max-w-2xl text-muted-foreground">
               Cada mensagem vira uma demanda com ciclo de vida controlado. Estados, responsáveis e
               prazos garantem que nada trava sem alguém saber.
@@ -653,7 +656,7 @@ function Landing() {
                   <span className="pill-brand grid h-9 w-9 place-items-center rounded-lg">
                     <GitBranch className="h-4 w-4" />
                   </span>
-                  <div className="font-semibold">State machine auditada</div>
+                  <div className="font-semibold">Etapas do atendimento</div>
                 </div>
                 <div className="mt-5 flex flex-wrap items-center gap-2">
                   <span className="pill-brand rounded-full px-2.5 py-1 text-[11px] font-bold">Novo</span>
@@ -665,7 +668,7 @@ function Landing() {
                   <span className="pill-green rounded-full px-2.5 py-1 text-[11px] font-bold">Concluído</span>
                 </div>
                 <div className="mt-4 rounded-lg border border-border bg-background px-3 py-2 text-[11px] text-muted-foreground">
-                  <span className="font-semibold text-foreground">IA</span> mudou o estado de{" "}
+                  <span className="font-semibold text-foreground">Ana Paula</span> atualizou o status de{" "}
                   <span className="pill-brand rounded px-1.5 py-0.5 font-bold">Novo</span> para{" "}
                   <span className="pill-amber rounded px-1.5 py-0.5 font-bold">Em análise</span> · há 2 min
                 </div>
@@ -686,15 +689,15 @@ function Landing() {
                       <span className="h-1.5 w-1.5 rounded-full bg-[var(--pill-red-fg)] animate-alert-blink" /> SLA
                       estourado · 2h
                     </span>
-                    <span className="text-[11px] text-muted-foreground">DM-1102 · Carlos</span>
+                    <span className="text-[11px] text-muted-foreground">DM-1102 · Carlos Mendes</span>
                   </div>
                   <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
                     <span className="pill-amber rounded-full px-2 py-0.5 text-[10px] font-bold">Vence em 4h</span>
-                    <span className="text-[11px] text-muted-foreground">DM-0977 · Juliana</span>
+                    <span className="text-[11px] text-muted-foreground">DM-0977 · Juliana Costa</span>
                   </div>
                   <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
                     <span className="pill-green rounded-full px-2 py-0.5 text-[10px] font-bold">Dentro do prazo</span>
-                    <span className="text-[11px] text-muted-foreground">DM-0954 · Marcos</span>
+                    <span className="text-[11px] text-muted-foreground">DM-0954 · Marcos Lima</span>
                   </div>
                 </div>
                 <p className="mt-3 text-[11px] text-muted-foreground">
@@ -722,8 +725,8 @@ function Landing() {
       <section className="mx-auto max-w-6xl px-6 py-20">
         <Reveal>
           <div className="text-center">
-            <h2 className="text-3xl font-bold tracking-tight">Em produção em menos de 5 minutos</h2>
-            <p className="mt-2 text-muted-foreground">Três passos simples para tirar sua equipe do caos.</p>
+            <h2 className="text-3xl font-bold tracking-tight">Comece a organizar o atendimento</h2>
+            <p className="mt-2 text-muted-foreground">Configure o espaço da empresa, conecte o canal e reúna a equipe na mesma fila.</p>
           </div>
         </Reveal>
         <div className="mt-12 grid gap-8 md:grid-cols-3">
@@ -749,7 +752,7 @@ function Landing() {
             <div className="pointer-events-none absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-sky-500/15 blur-3xl" />
             <div className="relative">
               <h2 className="text-3xl font-bold tracking-tight text-white">
-                Pronto para operacionalizar sua organização?
+                Sua equipe está pronta para atender com mais organização?
               </h2>
               <p className="mt-3 max-w-xl text-slate-300">
                 Crie sua conta em segundos, conecte seu canal e nunca mais perca o controle de uma
@@ -759,7 +762,7 @@ function Landing() {
                 to={isAuthed ? "/app" : "/auth"}
                 className="mt-6 inline-flex items-center gap-2 rounded-lg bg-white px-5 py-3 font-medium text-slate-900 shadow-lg shadow-sky-500/20 transition hover:scale-[1.02] hover:bg-slate-100"
               >
-                Abrir o Fluxo agora <ArrowRight className="h-4 w-4" />
+                Experimentar o Flux <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
           </div>
@@ -773,8 +776,8 @@ function Landing() {
             <span className="grid h-6 w-6 place-items-center rounded-md bg-primary">
               <Inbox className="h-3.5 w-3.5 text-primary-foreground" />
             </span>
-            Fluxo
-            <span className="font-normal text-muted-foreground">© {new Date().getFullYear()} — Motor de Demandas</span>
+            Flux
+            <span className="font-normal text-muted-foreground">© {new Date().getFullYear()} — Atendimento compartilhado</span>
           </div>
           <nav className="flex items-center gap-6">
             <a href="#" className="transition hover:text-foreground">Termos</a>

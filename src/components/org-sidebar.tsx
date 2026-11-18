@@ -69,7 +69,7 @@ export function OrgSidebar({
 
         {!collapsed && (
           <div className="flex flex-col min-w-0">
-            <span className="text-sm font-bold tracking-tight text-white truncate">luxo</span>
+            <span className="text-sm font-bold tracking-tight text-white truncate">lux</span>
             <span className="text-[10px] font-medium text-white/60 tracking-wide uppercase">
               flxapp.cloud
             </span>
