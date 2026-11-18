@@ -69,6 +69,7 @@ export function UserMenu({
   settingsTo,
   onSignOut,
   showTooltip = true,
+  round = false,
 }: {
   name: string;
   email?: string | null;
@@ -79,8 +80,11 @@ export function UserMenu({
   onSignOut: () => void;
   // Tooltip de hover só faz sentido em contexto de mouse (sidebar desktop recolhida).
   // Em touch (mobile), o Radix Tooltip pode ficar "preso" aberto porque não existe
-  // mouse-leave real — por isso o OrgMobileNav passa showTooltip={false}.
+  // mouse-leave real — por isso o OrgMobileNav/header passam showTooltip={false}.
   showTooltip?: boolean;
+  // Avatar circular translúcido pra barras de marca (MobileAppHeader):
+  // círculo branco/15 com ring, iniciais brancas — o "JS" do anúncio.
+  round?: boolean;
 }) {
   const { theme } = useTheme();
   const initials = name
@@ -90,7 +94,13 @@ export function UserMenu({
     .map((p) => p[0]!.toUpperCase())
     .join("");
 
-  const trigger = (
+  const trigger = round ? (
+    <DropdownMenuTrigger
+      className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/15 ring-1 ring-white/30 text-[11px] font-bold text-white transition hover:bg-white/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+    >
+      {initials || "U"}
+    </DropdownMenuTrigger>
+  ) : (
     <DropdownMenuTrigger
       className={`flex w-full items-center gap-2.5 rounded-xl border border-sidebar-border/70 bg-sidebar-accent/30 px-2 py-2 text-left transition hover:bg-sidebar-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring ${
         collapsed ? "justify-center px-1.5" : ""
@@ -113,7 +123,7 @@ export function UserMenu({
 
   return (
     <DropdownMenu>
-      {collapsed && showTooltip ? (
+      {!round && collapsed && showTooltip ? (
         <TooltipProvider delayDuration={200}>
           <Tooltip>
             <TooltipTrigger asChild>{trigger}</TooltipTrigger>
@@ -127,12 +137,12 @@ export function UserMenu({
         trigger
       )}
       <DropdownMenuContent
-        align={collapsed ? "start" : "end"}
+        align={collapsed || round ? "start" : "end"}
         side="top"
         sideOffset={10}
         collisionPadding={16}
         avoidCollisions
-        className={`z-50 min-w-[var(--radix-dropdown-menu-trigger-width)] max-w-xs ${collapsed ? "w-64" : ""}`}
+        className={`z-50 min-w-[var(--radix-dropdown-menu-trigger-width)] max-w-xs ${collapsed || round ? "w-64" : ""}`}
       >
         <DropdownMenuLabel className="pb-1">
           <div className="truncate text-sm font-semibold">{name}</div>

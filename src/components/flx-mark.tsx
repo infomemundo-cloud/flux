@@ -3,19 +3,17 @@ import { useId } from "react";
 /**
  * Monograma "F de fita" do Fluxo — vetor vivo, sem imagem.
  *
- * Versão SIMPLIFICADA (3 gestos, zero loop):
- *  • haste vertical com canto superior arredondado + braço superior RETO
- *    (sem gancho descendente — o gancho anterior fechava uma barriga e
- *    fazia o olho ler "P/R" em tamanho pequeno);
- *  • braço do meio com onda leve que NASCE à esquerda da haste e CRUZA
- *    por cima dela (entrelace com vão de máscara = assinatura da marca);
- *  • fita grossa (7/40 ≈ 17%) com pontas redondas;
- *  • tone="brand": degradê por fita ( superfícies claras);
- *    tone="mono": currentColor (sidebar azul / superfícies escuras) —
- *    resolve o azul-sobre-azul que sumia com a haste;
- *  • ids via useId → várias instâncias na mesma tela sem colisão.
+ * viewBox AJUSTADO ao bounding box real do glifo (10 4 27 40): elimina o
+ * letterbox horizontal interno que afastava o F do texto ao lado. Com
+ * `h-8 w-auto` no call site, a largura do SVG passa a ser exatamente a
+ * largura visual do F — o único espaço entre marca e texto é o gap do flex.
  *
- * Tamanho vem do className (h-6 w-6, h-8 w-8…). Puramente apresentacional.
+ * Geometria (F maiúsculo legível):
+ *  • haste CONTÍNUA + canto superior arredondado + braço superior reto;
+ *  • braço do meio reto, atracado na haste (desenhado por baixo dela);
+ *  • fita grossa (7/40), pontas redondas;
+ *  • tone="brand": degradê por fita; tone="mono": currentColor.
+ *  • ids via useId → várias instâncias na mesma tela sem colisão.
  */
 export function FlxMark({
   className,
@@ -30,21 +28,19 @@ export function FlxMark({
   const uid = raw.replace(/[^a-zA-Z0-9_-]/g, "");
   const gradA = `flxA-${uid}`;
   const gradB = `flxB-${uid}`;
-  const maskA = `flxMA-${uid}`;
 
-  // Haste + canto superior + braço superior reto (terminal redondo, SEM gancho).
-  const strandA = "M 14 40 V 16 C 14 11 17 8 22 8 H 33";
-  // Braço do meio: onda leve, nasce à esquerda da haste, cruza por cima.
-  const strandB = "M 7 26 C 12 26 14 23.5 19 23.5 H 26";
-  // Tesoura local: trecho de B que corta A no cruzamento (vão do entrelace).
-  const cutOverA = "M 8.5 25.8 C 12 25.6 14 23.6 18 23.5";
+  // Haste contínua + canto superior + braço superior (mais longo).
+  const stemTop = "M 14 40 V 15 C 14 11 17 8 21 8 H 33";
+  // Braço do meio: reto, atracado na haste (a haste, desenhada depois,
+  // cobre o junction), mais curto que o topo.
+  const midArm = "M 14 23 H 27";
 
   const strokeA = tone === "mono" ? "currentColor" : `url(#${gradA})`;
   const strokeB = tone === "mono" ? "currentColor" : `url(#${gradB})`;
 
   return (
     <svg
-      viewBox="2 3 36 42"
+      viewBox="10 4 27 40"
       className={className}
       role="img"
       aria-label={title}
@@ -56,29 +52,24 @@ export function FlxMark({
           <stop offset="0.5" stopColor="#2563eb" />
           <stop offset="1" stopColor="#22d3ee" />
         </linearGradient>
-        <linearGradient id={gradB} gradientUnits="userSpaceOnUse" x1="7" y1="26" x2="26" y2="23.5">
+        <linearGradient id={gradB} gradientUnits="userSpaceOnUse" x1="14" y1="23" x2="27" y2="23">
           <stop offset="0" stopColor="#22d3ee" />
           <stop offset="0.6" stopColor="#38bdf8" />
           <stop offset="1" stopColor="#2563eb" />
         </linearGradient>
-        {/* A some no cruzamento → B (braço do meio) passa por cima */}
-        <mask id={maskA} maskUnits="userSpaceOnUse" x="0" y="0" width="48" height="48">
-          <rect x="0" y="0" width="48" height="48" fill="white" />
-          <path d={cutOverA} stroke="black" strokeWidth="10.5" strokeLinecap="round" fill="none" />
-        </mask>
       </defs>
+      {/* Braço do meio POR BAIXO: a haste (desenhada depois) cobre o junction. */}
       <path
-        d={strandA}
-        mask={`url(#${maskA})`}
-        stroke={strokeA}
+        d={midArm}
+        stroke={strokeB}
         strokeWidth="7"
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"
       />
       <path
-        d={strandB}
-        stroke={strokeB}
+        d={stemTop}
+        stroke={strokeA}
         strokeWidth="7"
         strokeLinecap="round"
         strokeLinejoin="round"

@@ -20,8 +20,10 @@ import {
   Wifi,
   WifiOff,
   Loader2,
+  AlertTriangle,
 } from "lucide-react";
-import { formatRelative } from "@/components/demandas-ui";
+import { formatRelative, PriorityBadge, STATE_LABEL } from "@/components/demandas-ui";
+import { STATE_COLOR } from "@/lib/demandas/state-colors";
 import { FilaSidebarContext } from "@/lib/demandas/fila-sidebar-context";
 import { useOrgSidebar } from "@/lib/org-sidebar-context";
 import { resolveContactName } from "@/lib/demandas/resolve-contact-name";
@@ -86,6 +88,61 @@ function leftBorderColor(d: any): string {
 }
 
 /**
+ * Chip de estado à direita do card (camada 3 do lockup mobile do anúncio):
+ * SLA estourado vence (carmim "SLA"); concluída vira ✓ verde; demais mostram
+ * a prioridade (PriorityBadge do design system). Vale em mobile E desktop —
+ * a urgência fica legível sem abrir a demanda.
+ */
+/**
+ * Chip da direita do card — regra de mercado (Intercom/Zendesk/Front):
+ *  1) SLA estourado = alarme, vence tudo (carmim);
+ *  2) concluída = estado terminal explícito (✓ verde);
+ *  3) prioridade SÓ quando desvia do default (alta/urgente) —
+ *     "média/baixa" em todo card é ruído que as grandes não mostram;
+ *  4) demais = ESTADO como chip neutro (dot da cor do estado + rótulo
+ *     minúsculo), porque a aba Fila é mista — quando a lista é homogênea
+ *     por estado, o estado some do card e vira navegação (abas/filtro).
+ * A borda lateral continua sendo a leitura passiva de estado; o chip é
+ * a leitura ativa do que pede ação AGORA.
+ */
+function FilaStateChip({ d }: { d: any }) {
+  if (isOverdueDemanda(d)) {
+    return (
+      <span
+        title="SLA estourado"
+        aria-label="SLA estourado"
+        className="inline-flex items-center gap-0.5 rounded-md bg-[var(--pill-red-bg)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[var(--pill-red-fg)]"
+      >
+        <AlertTriangle className="h-3 w-3" strokeWidth={2.4} /> SLA
+      </span>
+    );
+  }
+  if (d.state === "concluido") {
+    return (
+      <span
+        title="Concluída"
+        aria-label="Concluída"
+        className="inline-flex items-center gap-0.5 rounded-md bg-[var(--pill-green-bg)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[var(--pill-green-fg)]"
+      >
+        <CheckCircle2 className="h-3 w-3" strokeWidth={2.4} /> Ok
+      </span>
+    );
+  }
+  if (d.priority === "alta" || d.priority === "urgente") {
+    return <PriorityBadge priority={d.priority} />;
+  }
+  return (
+    <span
+      title={`Estado: ${STATE_LABEL[d.state] ?? d.state}`}
+      className="inline-flex items-center gap-1 rounded-md bg-secondary/70 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground"
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${STATE_COLOR[d.state] ?? "bg-muted-foreground/40"}`} />
+      {STATE_LABEL[d.state] ?? d.state}
+    </span>
+  );
+}
+
+/**
  * Card da fila — hierarquia por "contraste passivo" (estilo e-mail moderno),
  * válida nos 3 temas SEM hardcoded de paleta:
  * - NÃO LIDO: superfície elevada (bg-card; no dark sobe pra bg-popover) +
@@ -122,7 +179,7 @@ function FilaCard({ d, slug }: { d: any; slug: string }) {
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-start justify-between gap-2">
           <span
             className={`truncate text-xs ${
               unread ? "font-bold text-foreground" : "font-medium text-muted-foreground dark:text-foreground/50"
@@ -130,21 +187,25 @@ function FilaCard({ d, slug }: { d: any; slug: string }) {
           >
             {contactName}
           </span>
-          {/* Canal + horário: sutis, sem roubar o protagonismo da prévia */}
-          <span
-            className={`flex shrink-0 items-center gap-0.5 text-[10px] tabular-nums ${
-              unread ? "text-muted-foreground" : "text-muted-foreground/70"
-            }`}
-          >
+          {/* Coluna direita (camada 3 do anúncio): horário em cima,
+              chip de estado/prioridade embaixo. */}
+          <div className="flex shrink-0 flex-col items-end gap-1">
             <span
-              title={isGroup ? "Conversa em grupo" : "WhatsApp"}
-              aria-label={isGroup ? "Conversa em grupo" : "WhatsApp"}
-              className={unread ? "text-muted-foreground/80" : "text-muted-foreground/60"}
+              className={`flex items-center gap-0.5 text-[10px] tabular-nums ${
+                unread ? "text-muted-foreground" : "text-muted-foreground/70"
+              }`}
             >
-              {isGroup ? <Users className="h-3 w-3" /> : <MessageCircle className="h-3 w-3" />}
+              <span
+                title={isGroup ? "Conversa em grupo" : "WhatsApp"}
+                aria-label={isGroup ? "Conversa em grupo" : "WhatsApp"}
+                className={unread ? "text-muted-foreground/80" : "text-muted-foreground/60"}
+              >
+                {isGroup ? <Users className="h-3 w-3" /> : <MessageCircle className="h-3 w-3" />}
+              </span>
+              {formatRelative(activityIso(d))}
             </span>
-            {formatRelative(activityIso(d))}
-          </span>
+            <FilaStateChip d={d} />
+          </div>
         </div>
         <div
           className={`mt-0.5 truncate text-[11px] ${
@@ -382,7 +443,10 @@ function FilaPage() {
 
   return (
     <FilaSidebarContext.Provider value={{ collapsed, setCollapsed }}>
-      <div className="flex h-screen flex-col overflow-hidden">
+      {/* Mobile: 100dvh − header (48px) − safe-area da bottom nav (80px) =
+        a fila ocupa exatamente a tela visível, sem sobra rolável no main.
+        Desktop: h-screen como antes. */}
+    <div className="flex h-[calc(100dvh-8rem)] sm:h-screen flex-col overflow-hidden">
         <AccountAccessBanner orgId={org?.id ?? null} slug={slug} />
         <div className="relative flex flex-1 overflow-hidden">
         {/* Botão flutuante pra reabrir — só existe quando a fila está recolhida. */}

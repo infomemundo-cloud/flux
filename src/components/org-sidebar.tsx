@@ -14,7 +14,6 @@ import { ThemeCycleButton, UserMenu } from "@/components/user-menu";
 import { useSlaAlertCount } from "@/lib/demandas/use-sla-alert-count";
 import { FlxMark } from "@/components/flx-mark";
 
-// Fonte única da navegação da org — usada aqui e no OrgMobileNav.
 export type OrgNavItem = {
   segment: string;
   label: string;
@@ -55,22 +54,22 @@ export function OrgSidebar({
 }: OrgSidebarProps) {
   const slaCount = useSlaAlertCount(slug);
   const visibleItems = ORG_NAV_ITEMS.filter((n) => !n.adminOnly || isOwnerOrAdmin);
-  
+
   return (
     <aside className="hidden sm:flex h-screen flex-col justify-between overflow-hidden sticky top-0 left-0 bg-sidebar text-sidebar-foreground border-r border-sidebar-border/40">
-      
-      {/* Topo: Marca / Logo transparente com adaptação para o estado collapsed */}
-      <div className={`shrink-0 pt-5 pb-3 flex items-center ${collapsed ? "justify-center px-2" : "px-4 gap-3"}`}>
+      {/* Topo: marca + texto colados usando gap-1.5 */}
+      <div
+        className={`shrink-0 pt-5 pb-3 flex items-center ${
+          collapsed ? "justify-center px-2" : "px-3 gap-1.5"
+        }`}
+      >
         <div className="shrink-0 transition-transform duration-200 hover:scale-105 cursor-pointer">
-          <FlxMark tone="mono" className="h-8 w-8 text-white drop-shadow-sm" />
+          <FlxMark tone="mono" className="h-8 w-auto text-white drop-shadow-sm" />
         </div>
 
-        {/* Nome da Marca (Some perfeitamente quando o menu está colapsado) */}
         {!collapsed && (
           <div className="flex flex-col min-w-0">
-            <span className="text-sm font-bold tracking-tight text-white truncate">
-              Fluxo
-            </span>
+            <span className="text-sm font-bold tracking-tight text-white truncate">luxo</span>
             <span className="text-[10px] font-medium text-white/60 tracking-wide uppercase">
               flxapp.cloud
             </span>
@@ -115,8 +114,7 @@ export function OrgSidebar({
                 strokeWidth={1.9}
               />
               {!collapsed && <span className="truncate">{n.label}</span>}
-              
-              {/* Badges de Fila e Alertas */}
+
               {isFila && newCount > 0 && !collapsed && (
                 <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-sidebar-primary px-2 py-0.5 text-[10px] font-bold tabular-nums text-sidebar-primary-foreground">
                   <Bell className="h-3 w-3" /> {newCount}
@@ -144,7 +142,6 @@ export function OrgSidebar({
         })}
       </nav>
 
-      {/* Footer com UserMenu, Tema e Toggle */}
       <div className="mt-auto shrink-0 border-t border-sidebar-border/60 bg-sidebar p-2.5">
         <div className={`flex items-center gap-1.5 ${collapsed ? "flex-col" : ""}`}>
           <div className="min-w-0 flex-1">

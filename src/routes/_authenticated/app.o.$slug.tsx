@@ -9,6 +9,7 @@ import { useOrgRealtime, type IncomingMessageEvent } from "@/hooks/use-org-realt
 import { useSidebarCollapsed } from "@/hooks/use-sidebar-collapsed";
 import { OrgSidebar } from "@/components/org-sidebar";
 import { OrgMobileNav } from "@/components/org-mobile-nav";
+import { MobileAppHeader } from "@/components/mobile-app-header";
 import { PageFade, TopProgressBar, ListSkeleton } from "@/components/skeletons";
 import { OrgSidebarContext } from "@/lib/org-sidebar-context";
 
@@ -195,8 +196,17 @@ function OrgLayout() {
        * conteúdo final (botões de envio, formulários) nunca fique soterrado
        * pela bottom nav fixa. No desktop (sm+) o padding some.
        */}
-      <main className="min-w-0 overflow-auto scrollbar-thin bg-surface pb-20 sm:pb-0">
-        <TopProgressBar />
+       <main className="min-w-0 overflow-auto scrollbar-thin bg-surface pb-20 sm:pb-0">
+          {/* Camada 1 do lockup mobile: barra de marca sticky (some em sm+) */}
+          <MobileAppHeader
+            slug={slug}
+            orgName={org.name}
+            user={user}
+            roleLabel={roleLabel}
+            isOwnerOrAdmin={isOwnerOrAdmin}
+            onSignOut={signOut}
+          />
+          <TopProgressBar />
         <PageFade key={location.pathname}>
           <OrgSidebarContext.Provider value={{ collapsed, setCollapsed }}>
             <Outlet />
@@ -205,14 +215,7 @@ function OrgLayout() {
       </main>
 
       {/* Bottom nav fora do main → não participa do scroll container */}
-      <OrgMobileNav
-        slug={slug}
-        activePath={location.pathname}
-        user={user}
-        roleLabel={roleLabel}
-        isOwnerOrAdmin={isOwnerOrAdmin}
-        onSignOut={signOut}
-      />
+      <OrgMobileNav slug={slug} activePath={location.pathname} newCount={newCount} />
     </div>
   );
 }
