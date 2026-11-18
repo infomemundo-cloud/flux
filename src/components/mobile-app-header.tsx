@@ -2,22 +2,19 @@ import { Link } from "@tanstack/react-router";
 import { Bell } from "lucide-react";
 import { FlxMark } from "@/components/flx-mark";
 import { UserMenu } from "@/components/user-menu";
-import { useSlaAlertCount } from "@/lib/demandas/use-sla-alert-count";
 
 /**
- * MobileAppHeader — camada 1 do lockup mobile (a barra azul de marca do
- * anúncio): marca + org à esquerda; sino de Alertas SLA (com badge) e
- * perfil à direita. O perfil/configurações SOBEM pra cá, e a bottom nav
- * fica só com as 4 abas de operação (mais leve e fluida).
- *
- * Sticky dentro do scroller do <main> (gruda no topo ao rolar);
- * safe-area iOS respeitada no topo; some em sm+ (desktop usa o sidebar).
- * Zero query nova: o badge reusa useSlaAlertCount (cache compartilhado
- * com sidebar e bottom nav).
+ * MobileAppHeader — camada 1 do lockup mobile (barra azul de marca).
+ * SINO = NOVAS DEMANDAS (newCount), o MESMO sinal do desktop (badge da
+ * Fila + toast): toca → abre a Fila e zera o contador. O SLA NÃO mora
+ * aqui (já vive na bottom nav / sidebar) — sino de cima é chegada de
+ * trabalho novo, não alerta de parada.
+ * Sticky no scroller do main; safe-area iOS no topo; some em sm+.
  */
 export function MobileAppHeader({
   slug,
   orgName,
+  newCount,
   user,
   roleLabel,
   isOwnerOrAdmin,
@@ -25,16 +22,16 @@ export function MobileAppHeader({
 }: {
   slug: string;
   orgName: string;
+  newCount: number;
   user: { name: string; email: string | null } | null;
   roleLabel: string;
   isOwnerOrAdmin: boolean;
   onSignOut: () => void;
 }) {
-  const slaCount = useSlaAlertCount(slug);
   return (
     <header className="sm:hidden sticky top-0 z-40 border-b border-sidebar-border/40 bg-sidebar/95 backdrop-blur-md text-sidebar-foreground pt-[env(safe-area-inset-top,0px)]">
       <div className="flex h-12 items-center gap-2 px-3">
-        {/* Marca + org (volta pra fila ao tocar) */}
+        {/* Marca + org (toca volta pra fila) */}
         <Link
           to="/app/o/$slug/fila"
           params={{ slug }}
@@ -51,23 +48,23 @@ export function MobileAppHeader({
           </span>
         </Link>
 
-        {/* Sino → Alertas SLA, com badge de demandas paradas */}
+        {/* Sino = novas demandas (mesmo sinal do desktop); toca → Fila */}
         <Link
-          to="/app/o/$slug/alertas"
+          to="/app/o/$slug/fila"
           params={{ slug }}
-          title="Alertas de SLA"
-          aria-label={`Alertas de SLA${slaCount ? ` (${slaCount})` : ""}`}
+          title="Novas demandas"
+          aria-label={`Novas demandas${newCount ? ` (${newCount})` : ""}`}
           className="relative grid h-9 w-9 shrink-0 place-items-center rounded-xl text-white/80 transition hover:bg-white/10 hover:text-white active:scale-95"
         >
           <Bell className="h-[18px] w-[18px]" strokeWidth={2} />
-          {slaCount > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold tabular-nums text-destructive-foreground shadow-sm">
-              {slaCount > 9 ? "9+" : slaCount}
+          {newCount > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-white px-1 text-[9px] font-bold tabular-nums text-primary shadow-sm">
+              {newCount > 9 ? "9+" : newCount}
             </span>
           )}
         </Link>
 
-        {/* Perfil (redondo, estilo app) — Configurações vive dentro do menu */}
+        {/* Perfil (redondo) — Configurações vive dentro do menu */}
         <div className="w-9 shrink-0">
           <UserMenu
             name={user?.name ?? "Usuário"}

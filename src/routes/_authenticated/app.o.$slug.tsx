@@ -37,7 +37,7 @@ function OrgLayout() {
   });
 
   const [newCount, setNewCount] = useState(0);
-  const { collapsed, setCollapsed, toggle: toggleCollapsed } = useSidebarCollapsed();
+  const { collapsed, setCollapsed, toggle: toggleCollapsed, resetToPref } = useSidebarCollapsed();
   const [user, setUser] = useState<{ name: string; email: string | null } | null>(null);
 
   // Auto-open do wizard (D6 + Ciclo 1.5): só dispara enquanto a org NUNCA
@@ -158,7 +158,7 @@ function OrgLayout() {
 
   if (isLoading)
     return (
-      <div className="min-h-screen grid grid-cols-[1fr] bg-surface sm:grid-cols-[256px_1fr]">
+      <div className="min-h-screen grid grid-cols-[1fr] bg-surface sm:grid-cols-[68px_1fr]">
         <aside className="hidden sm:block h-screen sticky top-0 bg-sidebar border-r border-sidebar-border/60" />
         <main className="p-4 sm:p-8">
           <div className="h-7 w-52 shimmer rounded-md" />
@@ -201,6 +201,7 @@ function OrgLayout() {
           <MobileAppHeader
             slug={slug}
             orgName={org.name}
+            newCount={newCount}
             user={user}
             roleLabel={roleLabel}
             isOwnerOrAdmin={isOwnerOrAdmin}
@@ -208,7 +209,7 @@ function OrgLayout() {
           />
           <TopProgressBar />
         <PageFade key={location.pathname}>
-          <OrgSidebarContext.Provider value={{ collapsed, setCollapsed }}>
+          <OrgSidebarContext.Provider value={{ collapsed, setCollapsed, resetToPref }}>
             <Outlet />
           </OrgSidebarContext.Provider>
         </PageFade>

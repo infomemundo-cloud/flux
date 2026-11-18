@@ -353,7 +353,12 @@ function FilaPage() {
   // principal (ícones) e a fila junto. Estado 3 (retorno): fechar restaura as duas.
   useEffect(() => {
     setCollapsed(hasSelection);
-    orgSidebar?.setCollapsed(hasSelection);
+    // Foco no atendimento: recolhe a sidebar principal. Ao FECHAR a demanda,
+    // restaura a preferência persistida do usuário (default = recolhida) em
+    // vez de forçar expandida como antes — expansão manual sobrevive ao
+    // abre/fecha de conversas.
+    if (hasSelection) orgSidebar?.setCollapsed(true);
+    else orgSidebar?.resetToPref?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasSelection]);
 
