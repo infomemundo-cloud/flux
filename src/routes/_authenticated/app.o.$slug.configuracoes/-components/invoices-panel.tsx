@@ -13,7 +13,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   AlertCircle,
-  ArrowUpRight,
+  Ban,
   CalendarDays,
   CalendarRange,
   Check,
@@ -21,10 +21,16 @@ import {
   Clock,
   Copy,
   ReceiptText,
-  Wallet,
 } from "lucide-react";
 import { useInvoices } from "@/lib/billing/use-invoices";
 import type { Invoice } from "@/lib/billing/invoices.functions";
+
+/** Tipo mínimo da subscription para o card de ciclo vigente (fonte oficial). */
+type SubscriptionLite = {
+  current_period_start: string | null;
+  current_period_end: string | null;
+  state: string | null;
+} | null;
 
 // --- FORMATADORES ---
 
@@ -217,7 +223,13 @@ function CopyIdButton({ id }: { id: string }) {
   );
 }
 
-export function InvoicesPanel({ orgId }: { orgId: string }) {
+export function InvoicesPanel({ 
+  orgId, 
+  subscription = null,
+}: { 
+  orgId: string; 
+  subscription?: SubscriptionLite;
+}) {
   const { data, isLoading, isError } = useInvoices(orgId);
 
   const sorted = useMemo(() => [...(data ?? [])].sort(sortByRecency), [data]);
@@ -228,11 +240,38 @@ export function InvoicesPanel({ orgId }: { orgId: string }) {
   const lastProcessed = sorted.find((i) => i.status === "paid") ?? null;
   const hasAnyPaid = totalPaid > 0;
   
-  // Ciclo vigente: usa subscription se disponível, senão infere da última invoice paga
-  // (period_end da última = início do próximo ciclo previsto)
-  const currentCycleStart = lastProcessed?.period_end ?? null;
-  const currentCycleEnd = nextScheduled?.period_end ?? 
-    (lastProcessed ? new Date(new Date(lastProcessed.period_end!).getTime() + 30*86_400_000).toISOString() : null);
+  /**
+   * Período vigente e próxima cobrança — REGRA DE MERCADO (padrão MP/Stripe):
+   * 
+   * FONTE OFICIAL = subscriptions.current_period_start/end + state.
+   * Fallback (só se subscription não vier): deriva das faturas pagas mais recentes,
+   * marcando explicitamente como "Estimado" na UI. Remove qualquer cálculo
+   * artificial de +30 dias — isso inflava o período e confundia cliente vs MP.
+   * 
+   * Diferenciação por estado da assinatura:
+   * - Cancelada (cancelled/canceled): exibe "Assinatura Cancelada" + data final do ciclo.
+   * - Ativa/em dia: exibe "Próxima cobrança: DD/MM/AAAA" ou "Renovação automática ativa".
+   * - Sem dados oficiais: marca badge "Estimado" para transparência sobre a origem.
+   */
+  const hasOfficialSubscription = !!subscription?.current_period_start && !!subscription?.current_period_end;
+  const cycleStart = hasOfficialSubscription 
+    ? subscription!.current_period_start! 
+    : (lastProcessed?.period_start ?? null);
+  const cycleEnd = hasOfficialSubscription 
+    ? subscription!.current_period_end! 
+    : (nextScheduled?.period_end ?? lastProcessed?.period_end ?? null);
+  
+  // Badge "Estimado" só aparece quando NÃO temos dados oficiais da subscription
+  const showEstimatedBadge = !hasOfficialSubscription && (!!cycleStart || !!cycleEnd);
+  
+  // Estado da assinatura (cancelada vs ativa/em dia)
+  const isCancelled = ['cancelled', 'canceled'].includes(String(subscription?.state ?? ''));
+  
+  // Próxima cobrança: period_end da subscription (= fim do ciclo atual = início do próximo)
+  // Se cancelada, usa current_period_end como "data final do ciclo" (não é renovação futura)
+  const nextChargeDate = hasOfficialSubscription 
+    ? subscription!.current_period_end 
+    : (nextScheduled?.period_end ?? null);
 
   return (
     <div className="space-y-6">
@@ -278,38 +317,58 @@ export function InvoicesPanel({ orgId }: { orgId: string }) {
             </CardContent>
           </Card>
 
-          {/* CARD 2: CICLO VIGENTE / PRÓXIMA RENOVÃO (futuro previsto) */}
+          {/* CARD 2: CICLO ATUAL / PRÓXIMA COBRANÇA (regra de mercado: diferenciar cancelada vs ativa) */}
           <Card className="border-border bg-card shadow-card rounded-2xl">
             <CardHeader className="pb-2">
               <CardDescription className="text-xs flex items-center gap-1.5">
-                <CalendarRange className="h-3 w-3 text-primary" />
-                Ciclo Vigente
+                {isCancelled ? (
+                  <Ban className="h-3 w-3 text-destructive" />
+                ) : (
+                  <CalendarRange className="h-3 w-3 text-primary" />
+                )}
+                {isCancelled ? "Assinatura Cancelada" : "Ciclo Atual"}
+                {showEstimatedBadge && !isCancelled && (
+                  <span className="ml-1 inline-flex items-center rounded-md bg-secondary px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Estimado
+                  </span>
+                )}
               </CardDescription>
               <CardTitle className="text-lg font-semibold tabular-nums text-foreground">
-                {currentCycleStart && currentCycleEnd
-                  ? formatPeriodCompact(currentCycleStart, currentCycleEnd)
-                  : nextScheduled
-                    ? formatPeriodCompact(nextScheduled.period_start, nextScheduled.period_end)
-                    : "A definir"}
+                {cycleStart && cycleEnd
+                  ? formatPeriodCompact(cycleStart, cycleEnd)
+                  : "—"}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-1">
-                {nextScheduled ? (
+                {isCancelled ? (
+                  <>
+                    <p className="text-xs text-destructive font-medium">
+                      Esta assinatura foi cancelada e não haverá novas renovações.
+                    </p>
+                    {nextChargeDate && (
+                      <p className="text-[10px] text-muted-foreground">
+                        Data final do ciclo: {formatDateShort(nextChargeDate)}
+                      </p>
+                    )}
+                  </>
+                ) : nextChargeDate ? (
                   <>
                     <p className="text-xs text-muted-foreground">
-                      Próxima cobrança prevista:{" "}
+                      Próxima cobrança:{" "}
                       <span className="font-medium text-foreground tabular-nums">
-                        {formatDateShort(nextScheduled.period_end)}
+                        {formatDateShort(nextChargeDate)}
                       </span>
                     </p>
-                    <p className="text-[10px] text-muted-foreground/80">
-                      Valor estimado: {brlFormatter.format(nextScheduled.amount_cents / 100)}
-                    </p>
+                    {showEstimatedBadge && (
+                      <p className="text-[10px] text-muted-foreground/70 leading-relaxed">
+                        Período derivado das últimas faturas pagas. Confirme com sua equipe financeira.
+                      </p>
+                    )}
                   </>
                 ) : (
-                  <p className="text-xs text-muted-foreground italic">
-                    Todas as cobranças do ciclo atual foram quitadas.
+                  <p className="text-xs text-muted-foreground">
+                    Renovação automática ativa.
                   </p>
                 )}
               </div>
