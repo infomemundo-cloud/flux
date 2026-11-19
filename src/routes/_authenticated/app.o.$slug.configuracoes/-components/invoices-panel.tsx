@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ReceiptText, CheckCircle2, Clock, AlertCircle, CalendarDays } from "lucide-react";
+import { ArrowUpRight, AlertCircle, CalendarDays, CheckCircle2, Clock, ReceiptText, Wallet } from "lucide-react";
 import { useInvoices } from "@/lib/billing/use-invoices";
 import type { Invoice } from "@/lib/billing/invoices.functions";
 
@@ -136,17 +137,37 @@ function StatusBadge({ status }: { status: Invoice["status"] }) {
 
 // --- COMPONENTE PRINCIPAL ---
 
+/** Ordena por vencimento/período desc (extrato bancário: mais recente primeiro,
+ *  incluindo pendentes). Fallback em created_at quando não há period_end. */
+function sortByRecency(a: Invoice, b: Invoice): number {
+  const ka = a.period_end ?? a.paid_at ?? "";
+  const kb = b.period_end ?? b.paid_at ?? "";
+  return String(kb).localeCompare(String(ka));
+}
+
+/**
+ * Próxima cobrança = a NÃO-PAGA com MAIOR period_end (vencimento futuro mais
+ * distante), nunca a primeira do sort por paid_at (que caía na invoice antiga
+ * com período inflado). Sem não-pagas → null (tela mostra "último pagamento").
+ */
+function pickNextCharge(invoices: Invoice[]): Invoice | null {
+  const pending = invoices.filter((i) => i.status !== "paid");
+  if (pending.length === 0) return null;
+  return pending.reduce((best, cur) =>
+    String(cur.period_end ?? "") > String(best.period_end ?? "") ? cur : best,
+  );
+}
+
 export function InvoicesPanel({ orgId }: { orgId: string }) {
   const { data, isLoading, isError } = useInvoices(orgId);
 
-  // Métricas Agregadas
-  const totalPaid = data?.filter((i) => i.status === "paid").reduce((acc, curr) => acc + curr.amount_cents, 0) ?? 0;
-  
-  // Identifica a próxima cobrança prevista (primeira não-paga ordenada por period_end asc, 
-  // mas como nosso sort é DESC por paid_at/nulls last, assumimos que a primeira da lista 
-  // que não é 'paid' é a mais relevante para o resumo superior)
-  const nextScheduled = data?.find(i => i.status !== 'paid');
-  const lastProcessed = data?.find(i => i.status === 'paid');
+  const sorted = useMemo(() => [...(data ?? [])].sort(sortByRecency), [data]);
+  const totalPaid = sorted
+    .filter((i) => i.status === "paid")
+    .reduce((acc, curr) => acc + curr.amount_cents, 0);
+  const nextScheduled = pickNextCharge(sorted);
+  const lastProcessed = sorted.find((i) => i.status === "paid") ?? null;
+  const hasAnyPaid = totalPaid > 0;
 
   return (
     <div className="space-y-6">
@@ -154,38 +175,57 @@ export function InvoicesPanel({ orgId }: { orgId: string }) {
       {!isLoading && !isError && data && data.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           
-          {/* CARD 1: SITUAÇÃO ATUAL DA COBRANÇA */}
+          {/* CARD 1: SITUAÇÃO VIGENTE — próxima cobrança (futuro) OU último
+           * pagamento (passado). Rótulo e cor mudam conforme o estado real,
+           * eliminando a ambiguidade "é previsão ou foi pago?". */}
           <Card className="border-border bg-card shadow-card rounded-2xl">
             <CardHeader className="pb-2">
               <CardDescription className="text-xs flex items-center gap-1.5">
                 {nextScheduled ? (
                   <>
-                    <Clock className="h-3 w-3" />
-                    Próxima Cobrança Prevista
+                    <ArrowUpRight className="h-3 w-3 text-primary" />
+                    Próxima Cobrança
+                  </>
+                ) : lastProcessed ? (
+                  <>
+                    <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                    Último Pagamento
                   </>
                 ) : (
                   <>
-                    <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                    Último Pagamento Efetivo
+                    <Wallet className="h-3 w-3 text-muted-foreground" />
+                    Situação Financeira
                   </>
                 )}
               </CardDescription>
-              <CardTitle className="text-xl font-semibold text-foreground">
-                {nextScheduled 
-                  ? brlFormatter.format(nextScheduled.amount_cents / 100) 
-                  : (lastProcessed ? brlFormatter.format(lastProcessed.amount_cents / 100) : "R$ 0,00")}
+              <CardTitle className="text-xl font-semibold tabular-nums text-foreground">
+                {nextScheduled
+                  ? brlFormatter.format(nextScheduled.amount_cents / 100)
+                  : lastProcessed
+                    ? brlFormatter.format(lastProcessed.amount_cents / 100)
+                    : "—"}
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground leading-relaxed">
                 {nextScheduled ? (
                   <>
-                    Referência: {formatPeriodRange(nextScheduled.period_start, nextScheduled.period_end)}
+                    Ciclo de referência:{" "}
+                    <span className="font-medium text-foreground">
+                      {formatPeriodRange(nextScheduled.period_start, nextScheduled.period_end)}
+                    </span>
+                  </>
+                ) : lastProcessed ? (
+                  <>
+                    Pago em{" "}
+                    <span className="font-medium text-foreground">
+                      {formatDateShort(lastProcessed.paid_at)}
+                    </span>
+                    {" · "}
+                    {formatPeriodRange(lastProcessed.period_start, lastProcessed.period_end)}
                   </>
                 ) : (
-                  <>
-                    Pago em: {lastProcessed ? formatDateShort(lastProcessed.paid_at) : "—"}
-                  </>
+                  "Nenhuma cobrança ativa no momento."
                 )}
               </p>
             </CardContent>
@@ -204,16 +244,26 @@ export function InvoicesPanel({ orgId }: { orgId: string }) {
             </CardContent>
           </Card>
 
-          {/* CARD 3: TOTAL EFETIVO */}
+          {/* CARD 3: TOTAL EFETIVO — contextualiza zero em vez de silenciar */}
           <Card className="border-border bg-card shadow-card rounded-2xl">
             <CardHeader className="pb-2">
-              <CardDescription className="text-xs">Total Pago em Faturas</CardDescription>
-              <CardTitle className="text-xl font-semibold text-emerald-600 dark:text-emerald-400">
+              <CardDescription className="text-xs">Total Pago</CardDescription>
+              <CardTitle
+                className={`text-xl font-semibold tabular-nums ${
+                  hasAnyPaid
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-muted-foreground"
+                }`}
+              >
                 {brlFormatter.format(totalPaid / 100)}
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-xs text-muted-foreground">Histórico acumulado</p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                {hasAnyPaid
+                  ? `${sorted.filter((i) => i.status === "paid").length} pagamento(s) efetivo(s)`
+                  : "Sem pagamentos efetivos registrados até o momento."}
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -278,8 +328,8 @@ export function InvoicesPanel({ orgId }: { orgId: string }) {
             </div>
           )}
 
-          {/* LISTA REAL */}
-          {!isLoading && !isError && data && data.length > 0 && (
+          {/* LISTA REAL — ordenada por recência de vencimento (extrato bancário) */}
+          {!isLoading && !isError && sorted.length > 0 && (
             <Table>
               <TableHeader className="bg-muted/50 border-b border-border">
                 <TableRow className="border-border hover:bg-transparent">
@@ -298,7 +348,7 @@ export function InvoicesPanel({ orgId }: { orgId: string }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.map((inv) => {
+                {sorted.map((inv) => {
                   const displayInfo = getDisplayDate(inv);
                   
                   return (

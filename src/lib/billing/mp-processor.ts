@@ -300,18 +300,74 @@ export async function completeTierSwitchForTransition(
   };
 }
 
+// ============================================================================
+// B3a (2026-11-19) — PERÍODO DO CICLO CORRENTE (não a data de criação da sub)
+// ----------------------------------------------------------------------------
+// O MP modela recorrência como auto_recurring.start_date FIXO +
+// next_payment_date DESLIZANTE; não existe "período corrente" no payload do
+// preapproval. Usar date_created/start_date como current_period_start trava o
+// início na primeira compra enquanto o end avança a cada ciclo → período
+// inflado (prova 18–19/nov: start=18/out congelado, end saltou 18/nov→18/dez
+// num plano mensal). A fonte correta do ciclo vigente é summarized.last_charged_date
+// (débito efetivo do ciclo corrente); na ausência dele (1º ciclo, ou snapshot
+// pré-rollover), volta-se um ciclo a partir de next_payment_date.
+// ============================================================================
+function cycleMs(ar: PreapprovalPull["auto_recurring"]): number {
+  const n = Number((ar as any)?.frequency ?? 1) || 1;
+  switch (String((ar as any)?.frequency_type ?? "months")) {
+    case "days":
+      return n * 86_400_000;
+    case "weeks":
+      return n * 7 * 86_400_000;
+    case "years":
+      return n * 365 * 86_400_000;
+    case "months":
+    default:
+      // Meses civis aproximados: usado SÓ no fallback de 1º ciclo / snapshot
+      // pré-rollover. Quando last_charged_date existe (caso de renovação), o
+      // start é exato e esta aproximação não entra no caminho.
+      return n * 30 * 86_400_000;
+  }
+}
+
+/** Deriva {start,end} do ciclo CORRENTE a partir do pull do preapproval. */
+export function computeCurrentPeriod(pull: PreapprovalPull): {
+  start: string | null;
+  end: string | null;
+} {
+  const end = pull.next_payment_date ?? null;
+  const summarised = (pull as any).summarized as
+    | { last_charged_date?: string | null }
+    | undefined;
+  const lastCharged = summarised?.last_charged_date ?? null;
+
+  if (lastCharged) {
+    return { start: lastCharged, end };
+  }
+  if (end) {
+    const inferred = new Date(new Date(end).getTime() - cycleMs(pull.auto_recurring));
+    return { start: inferred.toISOString(), end };
+  }
+  return { start: null, end: null };
+}
+
 // ---------- transição PURA D17 (testável sem I/O) ----------
 export function applyPreapprovalTransition(
   pull: PreapprovalPull,
   cancelRequestedByUser: boolean,
 ): SubscriptionPatch | null {
   switch (pull.status) {
-    case "authorized":
+    case "authorized": {
+      const period = computeCurrentPeriod(pull);
       return {
         state: "active",
-        current_period_start: pull.date_created ?? null,
-        current_period_end: pull.next_payment_date ?? null,
+        // B3a: período do ciclo CORRENTE (last_charged_date, ou next−freq no
+        // 1º ciclo). date_created/start_data são fixos na criação da assinatura
+        // e inflam o período a cada renovação.
+        current_period_start: period.start,
+        current_period_end: period.end,
       };
+    }
 
     case "paused":
       return { state: "past_due" };
@@ -809,7 +865,7 @@ async function handleAuthorizedPayment(
 
   const { data: sub } = await supabaseAdmin
     .from("subscriptions")
-    .select("id, state")
+    .select("id, state, current_period_end")
     .eq("mp_preapproval_id", preapprovalId)
     .maybeSingle();
 
@@ -876,18 +932,51 @@ async function handleAuthorizedPayment(
         previousState: (sub as any).state,
       });
     } else {
+      // HOTFIX GAP G3 + HARDENING (2026-11-19): AP approved com sub já active
+      // = renovação recorrente. O refresh síncrono pode chegar ANTES do MP
+      // rolar o preapproval (prova 18/nov: webhooks 14:08/14:09Z, débito
+      // 14:09:55Z, preapproval rolou 14:11:17Z). Regras novas:
+      //  1. Start do ciclo = data do DÉBITO aprovado (ap.date_approved), nunca
+      //     date_created/start_data fixos (B3a vale aqui também).
+      //  2. Se o pull vier INERTE (next == end local) ou MISMATCH (next <=
+      //     start deste débito ⇒ snapshot pré-rollover), NÃO grava valor
+      //     suspeito: deixa para a FASE 2 do cron (rede de segurança).
+      //  3. Non-blocking preservado: falha de refresh nunca derruba o evento.
       try {
         const freshPull = await getPreapproval(preapprovalId, ev.live_mode);
+        const nextDate = freshPull.next_payment_date ?? null;
+        const periodStart =
+          ap.date_approved ?? ap.date_of_creation ?? null;
 
-        if (freshPull.next_payment_date) {
-          const periodStart =
-            ap.date_approved ?? ap.date_of_creation ?? new Date().toISOString();
-
+        if (!nextDate || !periodStart) {
+          console.warn("[mp-processor] renewal_refresh_incomplete_payload", {
+            apId,
+            preapprovalId,
+            hasNext: Boolean(nextDate),
+            hasStart: Boolean(periodStart),
+            note: "delegado à reconciliação diária (FASE 2)",
+          });
+        } else if (nextDate <= periodStart) {
+          console.warn("[mp-processor] renewal_preapproval_not_rolled_yet", {
+            apId,
+            preapprovalId,
+            apApprovedAt: periodStart,
+            nextPaymentDate: nextDate,
+            note: "snapshot pré-rollover; divergência corrigida pela FASE 2",
+          });
+        } else if (nextDate === (sub as any).current_period_end) {
+          console.log("[mp-processor] renewal_refresh_inert_skipped", {
+            apId,
+            preapprovalId,
+            nextPaymentDate: nextDate,
+            note: "preapproval ainda não rolou; FASE 2 resolve",
+          });
+        } else {
           const { error: updErr } = await supabaseAdmin
             .from("subscriptions")
             .update({
               current_period_start: periodStart,
-              current_period_end: freshPull.next_payment_date,
+              current_period_end: nextDate,
               updated_at: new Date().toISOString(),
             } as never)
             .eq("id", (sub as any).id);
@@ -903,7 +992,7 @@ async function handleAuthorizedPayment(
               apId,
               preapprovalId,
               newPeriodStart: periodStart,
-              newPeriodEnd: freshPull.next_payment_date,
+              newPeriodEnd: nextDate,
             });
           }
         }

@@ -23,7 +23,12 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 // Import direto seguro neste contexto (.server.ts não vaza pro client)
 import { processPendingEvents } from "./mp-processor";
 import { reconcilePreapprovalsBatch } from "./mp-reconcile-batch.server";
-import { cancelPreapproval, MpApiError, searchAuthorizedPayments } from "./mp-api";
+import {
+  cancelPreapproval,
+  getPreapproval,
+  MpApiError,
+  searchAuthorizedPayments,
+} from "./mp-api";
 
 // ============================================================================
 // FASE 4.7 ITEM 1 — MANUTENÇÃO DE TIER TRANSITIONS
@@ -359,6 +364,63 @@ async function runTierSwitchMaintenance(): Promise<TierSwitchMaintenanceTally> {
   return tally;
 }
 
+// ============================================================================
+// FASE 4.8 HELPERS (B1/B2/B3b — 2026-11-19)
+// ----------------------------------------------------------------------------
+// Duração do ciclo em ms a partir de auto_recurring.frequency(_type).
+// Meses aproximados (n*30d): usado SÓ para derivar period_end quando o MP
+// não expõe corte explícito de ciclo no authorized_payment. O period_start
+// é SEMPRE exato (data do débito), então o erro de calendário fica preso
+// ao fim do período futuro — aceitável para exibição/referência.
+function cycleMs(ar: any): number {
+  const n = Number(ar?.frequency ?? 1) || 1;
+  switch (String(ar?.frequency_type ?? "months")) {
+    case "days":
+      return n * 86_400_000;
+    case "weeks":
+      return n * 7 * 86_400_000;
+    case "years":
+      return n * 365 * 86_400_000;
+    case "months":
+    default:
+      return n * 30 * 86_400_000;
+  }
+}
+
+/**
+ * B1: mapeia o authorized_payment REAL (não só ap.status) para invoice_status.
+ * A verdade do pagamento está em ap.payment.{status,status_detail,date_approved};
+ * ap.status ("processed") significa apenas "cobrança autorizada/provisionada".
+ * Flip temporal: aprovado + data≤now → paid(+paid_at); aprovado no futuro →
+ * scheduled até vencer. Falha recorrente (recycling) → retrying.
+ */
+function invoiceStatusFromPayment(ap: any): {
+  status: "scheduled" | "processing" | "retrying" | "paid" | "failed";
+  paidAt: string | null;
+} {
+  const inner = String(ap?.payment?.status ?? "");
+  const detail = String(ap?.payment?.status_detail ?? "");
+  const when: string | null =
+    ap?.payment?.date_approved ?? ap?.debit_date ?? ap?.date_created ?? null;
+  const past = when ? new Date(when).getTime() <= Date.now() : false;
+
+  if (inner === "approved" || detail === "accredited") {
+    return past
+      ? { status: "paid", paidAt: when }
+      : { status: "scheduled", paidAt: null };
+  }
+  if (["rejected", "cancelled", "canceled", "refunded", "charged_back"].includes(inner)) {
+    return { status: "failed", paidAt: null };
+  }
+  if (["in_process", "pending"].includes(inner)) {
+    return { status: "processing", paidAt: null };
+  }
+  if (String(ap?.status ?? "") === "recycling") {
+    return { status: "retrying", paidAt: null };
+  }
+  return { status: "scheduled", paidAt: null };
+}
+
 /**
  * FASE 4.8 — Reconciliação de Faturas (Invoices)
  * 
@@ -405,13 +467,41 @@ async function reconcileInvoicesBatch(): Promise<InvoiceReconcileTally> {
 
       tally.scanned += response.results.length;
 
+      // B3b: frequência do ciclo vem do preapproval vivo (fonte única com
+      // computeCurrentPeriod do processor). Uma chamada leve por sub; falha
+      // não derruba o lote — cai no fallback sub.current_period_*.
+      let arFreq: any = null;
+      try {
+        const pull = await getPreapproval(sub.mp_preapproval_id, liveMode);
+        arFreq = (pull as any).auto_recurring ?? null;
+      } catch (freqErr) {
+        console.warn("[mp-cron] invoices_cycle_freq_fallback", {
+          preapprovalId: sub.mp_preapproval_id,
+          error: freqErr instanceof Error ? freqErr.message : String(freqErr),
+        });
+      }
+
       // 3. Upsert idempotente para cada pagamento
       for (const ap of response.results) {
         const mpPaymentId = String(ap.id);
-        const amountCents = Math.round((ap.transaction_amount ?? 0) * 100);
-        const paidAt = ap.date_approved ?? ap.date_of_creation ?? null;
-        const status = mapMpStatusToInvoiceStatus(ap.status) as 
-          "scheduled" | "processing" | "retrying" | "paid" | "failed";
+        const amountCents = Math.round((Number(ap.transaction_amount) ?? 0) * 100);
+
+        // B1: status + paid_at derivados do pagamento REAL (aninhado), não de ap.status.
+        // Cast para any: o payload do authorized_payments/search chega como Record<string,any>
+        // e o SDK não modela payment.{status,date_approved,status_detail} no type def.
+        const apAny = ap as any;
+        const mapped = invoiceStatusFromPayment(apAny);
+
+        // B3b: período POR PAGAMENTO (ciclo deste débito), não herdado da sub.
+        // start = data efetiva do débito (exata); end = start + frequência.
+        // Sem frequência disponível → fallback no período da sub.
+        const debitIso: string | null =
+          apAny?.payment?.date_approved ?? apAny?.debit_date ?? apAny?.date_created ?? null;
+        const periodStart = debitIso ?? sub.current_period_start ?? null;
+        const periodEnd =
+          debitIso && arFreq
+            ? new Date(new Date(debitIso).getTime() + cycleMs(arFreq)).toISOString()
+            : sub.current_period_end ?? null;
 
         // Buscar billing_event correspondente (se existir)
         const { data: event } = await supabaseAdmin
@@ -421,8 +511,15 @@ async function reconcileInvoicesBatch(): Promise<InvoiceReconcileTally> {
           .eq("payload->data->>id", mpPaymentId)
           .maybeSingle();
 
+        // B2: existence check ANTES do upsert (created vs updated honesto)
+        const { data: existingInv } = await supabaseAdmin
+          .from("invoices")
+          .select("id")
+          .eq("mp_payment_id", mpPaymentId)
+          .maybeSingle();
+
         // Upsert idempotente (âncora: mp_payment_id)
-        const { error: upsertErr, data: upsertData } = await supabaseAdmin
+        const { error: upsertErr } = await supabaseAdmin
           .from("invoices")
           .upsert(
             {
@@ -433,16 +530,13 @@ async function reconcileInvoicesBatch(): Promise<InvoiceReconcileTally> {
               billing_event_id: event?.id ?? null,
               amount_cents: amountCents,
               currency: ap.currency_id ?? "BRL",
-              status,
-              paid_at: paidAt ? new Date(paidAt).toISOString() : null,
-              period_start: sub.current_period_start,
-              period_end: sub.current_period_end,
+              status: mapped.status,
+              paid_at: mapped.paidAt ? new Date(mapped.paidAt).toISOString() : null,
+              period_start: periodStart,
+              period_end: periodEnd,
             },
             { onConflict: "mp_payment_id" },
-          )
-          .select("id");
-
-        const count = upsertData?.length ?? 0;
+          );
 
         if (upsertErr) {
           console.error("[mp-cron] invoice_upsert_error", {
@@ -450,13 +544,10 @@ async function reconcileInvoicesBatch(): Promise<InvoiceReconcileTally> {
             error: upsertErr.message,
           });
           tally.errors++;
+        } else if (existingInv) {
+          tally.updated++;
         } else {
-          // Se count > 0, foi insert; senão foi update
-          if (count && count > 0) {
-            tally.created++;
-          } else {
-            tally.updated++;
-          }
+          tally.created++;
         }
       }
     } catch (err) {
@@ -472,26 +563,10 @@ async function reconcileInvoicesBatch(): Promise<InvoiceReconcileTally> {
   return tally;
 }
 
-/**
- * Mapeia status do MP para enum local de invoice_status.
- */
-function mapMpStatusToInvoiceStatus(
-  mpStatus: string,
-): "scheduled" | "processing" | "retrying" | "paid" | "failed" {
-  switch (mpStatus) {
-    case "approved":
-      return "paid";
-    case "rejected":
-    case "cancelled":
-    case "canceled":
-      return "failed";
-    case "in_process":
-    case "pending":
-      return "processing";
-    default:
-      return "scheduled";
-  }
-}
+// REMOVIDO 2026-11-19 (B1): mapMpStatusToInvoiceStatus lia só ap.status
+// ("processed" → default → "scheduled"), ignorando ap.payment.status/details
+// onde mora a verdade do pagamento. Substituído por invoiceStatusFromPayment
+// (helper acima), que resolve o flip temporal e o aninhamento corretamente.
 
 // ============================================================================
 // HANDLER PRINCIPAL DO CRON

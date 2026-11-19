@@ -13,7 +13,7 @@
  * pois eles já estão cacheados pelo TanStack Query.
  */
 import { useState } from "react";
-import { Banknote, CreditCard, Layers, ReceiptText, Trash2 } from "lucide-react";
+import { AlertCircle, Banknote, CreditCard, Info, Layers, ReceiptText, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -35,15 +35,19 @@ interface FinanceiroTabProps {
   pixKey: string | null;
 }
 
-/** Classe das pílulas de sub-aba — padrão responsivo (scroll + fade + snap). */
+/**
+ * Sub-abas em estilo underline ghost (padrão Intercom/Linear/Vercel):
+ * hierarquia por peso + borda inferior, cor reservada pra conteúdo/ação.
+ * Mobile-friendly: scroll horizontal com snap + fade degradê à direita.
+ */
 const SUBTAB_TRIGGER_CLASS =
-  "shrink-0 snap-start inline-flex items-center gap-1.5 whitespace-nowrap rounded-full" +
-  " px-3 py-1.5 text-xs font-medium cursor-pointer select-none outline-none" +
-  " transition-all duration-200 ease-in-out" +
-  " bg-secondary/50 text-muted-foreground border border-border/50" +
-  " hover:bg-secondary hover:text-foreground hover:shadow-sm hover:border-border" +
-  " data-[state=active]:bg-primary data-[state=active]:text-primary-foreground" +
-  " data-[state=active]:shadow-md data-[state=active]:border-primary/20 data-[state=active]:font-semibold";
+  "shrink-0 snap-start relative inline-flex items-center gap-1.5 whitespace-nowrap" +
+  " px-3 py-2 text-[13px] font-medium cursor-pointer select-none outline-none" +
+  " transition-colors duration-150 ease-in-out" +
+  " text-muted-foreground hover:text-foreground" +
+  " after:absolute after:left-3 after:right-3 after:bottom-0 after:h-[2px] after:rounded-full" +
+  " after:bg-transparent after:transition-all after:duration-200" +
+  " data-[state=active]:text-foreground data-[state=active]:after:bg-primary";
 
 export function FinanceiroTab({ orgId, isOwner, pixKey }: FinanceiroTabProps) {
   const accessFn = useServerFn(getAccountAccess);
@@ -95,8 +99,9 @@ export function FinanceiroTab({ orgId, isOwner, pixKey }: FinanceiroTabProps) {
           <div className="overflow-x-auto scrollbar-none snap-x snap-mandatory">
             <TabsList
               className={
-                "flex flex-nowrap items-center gap-1.5 px-4 sm:px-0 py-1" +
-                " w-max min-w-full h-auto bg-transparent p-0 justify-start rounded-none"
+                "flex flex-nowrap items-center gap-1 px-4 sm:px-0 py-0" +
+                " w-max min-w-full h-auto bg-transparent p-0 justify-start rounded-none" +
+                " border-b border-border/60"
               }
             >
               <TabsTrigger value="planos" className={SUBTAB_TRIGGER_CLASS}>
@@ -193,51 +198,70 @@ function PixSection({ orgId, pixKey }: { orgId: string; pixKey: string | null })
         maxLength={120}
         className="h-9 w-full rounded-lg border border-border/60 bg-background px-3 text-xs outline-none transition focus:border-primary/50"
       />
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           disabled={!dirty || m.isPending}
           onClick={() => m.mutate()}
-          className="h-8 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-50"
+          className="h-9 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground shadow-sm transition hover:brightness-110 disabled:opacity-50"
         >
-          {m.isPending ? "Salvando..." : "Salvar chave Pix"}
+          {m.isPending ? "Salvando..." : configured ? "Atualizar chave" : "Salvar chave Pix"}
         </button>
-        {configured && key.trim() !== "" && (
+        {configured && (
           <button
             type="button"
             disabled={m.isPending}
-            onClick={() => setKey("")}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition hover:bg-secondary hover:text-destructive"
-            title="Limpa o campo — salve em seguida pra remover a chave"
+            onClick={() => {
+              setKey("");
+              m.mutate();
+            }}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-destructive/30 px-3 text-xs font-medium text-destructive transition hover:bg-destructive/10 disabled:opacity-50"
           >
             <Trash2 className="h-3.5 w-3.5" /> Remover chave
           </button>
         )}
       </div>
+      {!configured && !key.trim() && (
+        <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          Sem chave configurada. Cole uma do seu banco (CPF/CNPJ, e-mail, telefone ou aleatória) e salve.
+        </p>
+      )}
     </div>
   );
 }
 
-// Componente auxiliar para Skeleton Loading específico da área de planos
+/**
+ * Skeleton da aba Planos: espelha a estrutura final (grid de tiers + card
+ * de plano ativo) pra reduzir perceived latency e evitar layout shift.
+ */
 function CardSkeleton() {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-      {[...Array(3)].map((_, i) => (
-        <div
-          key={i}
-          className="h-64 rounded-2xl bg-card border border-border animate-pulse p-6 shadow-card flex flex-col justify-between"
-        >
-          <div className="space-y-3">
-            <div className="h-4 w-24 bg-muted rounded" />
-            <div className="h-8 w-16 bg-muted rounded" />
-          </div>
-          <div className="space-y-2">
+    <div className="space-y-5">
+      {/* Grid dos tiers (3 cards) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[...Array(3)].map((_, i) => (
+          <div
+            key={i}
+            className="h-72 rounded-2xl border border-border bg-card p-5 shadow-card animate-pulse space-y-4"
+          >
+            <div className="h-5 w-20 bg-muted rounded" />
             <div className="h-3 w-full bg-muted rounded" />
             <div className="h-3 w-3/4 bg-muted rounded" />
-            <div className="h-9 w-full bg-muted rounded-lg mt-4" />
+            <div className="h-3 w-1/2 bg-muted rounded" />
+            <div className="h-10 w-full bg-muted rounded-lg mt-auto" />
           </div>
+        ))}
+      </div>
+      {/* Card do plano ativo (full-width) */}
+      <div className="rounded-2xl border border-border bg-card p-5 shadow-card animate-pulse space-y-3">
+        <div className="h-4 w-32 bg-muted rounded" />
+        <div className="h-3 w-2/3 bg-muted rounded" />
+        <div className="grid grid-cols-2 gap-3 pt-2">
+          <div className="h-16 bg-muted rounded-lg" />
+          <div className="h-16 bg-muted rounded-lg" />
         </div>
-      ))}
+      </div>
     </div>
   );
 }
