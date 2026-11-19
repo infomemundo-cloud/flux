@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -10,7 +9,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowUpRight, AlertCircle, CalendarDays, CheckCircle2, Clock, ReceiptText, Wallet } from "lucide-react";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
+import {
+  AlertCircle,
+  ArrowUpRight,
+  CalendarDays,
+  CalendarRange,
+  Check,
+  CheckCircle2,
+  Clock,
+  Copy,
+  ReceiptText,
+  Wallet,
+} from "lucide-react";
 import { useInvoices } from "@/lib/billing/use-invoices";
 import type { Invoice } from "@/lib/billing/invoices.functions";
 
@@ -158,6 +170,53 @@ function pickNextCharge(invoices: Invoice[]): Invoice | null {
   );
 }
 
+/** Formata intervalo compacto para referência de ciclo (ex: 18/10 – 18/11). */
+function formatPeriodCompact(startIso: string | null, endIso: string | null): string {
+  if (!startIso || !endIso) return "—";
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  const fmt = (d: Date) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  return `${fmt(start)} – ${fmt(end)}`;
+}
+
+/** Botão discreto de copiar ID completo com feedback visual. */
+function CopyIdButton({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false);
+  
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(id);
+      setCopied(true);
+      toast.success("ID copiado para a área de transferência.");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Não foi possível copiar.");
+    }
+  };
+  
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground transition hover:bg-secondary hover:text-foreground active:scale-95"
+      title={`Copiar ID completo: ${id}`}
+      aria-label={`Copiar ID da transação ${id}`}
+    >
+      {copied ? (
+        <>
+          <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+          Copiado
+        </>
+      ) : (
+        <>
+          <Copy className="h-3 w-3" />
+          MP #{id.slice(-6)}
+        </>
+      )}
+    </button>
+  );
+}
+
 export function InvoicesPanel({ orgId }: { orgId: string }) {
   const { data, isLoading, isError } = useInvoices(orgId);
 
@@ -168,86 +227,99 @@ export function InvoicesPanel({ orgId }: { orgId: string }) {
   const nextScheduled = pickNextCharge(sorted);
   const lastProcessed = sorted.find((i) => i.status === "paid") ?? null;
   const hasAnyPaid = totalPaid > 0;
+  
+  // Ciclo vigente: usa subscription se disponível, senão infere da última invoice paga
+  // (period_end da última = início do próximo ciclo previsto)
+  const currentCycleStart = lastProcessed?.period_end ?? null;
+  const currentCycleEnd = nextScheduled?.period_end ?? 
+    (lastProcessed ? new Date(new Date(lastProcessed.period_end!).getTime() + 30*86_400_000).toISOString() : null);
 
   return (
     <div className="space-y-6">
-      {/* CARDS DE RESUMO SUPERIORES */}
-      {!isLoading && !isError && data && data.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* CARDS DE RESUMO SUPERIORES — hierarquia sem ambiguidade */}
+      {!isLoading && !isError && sorted.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           
-          {/* CARD 1: SITUAÇÃO VIGENTE — próxima cobrança (futuro) OU último
-           * pagamento (passado). Rótulo e cor mudam conforme o estado real,
-           * eliminando a ambiguidade "é previsão ou foi pago?". */}
+          {/* CARD 1: ÚLTIMO PAGAMENTO (efetivo passado) */}
           <Card className="border-border bg-card shadow-card rounded-2xl">
             <CardHeader className="pb-2">
               <CardDescription className="text-xs flex items-center gap-1.5">
-                {nextScheduled ? (
-                  <>
-                    <ArrowUpRight className="h-3 w-3 text-primary" />
-                    Próxima Cobrança
-                  </>
-                ) : lastProcessed ? (
-                  <>
-                    <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
-                    Último Pagamento
-                  </>
-                ) : (
-                  <>
-                    <Wallet className="h-3 w-3 text-muted-foreground" />
-                    Situação Financeira
-                  </>
-                )}
+                <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                Último Pagamento
               </CardDescription>
               <CardTitle className="text-xl font-semibold tabular-nums text-foreground">
-                {nextScheduled
-                  ? brlFormatter.format(nextScheduled.amount_cents / 100)
-                  : lastProcessed
-                    ? brlFormatter.format(lastProcessed.amount_cents / 100)
-                    : "—"}
+                {lastProcessed ? brlFormatter.format(lastProcessed.amount_cents / 100) : "—"}
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-xs text-muted-foreground leading-relaxed">
+              <div className="space-y-1">
+                {lastProcessed && (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      Confirmado em{" "}
+                      <span className="font-medium text-foreground tabular-nums">
+                        {formatDateShort(lastProcessed.paid_at)}
+                      </span>
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                        Transação
+                      </span>
+                      <CopyIdButton id={lastProcessed.mp_payment_id} />
+                    </div>
+                  </>
+                )}
+                {!lastProcessed && (
+                  <p className="text-xs text-muted-foreground italic">
+                    Nenhum pagamento efetivo registrado.
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* CARD 2: CICLO VIGENTE / PRÓXIMA RENOVÃO (futuro previsto) */}
+          <Card className="border-border bg-card shadow-card rounded-2xl">
+            <CardHeader className="pb-2">
+              <CardDescription className="text-xs flex items-center gap-1.5">
+                <CalendarRange className="h-3 w-3 text-primary" />
+                Ciclo Vigente
+              </CardDescription>
+              <CardTitle className="text-lg font-semibold tabular-nums text-foreground">
+                {currentCycleStart && currentCycleEnd
+                  ? formatPeriodCompact(currentCycleStart, currentCycleEnd)
+                  : nextScheduled
+                    ? formatPeriodCompact(nextScheduled.period_start, nextScheduled.period_end)
+                    : "A definir"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-1">
                 {nextScheduled ? (
                   <>
-                    Ciclo de referência:{" "}
-                    <span className="font-medium text-foreground">
-                      {formatPeriodRange(nextScheduled.period_start, nextScheduled.period_end)}
-                    </span>
-                  </>
-                ) : lastProcessed ? (
-                  <>
-                    Pago em{" "}
-                    <span className="font-medium text-foreground">
-                      {formatDateShort(lastProcessed.paid_at)}
-                    </span>
-                    {" · "}
-                    {formatPeriodRange(lastProcessed.period_start, lastProcessed.period_end)}
+                    <p className="text-xs text-muted-foreground">
+                      Próxima cobrança prevista:{" "}
+                      <span className="font-medium text-foreground tabular-nums">
+                        {formatDateShort(nextScheduled.period_end)}
+                      </span>
+                    </p>
+                    <p className="text-[10px] text-muted-foreground/80">
+                      Valor estimado: {brlFormatter.format(nextScheduled.amount_cents / 100)}
+                    </p>
                   </>
                 ) : (
-                  "Nenhuma cobrança ativa no momento."
+                  <p className="text-xs text-muted-foreground italic">
+                    Todas as cobranças do ciclo atual foram quitadas.
+                  </p>
                 )}
-              </p>
+              </div>
             </CardContent>
           </Card>
 
-          {/* CARD 2: VOLUME HISTÓRICO */}
+          {/* CARD 3: TOTAL ACUMULADO (histórico efetivo) */}
           <Card className="border-border bg-card shadow-card rounded-2xl">
             <CardHeader className="pb-2">
-              <CardDescription className="text-xs">Total de Faturas Registradas</CardDescription>
-              <CardTitle className="text-xl font-semibold text-foreground">
-                {data.length} {data.length === 1 ? "fatura" : "faturas"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-xs text-muted-foreground">Sincronizado via Mercado Pago</p>
-            </CardContent>
-          </Card>
-
-          {/* CARD 3: TOTAL EFETIVO — contextualiza zero em vez de silenciar */}
-          <Card className="border-border bg-card shadow-card rounded-2xl">
-            <CardHeader className="pb-2">
-              <CardDescription className="text-xs">Total Pago</CardDescription>
+              <CardDescription className="text-xs">Total Pago Acumulado</CardDescription>
               <CardTitle
                 className={`text-xl font-semibold tabular-nums ${
                   hasAnyPaid
@@ -259,11 +331,16 @@ export function InvoicesPanel({ orgId }: { orgId: string }) {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                {hasAnyPaid
-                  ? `${sorted.filter((i) => i.status === "paid").length} pagamento(s) efetivo(s)`
-                  : "Sem pagamentos efetivos registrados até o momento."}
-              </p>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">
+                  {sorted.filter((i) => i.status === "paid").length} fatura(s) paga(s)
+                </p>
+                {sorted.some((i) => i.status !== "paid") && (
+                  <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                    {sorted.filter((i) => i.status !== "paid").length} pendente(s)/agendada(s)
+                  </p>
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -328,18 +405,21 @@ export function InvoicesPanel({ orgId }: { orgId: string }) {
             </div>
           )}
 
-          {/* LISTA REAL — ordenada por recência de vencimento (extrato bancário) */}
+          {/* LISTA REAL — escaneável como extrato bancário/Stripe */}
           {!isLoading && !isError && sorted.length > 0 && (
             <Table>
               <TableHeader className="bg-muted/50 border-b border-border">
                 <TableRow className="border-border hover:bg-transparent">
                   <TableHead className="text-xs text-muted-foreground font-medium pl-6">
-                    Data / Referência
+                    Movimento
                   </TableHead>
                   <TableHead className="text-xs text-muted-foreground font-medium">
-                    ID Transação MP
+                    Referência do Ciclo
                   </TableHead>
                   <TableHead className="text-xs text-muted-foreground font-medium">
+                    ID Transação
+                  </TableHead>
+                  <TableHead className="text-xs text-muted-foreground font-medium text-right">
                     Valor
                   </TableHead>
                   <TableHead className="text-xs text-muted-foreground font-medium text-right pr-6">
@@ -349,34 +429,59 @@ export function InvoicesPanel({ orgId }: { orgId: string }) {
               </TableHeader>
               <TableBody>
                 {sorted.map((inv) => {
-                  const displayInfo = getDisplayDate(inv);
+                  const isPaid = inv.status === "paid";
+                  const movementDate = isPaid ? formatDateShort(inv.paid_at) : "—";
+                  const cycleRef = formatPeriodCompact(inv.period_start, inv.period_end);
                   
                   return (
-                    <TableRow key={inv.id} className="border-border/60 hover:bg-muted/30 transition-colors">
-                      {/* COLUNA DATA REFINADA */}
+                    <TableRow 
+                      key={inv.id} 
+                      className="border-border/60 hover:bg-muted/30 transition-colors group/row"
+                    >
+                      {/* COLUNA MOVIMENTO (data efetiva ou placeholder) */}
                       <TableCell className="pl-6 py-4 align-middle">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium flex items-center gap-1">
-                            {displayInfo.icon}
-                            {displayInfo.label}
-                          </span>
-                          <span className="text-sm font-medium text-foreground">
-                            {displayInfo.value}
+                        <div className="flex items-center gap-2">
+                          {isPaid ? (
+                            <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          ) : (
+                            <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate">
+                              {movementDate}
+                            </p>
+                            {!isPaid && (
+                              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                                {inv.status === "scheduled" ? "Agendado" : 
+                                 inv.status === "processing" ? "Processando" : 
+                                 inv.status === "failed" ? "Falhou" : "Pendente"}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                      
+                      {/* COLUNA REFERÊNCIA DO CICLO (novo!) */}
+                      <TableCell className="py-4 align-middle">
+                        <div className="flex items-center gap-1.5">
+                          <CalendarDays className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                          <span className="text-xs text-muted-foreground font-mono tabular-nums">
+                            {cycleRef}
                           </span>
                         </div>
                       </TableCell>
                       
-                      {/* COLUNA ID */}
-                      <TableCell className="text-xs text-muted-foreground font-mono py-4 align-middle">
-                        MP #{getLastDigits(inv.mp_payment_id)}
+                      {/* COLUNA ID TRANSAÇÃO (com botão copiar) */}
+                      <TableCell className="py-4 align-middle">
+                        <CopyIdButton id={inv.mp_payment_id} />
                       </TableCell>
                       
-                      {/* COLUNA VALOR */}
-                      <TableCell className="text-sm font-semibold text-foreground tabular-nums py-4 align-middle">
+                      {/* COLUNA VALOR (alinhado à direita) */}
+                      <TableCell className="text-sm font-semibold text-foreground tabular-nums py-4 align-middle text-right">
                         {brlFormatter.format(inv.amount_cents / 100)}
                       </TableCell>
                       
-                      {/* COLUNA STATUS */}
+                      {/* COLUNA STATUS (badge semântico contextualizado) */}
                       <TableCell className="text-right pr-6 py-4 align-middle">
                         <StatusBadge status={inv.status as Invoice["status"]} />
                       </TableCell>
