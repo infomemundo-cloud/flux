@@ -149,7 +149,7 @@ function ProductMockup() {
           <span className="h-2 w-2 rounded-full bg-amber-400/80" />
           <span className="h-2 w-2 rounded-full bg-emerald-400/80" />
           <div className="ml-2 flex-1 truncate rounded-md border border-border bg-background px-2.5 py-0.5 text-[10px] text-muted-foreground">
-            fluxapp.cloud/app/o/acme/fila
+            flxapp.cloud/app/o/acme/fila
           </div>
         </div>
         {/* Corpo: sidebar azul + fila + conversa aberta */}
@@ -780,7 +780,7 @@ function Landing() {
             <span className="font-normal text-muted-foreground">© {new Date().getFullYear()} — Atendimento compartilhado</span>
           </div>
           <nav className="flex items-center gap-6">
-            <a href="#" className="transition hover:text-foreground">Termos</a>
+            <Link to="/privacidade" className="transition hover:text-foreground">Privacidade & Termos</Link>
             <a href="#como-funciona" className="transition hover:text-foreground">Documentação</a>
             <a href="#" className="transition hover:text-foreground">Status</a>
           </nav>

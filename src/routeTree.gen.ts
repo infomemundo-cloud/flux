@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as PrivacidadeRouteImport } from './routes/privacidade'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as ConviteTokenRouteImport } from './routes/convite.$token'
 import { Route as Platform_adminProtectedRouteRouteImport } from './routes/platform_admin/_protected/route'
@@ -57,6 +58,11 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacidadeRoute = PrivacidadeRouteImport.update({
+  id: '/privacidade',
+  path: '/privacidade',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
@@ -248,6 +254,7 @@ const AuthenticatedAppOSlugFilaDemandasIdRouteRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/privacidade': typeof PrivacidadeRoute
   '/platform_admin': typeof Platform_adminProtectedRouteRouteWithChildren
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/convite/$token': typeof ConviteTokenRoute
@@ -284,6 +291,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/privacidade': typeof PrivacidadeRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/convite/$token': typeof ConviteTokenRoute
   '/platform_admin/login': typeof Platform_adminLoginRoute
@@ -315,6 +323,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/privacidade': typeof PrivacidadeRoute
   '/platform_admin/_protected': typeof Platform_adminProtectedRouteRouteWithChildren
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
   '/convite/$token': typeof ConviteTokenRoute
@@ -353,6 +362,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/privacidade'
     | '/platform_admin'
     | '/app'
     | '/convite/$token'
@@ -389,6 +399,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/privacidade'
     | '/app'
     | '/convite/$token'
     | '/platform_admin/login'
@@ -419,6 +430,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/auth'
+    | '/privacidade'
     | '/platform_admin/_protected'
     | '/_authenticated/app'
     | '/convite/$token'
@@ -457,6 +469,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  PrivacidadeRoute: typeof PrivacidadeRoute
   Platform_adminProtectedRouteRoute: typeof Platform_adminProtectedRouteRouteWithChildren
   ConviteTokenRoute: typeof ConviteTokenRoute
   Platform_adminLoginRoute: typeof Platform_adminLoginRoute
@@ -488,6 +501,13 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacidade': {
+      id: '/privacidade'
+      path: '/privacidade'
+      fullPath: '/privacidade'
+      preLoaderRoute: typeof PrivacidadeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/app': {
@@ -912,6 +932,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  PrivacidadeRoute: PrivacidadeRoute,
   Platform_adminProtectedRouteRoute:
     Platform_adminProtectedRouteRouteWithChildren,
   ConviteTokenRoute: ConviteTokenRoute,

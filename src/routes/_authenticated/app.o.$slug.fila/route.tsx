@@ -11,7 +11,9 @@ import { friendlyError } from "@/lib/friendly-error";
 import {
   X,
   PanelLeftOpen,
-  Inbox,
+  MessageSquareText,
+  MessageSquareDashed,
+  SearchX,
   MessageCircle,
   Users,
   QrCode,
@@ -87,12 +89,6 @@ function leftBorderColor(d: any): string {
   }
 }
 
-/**
- * Chip de estado à direita do card (camada 3 do lockup mobile do anúncio):
- * SLA estourado vence (carmim "SLA"); concluída vira ✓ verde; demais mostram
- * a prioridade (PriorityBadge do design system). Vale em mobile E desktop —
- * a urgência fica legível sem abrir a demanda.
- */
 /**
  * Chip da direita do card — regra de mercado (Intercom/Zendesk/Front):
  *  1) SLA estourado = alarme, vence tudo (carmim);
@@ -223,10 +219,10 @@ function FilaCard({ d, slug }: { d: any; slug: string }) {
 
 /**
  * Vazio da aba Fila SEMPRE contextualizado pra quem chega pela primeira vez:
- * - com filtro/busca ativos → mensagem de filtro (comportamento antigo);
+ * - com filtro/busca ativos → mensagem de filtro;
  * - WhatsApp não conectado → onboarding com CTA pra Configurações (owner/admin);
  * - demais papéis veem aviso neutro ("assim que um gestor conectar...");
- * - conectado e vazio → "aguardando a primeira mensagem" (conforto, não dúvida).
+ * - conectado e vazio → "aguardando a primeira mensagem".
  */
 function FilaEmptyState({
   hasFilters,
@@ -245,12 +241,14 @@ function FilaEmptyState({
         <div className="relative">
           <div className="absolute inset-0 -z-10 translate-y-2 scale-90 rounded-3xl bg-primary/10 blur-2xl" />
           <div className="grid h-16 w-16 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
-            <Inbox className="h-7 w-7 text-primary" strokeWidth={1.6} />
+            <SearchX className="h-7 w-7 text-primary" strokeWidth={1.6} />
           </div>
         </div>
-        <div>
+        <div className="flex flex-col items-center">
           <div className="text-xs font-semibold text-foreground">Nenhuma demanda encontrada</div>
-          <p className="mt-1 text-[11px] text-muted-foreground">Tente alterar os filtros de busca.</p>
+          <p className="mx-auto mt-1 max-w-[240px] text-center text-[11px] text-muted-foreground">
+            Tente alterar os filtros de busca.
+          </p>
         </div>
       </div>
     );
@@ -264,9 +262,9 @@ function FilaEmptyState({
             <Smartphone className="h-7 w-7 text-primary" strokeWidth={1.6} />
           </div>
         </div>
-        <div>
+        <div className="flex flex-col items-center">
           <div className="text-xs font-semibold text-foreground">Sua fila está pronta pra começar</div>
-          <p className="mx-auto mt-1 max-w-[240px] text-[11px] text-muted-foreground">
+          <p className="mx-auto mt-1 max-w-[240px] text-center text-[11px] text-muted-foreground">
             {canConfigure
               ? "Conecte o WhatsApp da empresa pra receber os primeiros chamados aqui na fila."
               : "Assim que um gestor conectar o WhatsApp da empresa, os chamados aparecem aqui."}
@@ -290,12 +288,12 @@ function FilaEmptyState({
       <div className="relative">
         <div className="absolute inset-0 -z-10 translate-y-2 scale-90 rounded-3xl bg-[var(--pill-green-bg)] blur-2xl" />
         <div className="grid h-16 w-16 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
-          <MessageCircle className="h-7 w-7 text-[var(--pill-green-fg)]" strokeWidth={1.6} />
+          <MessageSquareDashed className="h-7 w-7 text-[var(--pill-green-fg)]" strokeWidth={1.6} />
         </div>
       </div>
-      <div>
+      <div className="flex flex-col items-center">
         <div className="text-xs font-semibold text-foreground">Tudo certo por aqui</div>
-        <p className="mx-auto mt-1 max-w-[240px] text-[11px] text-muted-foreground">
+        <p className="mx-auto mt-1 max-w-[240px] text-center text-[11px] text-muted-foreground">
           O WhatsApp está conectado. Assim que um cliente mandar a primeira mensagem, a demanda aparece nesta fila.
         </p>
       </div>
@@ -353,10 +351,6 @@ function FilaPage() {
   // principal (ícones) e a fila junto. Estado 3 (retorno): fechar restaura as duas.
   useEffect(() => {
     setCollapsed(hasSelection);
-    // Foco no atendimento: recolhe a sidebar principal. Ao FECHAR a demanda,
-    // restaura a preferência persistida do usuário (default = recolhida) em
-    // vez de forçar expandida como antes — expansão manual sobrevive ao
-    // abre/fecha de conversas.
     if (hasSelection) orgSidebar?.setCollapsed(true);
     else orgSidebar?.resetToPref?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -366,8 +360,6 @@ function FilaPage() {
   const markAllFn = useServerFn(markAllDemandasRead);
   const qc = useQueryClient();
 
-  // Abas: "fila" = escopo do papel (gestor: tudo; operador: suas+órfãs);
-  // "minhas"/"orfas" = recortes de responsável; "atrasadas" = SLA estourado.
   const [tab, setTab] = useState<FilaTab>("fila");
   const [state, setState] = useState<string | undefined>();
   const [search, setSearch] = useState("");
@@ -414,13 +406,11 @@ function FilaPage() {
     onError: (e) => toast.error(friendlyError(e)),
   });
 
-  // Ordem 100% autoritativa do servidor (atividade recente) — um snapshot só.
   const data = result?.rows ?? [];
-  const total = result?.total ?? 0; // tamanho da aba atual (paginação)
+  const total = result?.total ?? 0;
   const counts = result?.counts ?? { fila: 0, mine: 0, orphan: 0, overdue: 0 };
   const hasMore = data.length < total;
 
-  // Ref e Observer para o Infinite Scroll automático com teto rígido
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -443,203 +433,202 @@ function FilaPage() {
     };
   }, [hasMore, isFetching, limit]);
 
-  // Skeleton SÓ no primeiro load (ignorando placeholder data para evitar piscar)
   const loadingFirstPage = isLoading && !isPlaceholderData;
 
   return (
     <FilaSidebarContext.Provider value={{ collapsed, setCollapsed }}>
-      {/* Mobile: 100dvh − header (48px) − safe-area da bottom nav (80px) =
-        a fila ocupa exatamente a tela visível, sem sobra rolável no main.
-        Desktop: h-screen como antes. */}
-    <div className="flex h-[calc(100dvh-8rem)] sm:h-screen flex-col overflow-hidden">
+      <div className="flex h-[calc(100dvh-8rem)] sm:h-screen flex-col overflow-hidden">
         <AccountAccessBanner orgId={org?.id ?? null} slug={slug} />
         <div className="relative flex flex-1 overflow-hidden">
-        {/* Botão flutuante pra reabrir — só existe quando a fila está recolhida. */}
-        {collapsed && (
-          <button
-            onClick={() => setCollapsed(false)}
-            title="Expandir fila"
-            aria-label="Expandir fila"
-            className="absolute top-3 left-3 z-10 grid place-items-center h-8 w-8 rounded-xl bg-card text-muted-foreground/70 shadow-[var(--shadow-card)] ring-1 ring-border/40 transition hover:text-foreground hover:shadow-[var(--shadow-pop)]"
-          >
-            <PanelLeftOpen className="h-4 w-4" />
-          </button>
-        )}
-        {/* Coluna da Fila */}
-        {!collapsed && (
-          <div
-            className={`${hasSelection ? "hidden sm:flex" : "flex"} flex-col w-full sm:shrink-0 sm:w-[330px] lg:w-[360px] border-r border-border/50 bg-background`}
-          >
-            <div className="flex flex-col h-full">
-              {/* Header: barra de ferramentas isolada (abas + ações) */}
-              <div className="p-2.5 pb-2 shrink-0">
-                <FilaHeaderToolbar
-                  tab={tab}
-                  onTabChange={setTab}
-                  counts={counts}
-                  search={search}
-                  onSearchChange={setSearch}
-                  state={state}
-                  onStateChange={setState}
-                  canMarkAll={!!org}
-                  markingAll={markAll.isPending}
-                  onMarkAllRead={() => markAll.mutate()}
-                  onNewDemanda={() => {
-                    if (access && access.access_level !== "full") {
-                      toast.error(
-                        access.access_level === "readonly"
-                          ? "Sua conta está em período de carência. Você pode responder às demandas existentes, mas não é possível criar novas demandas até a renovação du plano."
-                          : "Sua conta foi suspensa por inadimplência. Regularize o pagamento para liberar a criação de demandas. O histórico continua disponível para consulta.",
-                      );
-                      return;
-                    }
-                    setShowNew(true);
-                  }}
-                />
-              </div>
+          {/* Botão flutuante pra reabrir — só existe quando a fila está recolhida. */}
+          {collapsed && (
+            <button
+              onClick={() => setCollapsed(false)}
+              title="Expandir fila"
+              aria-label="Expandir fila"
+              className="absolute top-3 left-3 z-10 grid place-items-center h-8 w-8 rounded-xl bg-card text-muted-foreground/70 shadow-[var(--shadow-card)] ring-1 ring-border/40 transition hover:text-foreground hover:shadow-[var(--shadow-pop)]"
+            >
+              <PanelLeftOpen className="h-4 w-4" />
+            </button>
+          )}
 
-              {/* Card persistente de setup — Fase 3 (§38) */}
-              {showSetupCard && (
-                <div className="mx-2 mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/30">
-                  <div className="flex items-start gap-2.5">
-                    <WifiOff className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-semibold text-amber-900 dark:text-amber-100">
-                        Configure seu WhatsApp
-                      </div>
-                      <div className="mt-0.5 text-[11px] text-amber-800 dark:text-amber-200">
-                        Conecte o WhatsApp da sua organização pra receber demandas automaticamente.
-                      </div>
-                      <Link
-                        to="/app/onboarding/$slug"
-                        params={{ slug }}
-                        className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-900 dark:text-amber-100 hover:underline"
-                      >
-                        <Wifi className="h-3 w-3" /> Conectar agora
-                      </Link>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Lista Rolável de Demandas */}
-              <div className={`flex-1 overflow-y-auto scrollbar-thin p-2.5 space-y-2 ${showSetupCard ? "pt-4" : "pt-1"}`}>
-                {loadingFirstPage && <ListSkeleton rows={6} />}
-                {!loadingFirstPage && tab === "fila" && data.length === 0 && (
-                  <FilaEmptyState
-                    hasFilters={!!state || !!debouncedSearch}
-                    waStatus={waStatus}
-                    canConfigure={org?.role === "owner" || org?.role === "admin"}
-                    slug={slug}
+          {/* Coluna da Fila */}
+          {!collapsed && (
+            <div
+              className={`${hasSelection ? "hidden sm:flex" : "flex"} flex-col w-full sm:shrink-0 sm:w-[330px] lg:w-[360px] border-r border-border/50 bg-background`}
+            >
+              <div className="flex flex-col h-full">
+                {/* Header: barra de ferramentas isolada (abas + ações) */}
+                <div className="p-2.5 pb-2 shrink-0">
+                  <FilaHeaderToolbar
+                    tab={tab}
+                    onTabChange={setTab}
+                    counts={counts}
+                    search={search}
+                    onSearchChange={setSearch}
+                    state={state}
+                    onStateChange={setState}
+                    canMarkAll={!!org}
+                    markingAll={markAll.isPending}
+                    onMarkAllRead={() => markAll.mutate()}
+                    onNewDemanda={() => {
+                      if (access && access.access_level !== "full") {
+                        toast.error(
+                          access.access_level === "readonly"
+                            ? "Sua conta está em período de carência. Você pode responder às demandas existentes, mas não é possível criar novas demandas até a renovação do plano."
+                            : "Sua conta foi suspensa por inadimplência. Regularize o pagamento para liberar a criação de demandas. O histórico continua disponível para consulta.",
+                        );
+                        return;
+                      }
+                      setShowNew(true);
+                    }}
                   />
-                )}
-                {!loadingFirstPage && tab === "minhas" && data.length === 0 && (
-                  <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
-                    <div className="relative">
-                      <div className="absolute inset-0 -z-10 translate-y-2 scale-90 rounded-3xl bg-primary/10 blur-2xl" />
-                      <div className="grid h-16 w-16 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
-                        <CheckCircle2 className="h-7 w-7 text-primary" strokeWidth={1.6} />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold text-foreground">Nenhuma demanda sua</div>
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        Quando uma demanda for atribuída a você — ou você puxar uma da aba órfãs —, ela aparece aqui.
-                      </p>
-                    </div>
-                  </div>
-                )}
-                {!loadingFirstPage && tab === "orfas" && data.length === 0 && (
-                  <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
-                    <div className="relative">
-                      <div className="absolute inset-0 -z-10 translate-y-2 scale-90 rounded-3xl bg-[var(--pill-green-bg)] blur-2xl" />
-                      <div className="grid h-16 w-16 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
-                        <CheckCircle2 className="h-7 w-7 text-[var(--pill-green-fg)]" strokeWidth={1.6} />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold text-foreground">Nenhuma demanda órfã</div>
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        Toda demanda aberta tem um responsável. Bom trabalho de distribuição!
-                      </p>
-                    </div>
-                  </div>
-                )}
-                {!loadingFirstPage && tab === "atrasadas" && data.length === 0 && (
-                  <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
-                    <div className="relative">
-                      <div className="absolute inset-0 -z-10 translate-y-2 scale-90 rounded-3xl bg-[var(--pill-green-bg)] blur-2xl" />
-                      <div className="grid h-16 w-16 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
-                        <CheckCircle2 className="h-7 w-7 text-[var(--pill-green-fg)]" strokeWidth={1.8} />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold text-foreground">Nenhuma demanda atrasada</div>
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        {state === "concluido"
-                          ? "Demandas concluídas nunca estão atrasadas — remova o filtro de estado."
-                          : "Tudo em dia por aqui. O time está vencendo o SLA."}
-                      </p>
-                    </div>
-                  </div>
-                )}
-                {data.map((d: any) => (
-                  <FilaCard key={d.id} d={d} slug={slug} />
-                ))}
-
-                {/* Sentinela de rolagem infinita automática */}
-                {hasMore && !loadingFirstPage && limit < MAX_LIMIT && (
-                  <div ref={loadMoreRef} className="py-3 flex items-center justify-center">
-                    {isFetching && (
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-                        <span>Carregando mais...</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Fim real da lista */}
-                {!loadingFirstPage && !hasMore && data.length > 0 && (
-                  <div className="py-2 text-center text-[10px] text-muted-foreground/60">
-                    Fim da lista · {data.length} demanda{data.length === 1 ? "" : "s"}
-                  </div>
-                )}
-
-                {/* Teto atingido com mais itens no servidor */}
-                {!loadingFirstPage && hasMore && limit >= MAX_LIMIT && (
-                  <div className="py-2 text-center text-[10px] text-muted-foreground/70">
-                    Exibindo {data.length} de {total} · refine a busca ou os filtros para ir além
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-        {/* Área Principal de Detalhes da Demanda */}
-        <div className={`${hasSelection ? "block" : "hidden sm:block"} flex-1 min-w-0 bg-card/20 overflow-hidden scrollbar-thin`}>
-          {hasSelection ? (
-            <Outlet />
-          ) : (
-            <div className="h-full flex flex-col items-center justify-center gap-4 p-8 text-center">
-              <div className="relative">
-                <div className="absolute inset-0 -z-10 translate-y-3 scale-90 rounded-3xl bg-primary/10 blur-2xl" />
-                <div className="grid h-20 w-20 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
-                  <Inbox className="h-9 w-9 text-primary" strokeWidth={1.6} />
                 </div>
-              </div>
-              <div>
-                <div className="text-lg font-semibold tracking-tight text-foreground">
-                  Selecione uma demanda para começar
+
+                {/* Card persistente de setup — Fase 3 (§38) */}
+                {showSetupCard && (
+                  <div className="mx-2 mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/30">
+                    <div className="flex items-start gap-2.5">
+                      <WifiOff className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold text-amber-900 dark:text-amber-100">
+                          Configure seu WhatsApp
+                        </div>
+                        <div className="mt-0.5 text-[11px] text-amber-800 dark:text-amber-200">
+                          Conecte o WhatsApp da sua organização pra receber demandas automaticamente.
+                        </div>
+                        <Link
+                          to="/app/onboarding/$slug"
+                          params={{ slug }}
+                          className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-900 dark:text-amber-100 hover:underline"
+                        >
+                          <Wifi className="h-3 w-3" /> Conectar agora
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Lista Rolável de Demandas */}
+                <div className={`flex-1 overflow-y-auto scrollbar-thin p-2.5 space-y-2 ${showSetupCard ? "pt-4" : "pt-1"}`}>
+                  {loadingFirstPage && <ListSkeleton rows={6} />}
+                  {!loadingFirstPage && tab === "fila" && data.length === 0 && (
+                    <FilaEmptyState
+                      hasFilters={!!state || !!debouncedSearch}
+                      waStatus={waStatus}
+                      canConfigure={org?.role === "owner" || org?.role === "admin"}
+                      slug={slug}
+                    />
+                  )}
+                  {!loadingFirstPage && tab === "minhas" && data.length === 0 && (
+                    <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+                      <div className="relative">
+                        <div className="absolute inset-0 -z-10 translate-y-2 scale-90 rounded-3xl bg-primary/10 blur-2xl" />
+                        <div className="grid h-16 w-16 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
+                          <CheckCircle2 className="h-7 w-7 text-primary" strokeWidth={1.6} />
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <div className="text-xs font-semibold text-foreground">Nenhuma demanda sua</div>
+                        <p className="mx-auto mt-1 max-w-[240px] text-center text-[11px] text-muted-foreground">
+                          Quando uma demanda for atribuída a você — ou você puxar uma da aba órfãs —, ela aparece aqui.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {!loadingFirstPage && tab === "orfas" && data.length === 0 && (
+                    <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+                      <div className="relative">
+                        <div className="absolute inset-0 -z-10 translate-y-2 scale-90 rounded-3xl bg-[var(--pill-green-bg)] blur-2xl" />
+                        <div className="grid h-16 w-16 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
+                          <CheckCircle2 className="h-7 w-7 text-[var(--pill-green-fg)]" strokeWidth={1.6} />
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <div className="text-xs font-semibold text-foreground">Nenhuma demanda órfã</div>
+                        <p className="mx-auto mt-1 max-w-[240px] text-center text-[11px] text-muted-foreground">
+                          Toda demanda aberta tem um responsável. Bom trabalho de distribuição!
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {!loadingFirstPage && tab === "atrasadas" && data.length === 0 && (
+                    <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+                      <div className="relative">
+                        <div className="absolute inset-0 -z-10 translate-y-2 scale-90 rounded-3xl bg-[var(--pill-green-bg)] blur-2xl" />
+                        <div className="grid h-16 w-16 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
+                          <CheckCircle2 className="h-7 w-7 text-[var(--pill-green-fg)]" strokeWidth={1.8} />
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <div className="text-xs font-semibold text-foreground">Nenhuma demanda atrasada</div>
+                        <p className="mx-auto mt-1 max-w-[240px] text-center text-[11px] text-muted-foreground">
+                          {state === "concluido"
+                            ? "Demandas concluídas nunca estão atrasadas — remova o filtro de estado."
+                            : "Tudo em dia por aqui. O time está vencendo o SLA."}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {data.map((d: any) => (
+                    <FilaCard key={d.id} d={d} slug={slug} />
+                  ))}
+
+                  {/* Sentinela de rolagem infinita automática */}
+                  {hasMore && !loadingFirstPage && limit < MAX_LIMIT && (
+                    <div ref={loadMoreRef} className="py-3 flex items-center justify-center">
+                      {isFetching && (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                          <span>Carregando mais...</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Fim real da lista */}
+                  {!loadingFirstPage && !hasMore && data.length > 0 && (
+                    <div className="py-2 text-center text-[10px] text-muted-foreground/60">
+                      Fim da lista · {data.length} demanda{data.length === 1 ? "" : "s"}
+                    </div>
+                  )}
+
+                  {/* Teto atingido com mais itens no servidor */}
+                  {!loadingFirstPage && hasMore && limit >= MAX_LIMIT && (
+                    <div className="py-2 text-center text-[10px] text-muted-foreground/70">
+                      Exibindo {data.length} de {total} · refine a busca ou os filtros para ir além
+                    </div>
+                  )}
                 </div>
-                <p className="mt-1.5 max-w-[260px] text-sm text-muted-foreground">
-                  Escolha uma conversa na lista à esquerda para ver o histórico e responder com contexto.
-                </p>
               </div>
             </div>
           )}
-        </div>
-        {showNew && org && <NewDemandaModal orgId={org.id} onClose={() => setShowNew(false)} />}
+
+          {/* Área Principal de Detalhes da Demanda */}
+          <div className={`${hasSelection ? "block" : "hidden sm:block"} flex-1 min-w-0 bg-card/20 overflow-hidden scrollbar-thin`}>
+            {hasSelection ? (
+              <Outlet />
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center gap-4 p-8 text-center">
+                <div className="relative">
+                  <div className="absolute inset-0 -z-10 translate-y-3 scale-90 rounded-3xl bg-primary/10 blur-2xl" />
+                  <div className="grid h-20 w-20 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
+                    <MessageSquareText className="h-9 w-9 text-primary" strokeWidth={1.6} />
+                  </div>
+                </div>
+                <div className="flex flex-col items-center">
+                  <h2 className="text-lg font-semibold tracking-tight text-foreground">
+                    Selecione uma demanda para começar
+                  </h2>
+                  <p className="mx-auto mt-1.5 max-w-[300px] text-center text-sm leading-relaxed text-muted-foreground">
+                    Escolha uma conversa na lista à esquerda para ver o histórico e responder com contexto.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {showNew && org && <NewDemandaModal orgId={org.id} onClose={() => setShowNew(false)} />}
         </div>
       </div>
     </FilaSidebarContext.Provider>
@@ -675,6 +664,7 @@ function NewDemandaModal({ orgId, onClose }: { orgId: string; onClose: () => voi
     },
     onError: (e) => toast.error(friendlyError(e)),
   });
+
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div
@@ -684,13 +674,20 @@ function NewDemandaModal({ orgId, onClose }: { orgId: string; onClose: () => voi
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-bold">Nova demanda</h2>
           <button
+            type="button"
             onClick={onClose}
             className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
-        <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); m.mutate(); }}>
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            m.mutate();
+          }}
+        >
           <input
             required
             placeholder="Título"
@@ -709,39 +706,49 @@ function NewDemandaModal({ orgId, onClose }: { orgId: string; onClose: () => voi
               placeholder="Nome do contato"
               value={contactName}
               onChange={(e) => setContactName(e.target.value)}
-              className="h-10 px-3 rounded-xl border border-border/60 bg-background text-xs outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
+              className="w-full h-10 px-3 rounded-xl border border-border/60 bg-background text-xs outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
             />
             <input
-              placeholder="Telefone"
+              placeholder="Telefone (ex: 5511999999999)"
               value={contactPhone}
               onChange={(e) => setContactPhone(e.target.value)}
-              className="h-10 px-3 rounded-xl border border-border/60 bg-background text-xs outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
+              className="w-full h-10 px-3 rounded-xl border border-border/60 bg-background text-xs outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
             />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <select
               value={priority}
               onChange={(e) => setPriority(e.target.value as any)}
-              className="h-10 px-3 rounded-xl border border-border/60 bg-background text-xs outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
+              className="w-full h-10 px-3 rounded-xl border border-border/60 bg-background text-xs outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
             >
-              <option value="baixa">Baixa</option>
-              <option value="media">Média</option>
-              <option value="alta">Alta</option>
-              <option value="urgente">Urgente</option>
+              <option value="baixa">Prioridade: Baixa</option>
+              <option value="media">Prioridade: Média</option>
+              <option value="alta">Prioridade: Alta</option>
+              <option value="urgente">Prioridade: Urgente</option>
             </select>
             <input
               type="datetime-local"
               value={dueAt}
               onChange={(e) => setDueAt(e.target.value)}
-              className="h-10 px-3 rounded-xl border border-border/60 bg-background text-xs outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
+              className="w-full h-10 px-3 rounded-xl border border-border/60 bg-background text-xs outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
             />
           </div>
-          <button
-            disabled={m.isPending}
-            className="w-full h-10 rounded-xl bg-primary text-primary-foreground text-xs font-semibold shadow-md shadow-primary/20 transition hover:brightness-110 hover:shadow-lg disabled:opacity-60"
-          >
-            {m.isPending ? "Criando..." : "Criar demanda"}
-          </button>
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-9 px-3.5 rounded-xl border border-border/60 text-xs font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={m.isPending}
+              className="h-9 px-4 rounded-xl bg-primary text-xs font-semibold text-primary-foreground shadow-sm transition hover:brightness-110 disabled:opacity-50"
+            >
+              {m.isPending ? "Criando..." : "Criar demanda"}
+            </button>
+          </div>
         </form>
       </div>
     </div>
