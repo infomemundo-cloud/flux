@@ -781,7 +781,7 @@ function Landing() {
           </div>
           <nav className="flex items-center gap-6">
             <Link to="/privacidade" className="transition hover:text-foreground">Privacidade & Termos</Link>
-            <a href="#como-funciona" className="transition hover:text-foreground">Documentação</a>
+            <Link to="/ajuda" className="transition hover:text-foreground">Ajuda & Documentação</Link>
             <a href="#" className="transition hover:text-foreground">Status</a>
           </nav>
         </div>

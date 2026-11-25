@@ -1,5 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, ShieldCheck, FileText, Lock, Users, Database, Clock, Mail } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ShieldCheck,
+  FileText,
+  Lock,
+  Users,
+  Database,
+  Clock,
+  Mail,
+} from "lucide-react";
+import { usePublicNav } from "@/hooks/use-public-nav";
 
 export const Route = createFileRoute("/privacidade")({
   head: () => ({
@@ -39,25 +50,49 @@ function SectionCard({
 
 function PrivacyPage() {
   const lastUpdated = "18 de novembro de 2026";
-  
+  // Mesma regra da /ajuda: autenticado volta DIRETO pro trabalho
+  // (fila da org única / hub se multi-org) — nunca passa por "/" ou "/app"
+  // à toa; anônimo mantém o "Voltar" pra landing.
+  const nav = usePublicNav();
+
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* Header simples */}
+      {/* Header contextual (página pública) — ver usePublicNav */}
       <header className="sticky top-0 z-10 border-b border-border bg-background/85 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-4xl items-center justify-between px-6">
-          <Link to="/" className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+          <Link
+            to={nav.target ?? "/"}
+            className="flex items-center gap-2 text-sm font-semibold tracking-tight"
+          >
             <span className="grid h-7 w-7 place-items-center rounded-lg bg-primary">
               <ShieldCheck className="h-4 w-4 text-primary-foreground" strokeWidth={2.2} />
             </span>
             Flux
           </Link>
-          <Link
-            to="/"
-            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm transition hover:bg-secondary"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Voltar
-          </Link>
+          {nav.loading ? (
+            /* placeholder de altura: resolve sessão/orgs sem layout shift */
+            <span className="h-9 w-24" aria-hidden />
+          ) : nav.target ? (
+            <Link
+              to={nav.target}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:brightness-110"
+            >
+              {nav.back ? (
+                <ArrowLeft className="h-4 w-4" />
+              ) : (
+                <ArrowRight className="h-4 w-4" />
+              )}
+              {nav.back ? "Voltar" : nav.label}
+            </Link>
+          ) : (
+            <Link
+              to="/"
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm transition hover:bg-secondary"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Voltar
+            </Link>
+          )}
         </div>
       </header>
 

@@ -9,6 +9,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
+import { InfoTip } from "@/components/info-tip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   DropdownMenu,
@@ -89,9 +90,12 @@ export function FilaHeaderToolbar({
 }) {
   return (
     <div className="flex items-center justify-between gap-1">
-      {/* Abas Fila / Minhas / Órfãs / Atrasadas — strip única,
-          scroll horizontal só quando não cabe (mobile). */}
-      <div className="flex items-center gap-0.5 rounded-xl bg-muted/70 p-1 min-w-0 overflow-x-auto scrollbar-thin">
+      {/* Esquerda: strip de abas + InfoTip de escopos FORA do scroll
+          (visível mesmo quando a strip rola no mobile). */}
+      <div className="flex min-w-0 items-center gap-1">
+        {/* Abas Fila / Minhas / Órfãs / Atrasadas — strip única,
+            scroll horizontal só quando não cabe (mobile). */}
+        <div className="flex items-center gap-0.5 rounded-xl bg-muted/70 p-1 min-w-0 overflow-x-auto scrollbar-thin">
         <button
           onClick={() => onTabChange("fila")}
           className={`flex shrink-0 items-center gap-0.5 rounded-lg px-1 py-1 text-[11px] font-semibold transition-all active:scale-95 ${tab === "fila"
@@ -160,9 +164,10 @@ export function FilaHeaderToolbar({
               {counts.overdue}
             </span>
           )}
-        </button>
+          </button>
+        </div>
+        <InfoTip text="Escopos: Fila = turno da equipe (operador vê só suas + órfãs); Minhas = atribuídas a você; Órfãs = sem responsável, disponíveis para assumir; Atrasadas = SLA ou prazo vencido." />
       </div>
-
       {/* Cluster de ações + ação primária */}
       <div className="flex items-center gap-0.5 shrink-0">
         <div className="flex items-center gap-0.5 rounded-xl bg-muted/70 p-1">

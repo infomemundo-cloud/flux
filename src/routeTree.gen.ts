@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as AjudaRouteImport } from './routes/ajuda'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as PrivacidadeRouteImport } from './routes/privacidade'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
@@ -53,6 +54,11 @@ const IndexRoute = IndexRouteImport.update({
 } as any)
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AjudaRoute = AjudaRouteImport.update({
+  id: '/ajuda',
+  path: '/ajuda',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -253,6 +259,7 @@ const AuthenticatedAppOSlugFilaDemandasIdRouteRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/ajuda': typeof AjudaRoute
   '/auth': typeof AuthRoute
   '/privacidade': typeof PrivacidadeRoute
   '/platform_admin': typeof Platform_adminProtectedRouteRouteWithChildren
@@ -290,6 +297,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/ajuda': typeof AjudaRoute
   '/auth': typeof AuthRoute
   '/privacidade': typeof PrivacidadeRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
@@ -322,6 +330,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/ajuda': typeof AjudaRoute
   '/auth': typeof AuthRoute
   '/privacidade': typeof PrivacidadeRoute
   '/platform_admin/_protected': typeof Platform_adminProtectedRouteRouteWithChildren
@@ -361,6 +370,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/ajuda'
     | '/auth'
     | '/privacidade'
     | '/platform_admin'
@@ -398,6 +408,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/ajuda'
     | '/auth'
     | '/privacidade'
     | '/app'
@@ -429,6 +440,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_authenticated'
+    | '/ajuda'
     | '/auth'
     | '/privacidade'
     | '/platform_admin/_protected'
@@ -468,6 +480,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  AjudaRoute: typeof AjudaRoute
   AuthRoute: typeof AuthRoute
   PrivacidadeRoute: typeof PrivacidadeRoute
   Platform_adminProtectedRouteRoute: typeof Platform_adminProtectedRouteRouteWithChildren
@@ -494,6 +507,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ajuda': {
+      id: '/ajuda'
+      path: '/ajuda'
+      fullPath: '/ajuda'
+      preLoaderRoute: typeof AjudaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -931,6 +951,7 @@ const Platform_adminProtectedRouteRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  AjudaRoute: AjudaRoute,
   AuthRoute: AuthRoute,
   PrivacidadeRoute: PrivacidadeRoute,
   Platform_adminProtectedRouteRoute:

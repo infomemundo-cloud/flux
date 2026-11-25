@@ -294,9 +294,15 @@ function FilaEmptyState({
       <div className="flex flex-col items-center">
         <div className="text-xs font-semibold text-foreground">Tudo certo por aqui</div>
         <p className="mx-auto mt-1 max-w-[240px] text-center text-[11px] text-muted-foreground">
-          O WhatsApp está conectado. Assim que um cliente mandar a primeira mensagem, a demanda aparece nesta fila.
-        </p>
-      </div>
+                        O WhatsApp está conectado. Assim que um cliente mandar a primeira mensagem, a demanda aparece nesta fila.
+            </p>
+            <a
+              href="/ajuda#fila"
+              className="mt-2 text-[11px] font-semibold text-primary hover:underline"
+            >
+              Entender como a fila funciona
+            </a>
+          </div>
     </div>
   );
 }
@@ -620,9 +626,15 @@ function FilaPage() {
                   <h2 className="text-lg font-semibold tracking-tight text-foreground">
                     Selecione uma demanda para começar
                   </h2>
-                  <p className="mx-auto mt-1.5 max-w-[300px] text-center text-sm leading-relaxed text-muted-foreground">
-                    Escolha uma conversa na lista à esquerda para ver o histórico e responder com contexto.
-                  </p>
+                                <p className="mx-auto mt-1.5 max-w-[300px] text-center text-sm leading-relaxed text-muted-foreground">
+                Escolha uma conversa na lista à esquerda para ver o histórico e responder com contexto.
+              </p>
+              <a
+                href="/ajuda#atendimento"
+                className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+              >
+                Guia rápido de atendimento
+              </a>
                 </div>
               </div>
             )}

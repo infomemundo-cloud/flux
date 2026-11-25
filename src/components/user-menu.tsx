@@ -13,7 +13,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useTheme, THEMES, type Theme } from "@/lib/theme";
-import { ChevronsUpDown, LogOut, Settings, Sun, Moon, Building2, Check } from "lucide-react";
+import { useLocation } from "@tanstack/react-router";
+import { BookOpen, ChevronsUpDown, LogOut, Settings, Sun, Moon, Building2, Check } from "lucide-react";
 
 const THEME_ICON: Record<Theme, typeof Sun> = { light: Sun, dark: Moon, corporate: Building2 };
 
@@ -87,6 +88,7 @@ export function UserMenu({
   round?: boolean;
 }) {
   const { theme } = useTheme();
+  const location = useLocation();
   const initials = name
     .split(/[\s._@-]+/)
     .filter(Boolean)
@@ -163,6 +165,15 @@ export function UserMenu({
           </div>
           <ThemeToggleInline />
         </div>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <a
+            href={`/ajuda?from=${encodeURIComponent(location.pathname)}`}
+            className="cursor-pointer"
+          >
+            <BookOpen className="h-4 w-4" /> Ajuda & documentação
+          </a>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         {settingsTo && (
           <>

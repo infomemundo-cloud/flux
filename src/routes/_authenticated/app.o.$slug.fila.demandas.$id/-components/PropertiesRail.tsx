@@ -28,6 +28,7 @@ import {
   type ContactTag,
 } from "@/lib/contacts.functions";
 import { ContactAvatar } from "@/components/contact-avatar";
+import { InfoTip } from "@/components/info-tip";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -221,11 +222,23 @@ function DueDatePicker({
   );
 }
 
-/** Linha key-value horizontal: rótulo à esquerda (w-20), controle à direita. */
-function KVRow({ label, children }: { label: string; children: React.ReactNode }) {
+/** Linha key-value horizontal: rótulo à esquerda (w-20) + InfoTip opcional
+ *  (explica o conceito sem sair da tela), controle à direita. */
+function KVRow({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex items-center justify-between gap-3 py-2">
-      <span className="w-20 shrink-0 text-[11px] font-medium text-muted-foreground">{label}</span>
+      <span className="flex w-20 shrink-0 items-center gap-1 text-[11px] font-medium text-muted-foreground">
+        {label}
+        {hint && <InfoTip text={hint} />}
+      </span>
       <div className="flex min-w-0 flex-1 justify-end">{children}</div>
     </div>
   );
@@ -541,7 +554,10 @@ export function PropertiesRail({
             )}
 
             {/* Estado */}
-            <KVRow label="Estado">
+         <KVRow
+           label="Estado"
+           hint="Estado = etapa do atendimento (quem aguarda quem). Não é urgência (Prioridade) nem data combinada (Prazo)."
+         >
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button type="button" className={PILL_TRIGGER}>
@@ -569,7 +585,10 @@ export function PropertiesRail({
             </KVRow>
 
             {/* Prioridade */}
-            <KVRow label="Prioridade">
+            <KVRow
+           label="Prioridade"
+           hint="Prioridade = urgência do cliente (baixa → urgente). Alta/urgente destacam o card na fila; não mudam SLA nem prazo."
+         >
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
@@ -597,7 +616,10 @@ export function PropertiesRail({
             </KVRow>
 
             {/* Prazo */}
-            <KVRow label="Prazo">
+            <KVRow
+           label="Prazo"
+           hint="Prazo = data combinada para resolver ESTA demanda. Os Alertas de SLA medem inatividade da conversa (regra da organização), não este prazo."
+         >
               <DueDatePicker value={demanda.due_at ?? null} onChange={(v) => onUpdate({ due_at: v })} />
             </KVRow>
 
