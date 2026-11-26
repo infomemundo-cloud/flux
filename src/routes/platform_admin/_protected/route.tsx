@@ -15,8 +15,10 @@ import {
   LogOut,
   ShieldCheck,
   RefreshCw,
+  MessageSquareHeart,
 } from "lucide-react";
 import { getPlatformAdminSession } from "@/lib/platform-admin.functions";
+import { countPendingFollowups } from "@/lib/platform-admin/feedback.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { bumpRedirectHops, resetRedirectHops } from "@/lib/platform-admin-redirect-guard";
 
@@ -50,6 +52,7 @@ const NAV = [
   { label: "Feature flags", icon: Flag, href: "/platform_admin/flags", soon: false },
   { label: "Tiers", icon: Layers, href: "/platform_admin/tiers", soon: false },
   { label: "Billing Health", icon: Activity, href: "/platform_admin/billing", soon: false },
+  { label: "Feedback", icon: MessageSquareHeart, href: "/platform_admin/feedback", soon: false },
 ] as const;
 
 function PlatformAdminShell() {
@@ -73,6 +76,18 @@ function PlatformAdminShell() {
     refetchOnReconnect: false,
   });
 
+  // Badge de follow-ups pendentes (9.4): só papéis com leitura de feedback;
+  // cache 5min compartilhado com o dashboard (zero refetch em foco/reconexão).
+  const followupCountFn = useServerFn(countPendingFollowups);
+  const canReadFeedback = ["superadmin", "support", "billing"].includes(session?.role ?? "");
+  const { data: followupCount } = useQuery({
+    queryKey: ["feedback-followup-count"],
+    queryFn: () => followupCountFn(),
+    enabled: canReadFeedback,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
   const [watchdog, setWatchdog] = useState(false);
   const [loop, setLoop] = useState(false);
 
@@ -197,6 +212,8 @@ function PlatformAdminShell() {
           {NAV.map((item) => {
             const Icon = item.icon;
             const active = item.href === location.pathname;
+            // Feedback (9.4): viewer não lê feedback → item não existe pra ele.
+            if (item.href === "/platform_admin/feedback" && !canReadFeedback) return null;
             const inner = (
               <>
                 <Icon className="h-4 w-4 shrink-0" strokeWidth={1.9} />
@@ -204,6 +221,11 @@ function PlatformAdminShell() {
                 {item.soon && (
                   <span className="ml-auto rounded bg-slate-800 px-1 py-0.5 text-[9px] font-semibold text-slate-400">
                     em breve
+                  </span>
+                )}
+                {item.href === "/platform_admin/feedback" && (followupCount ?? 0) > 0 && (
+                  <span className="ml-auto rounded bg-amber-500/15 px-1 py-0.5 text-[9px] font-bold tabular-nums text-amber-300">
+                    {followupCount}
                   </span>
                 )}
               </>

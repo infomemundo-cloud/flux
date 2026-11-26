@@ -94,6 +94,8 @@ export const ROLE_ACTIONS = {
   adminManagement: ["superadmin"],
   userManagement: ["superadmin", "support"],
   flagManagement: ["superadmin"],
+  feedbackRead: ["superadmin", "support", "billing"],
+  feedbackFollowup: ["superadmin", "support"],
 } as const;
 
 /**

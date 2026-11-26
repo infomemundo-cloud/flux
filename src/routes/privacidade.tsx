@@ -9,6 +9,11 @@ import {
   Database,
   Clock,
   Mail,
+  Globe,
+  Cookie,
+  Scale,
+  CreditCard,
+  AlertTriangle,
 } from "lucide-react";
 import { usePublicNav } from "@/hooks/use-public-nav";
 
@@ -19,76 +24,131 @@ export const Route = createFileRoute("/privacidade")({
       {
         name: "description",
         content:
-          "Política de Privacidade e Termos de Uso do Flux. Saiba como tratamos seus dados, seus direitos como titular e as regras de uso da plataforma.",
+          "Política de Privacidade e Termos de Uso do Flux (flxapp.cloud). Tratamento de dados pessoais conforme a LGPD (Lei 13.709/2018), direitos do titular, suboperadores, retenção e regras de uso da plataforma.",
       },
     ],
   }),
   component: PrivacyPage,
 });
 
+const VERSION = "1.0";
+const EFFECTIVE_DATE = "27 de novembro de 2026";
+const DPO_EMAIL = "privacidade@flxapp.cloud";
+
+const TOC = [
+  { id: "papeis", label: "Papéis na LGPD" },
+  { id: "dados", label: "Dados tratados" },
+  { id: "finalidades", label: "Finalidades & bases" },
+  { id: "suboperadores", label: "Suboperadores" },
+  { id: "retencao", label: "Retenção" },
+  { id: "seguranca", label: "Segurança" },
+  { id: "transferencia", label: "Transferência intl." },
+  { id: "direitos", label: "Direitos do titular" },
+  { id: "cookies", label: "Cookies" },
+  { id: "alteracoes", label: "Alterações" },
+  { id: "termos", label: "Termos de Uso" },
+  { id: "planos-termos", label: "Planos & cobrança" },
+  { id: "responsabilidade", label: "Responsabilidades" },
+  { id: "encerramento", label: "Encerramento" },
+] as const;
+
+const SUBOPERADORES = [
+  ["Supabase", "Banco PostgreSQL, autenticação, storage de mídias e tempo real", "Conta, conversas, mídias, logs", "EUA"],
+  ["Vercel", "Hospedagem e runtime da aplicação", "Requisições e logs técnicos", "EUA"],
+  ["Evolution API", "Gateway de conexão/mensageria WhatsApp (instância dedicada)", "Mensagens e metadados do canal", "VPS própria"],
+  ["Mercado Pago", "Processamento de assinaturas e pagamentos", "Dados de cobrança e identificadores de transação", "Brasil"],
+] as const;
+
+const RETENCAO = [
+  ["Conta e organização", "Enquanto ativas; até 24 meses após o encerramento para obrigações e remarketing, depois anonimização"],
+  ["Conversas, contatos e mídias", "Enquanto a organização estiver ativa; removidos em cascata na exclusão da organização"],
+  ["Feedback de produto", "Até 24 meses ou até pedido de exclusão (anonimização dos agregados)"],
+  ["Logs de segurança e auditoria", "Prazos legais e de segurança aplicáveis; registros imutáveis de auditoria administrativa"],
+  ["Backups", "Ciclo de retenção próprio dos provedores de infraestrutura"],
+] as const;
+
+const FINALIDADES = [
+  ["Prestar o serviço (conectar canal, fila, histórico, distribuição, SLA)", "Execução de contrato / procedimentos preliminares (art. 7º, V)"],
+  ["Cobrança, faturas e gestão da assinatura", "Execução de contrato (art. 7º, V)"],
+  ["Segurança, prevenção a fraude e estabilidade", "Legítimo interesse (art. 7º, IX)"],
+  ["Obrigações legais e regulatórias", "Cumprimento de obrigação legal (art. 7º, II)"],
+  ["Follow-up de feedback e comunicações de melhoria", "Consentimento (art. 7º, I), revogável a qualquer momento"],
+] as const;
+
 function SectionCard({
+  id,
   icon: Icon,
   title,
   children,
 }: {
+  id?: string;
   icon: typeof ShieldCheck;
   title: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
-      <div className="flex items-center gap-3 mb-4">
-        <span className="grid h-9 w-9 place-items-center rounded-lg bg-primary/10">
+    <section id={id} className="scroll-mt-24 rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
+      <div className="mb-4 flex items-center gap-3">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary/10">
           <Icon className="h-4 w-4 text-primary" />
         </span>
         <h3 className="text-lg font-semibold text-foreground">{title}</h3>
       </div>
       <div className="space-y-3 text-sm leading-relaxed text-muted-foreground">{children}</div>
+    </section>
+  );
+}
+
+function DataTable({ head, rows }: { head: readonly string[]; rows: readonly (readonly string[])[] }) {
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <table className="w-full min-w-[560px] text-left text-sm">
+        <thead className="border-b border-border bg-muted/50 text-xs text-muted-foreground">
+          <tr>
+            {head.map((h) => (
+              <th key={h} className="px-3 py-2 font-medium">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} className="border-b border-border/60 last:border-0">
+              {r.map((c, j) => (
+                <td key={j} className={`px-3 py-2 ${j === 0 ? "font-medium text-foreground" : "text-muted-foreground"}`}>{c}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
 function PrivacyPage() {
-  const lastUpdated = "18 de novembro de 2026";
-  // Mesma regra da /ajuda: autenticado volta DIRETO pro trabalho
-  // (fila da org única / hub se multi-org) — nunca passa por "/" ou "/app"
-  // à toa; anônimo mantém o "Voltar" pra landing.
   const nav = usePublicNav();
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* Header contextual (página pública) — ver usePublicNav */}
       <header className="sticky top-0 z-10 border-b border-border bg-background/85 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-4xl items-center justify-between px-6">
-          <Link
-            to={nav.target ?? "/"}
-            className="flex items-center gap-2 text-sm font-semibold tracking-tight"
-          >
+          <Link to={nav.target ?? "/"} className="flex items-center gap-2 text-sm font-semibold tracking-tight">
             <span className="grid h-7 w-7 place-items-center rounded-lg bg-primary">
               <ShieldCheck className="h-4 w-4 text-primary-foreground" strokeWidth={2.2} />
             </span>
             Flux
           </Link>
           {nav.loading ? (
-            /* placeholder de altura: resolve sessão/orgs sem layout shift */
             <span className="h-9 w-24" aria-hidden />
           ) : nav.target ? (
             <Link
               to={nav.target}
               className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:brightness-110"
             >
-              {nav.back ? (
-                <ArrowLeft className="h-4 w-4" />
-              ) : (
-                <ArrowRight className="h-4 w-4" />
-              )}
+              {nav.back ? <ArrowLeft className="h-4 w-4" /> : <ArrowRight className="h-4 w-4" />}
               {nav.back ? "Voltar" : nav.label}
             </Link>
           ) : (
-            <Link
-              to="/"
-              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm transition hover:bg-secondary"
-            >
+            <Link to="/" className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm transition hover:bg-secondary">
               <ArrowLeft className="h-4 w-4" />
               Voltar
             </Link>
@@ -97,244 +157,241 @@ function PrivacyPage() {
       </header>
 
       <main className="mx-auto max-w-4xl px-6 py-12 space-y-8">
-        {/* Título principal */}
-        <div className="space-y-2">
+        {/* Hero institucional */}
+        <div className="space-y-3">
+          <span className="pill-brand inline-flex items-center gap-2 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-widest">
+            <ShieldCheck className="h-3 w-3" /> Conformidade LGPD · Lei 13.709/2018
+          </span>
           <h1 className="text-3xl font-bold tracking-tight">Política de Privacidade e Termos de Uso</h1>
           <p className="text-sm text-muted-foreground">
-            Última atualização: {lastUpdated} · Versão preliminar sujeita a revisão jurídica
+            Versão {VERSION} · Vigente a partir de {EFFECTIVE_DATE} · Flux (flxapp.cloud)
           </p>
-          <div className="flex items-center gap-2 mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-            <Mail className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-            <span className="text-xs text-amber-700 dark:text-amber-300">
-              Contato de Privacidade / Encarregado (DPO):{" "}
-              <a href="mailto:privacidade@flxapp.cloud" className="font-semibold underline">
-                privacidade@flxapp.cloud
+          <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
+            <Mail className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <span className="text-xs text-foreground/85">
+              Encarregado de Dados (DPO):{" "}
+              <a href={`mailto:${DPO_EMAIL}`} className="font-semibold text-primary underline underline-offset-2">
+                {DPO_EMAIL}
               </a>
+              . Canal único para exercer direitos, tirar dúvidas sobre tratamento ou reportar incidentes.
             </span>
           </div>
         </div>
 
-        {/* POLÍTICA DE PRIVACIDADE */}
+        {/* Índice */}
+        <div className="relative">
+          <div aria-hidden className="pointer-events-none absolute right-0 top-0 bottom-0 z-10 w-8 bg-gradient-to-l from-background to-transparent" />
+          <div className="-my-1 flex gap-1.5 overflow-x-auto scrollbar-none snap-x snap-mandatory py-1">
+            {TOC.map((t) => (
+              <a
+                key={t.id}
+                href={`#${t.id}`}
+                className="shrink-0 snap-start rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
+              >
+                {t.label}
+              </a>
+            ))}
+          </div>
+        </div>
+
+        {/* POLÍTICA */}
         <div className="space-y-6">
-          <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-primary" />
-            Política de Privacidade — Fluxo
+          <h2 id="privacidade" className="scroll-mt-24 flex items-center gap-2 text-2xl font-bold tracking-tight">
+            <ShieldCheck className="h-5 w-5 text-primary" /> Política de Privacidade
           </h2>
 
-          <SectionCard icon={Users} title="1. Papel do Fluxo na LGPD">
-            <ul className="list-disc pl-5 space-y-2">
+          <SectionCard id="papeis" icon={Users} title="1. Quem somos e papéis na LGPD">
+            <ul className="list-disc space-y-2 pl-5">
               <li>
-                <strong>Empresas clientes (Organizações / Tenants):</strong> atuam como{" "}
-                <strong>Controladoras</strong> dos dados pessoais de seus clientes e contatos tratados no
-                atendimento via WhatsApp.
+                <strong>Flux (flxapp.cloud)</strong> é a plataforma de atendimento compartilhado. Atuamos como{" "}
+                <strong>Operador</strong> (art. 5º, VII) ao tratar mensagens, contatos e eventos operacionais em nome da
+                organização contratante.
               </li>
               <li>
-                <strong>Fluxo:</strong> atua como <strong>Operador</strong> ao processar, armazenar e exibir
-                mensagens, contatos e eventos operacionais em nome da organização contratante, e como{" "}
-                <strong>Controlador</strong> apenas dos dados estritamente necessários para gestão da conta do
-                usuário, autenticação, segurança e cobrança da assinatura.
-              </li>
-            </ul>
-          </SectionCard>
-
-          <SectionCard icon={Database} title="2. Dados que Coletamos e Tratamos">
-            <ul className="list-disc pl-5 space-y-2">
-              <li>
-                <strong>Dados de conta e acesso:</strong> nome, e-mail, identificador de usuário, histórico de
-                login/status da conta e vínculo com organizações (<code>org_id</code>) e papéis de acesso.
+                <strong>Organizações clientes</strong> são as <strong>Controladoras</strong> (art. 5º, VI) dos dados pessoais
+                de seus contatos e clientes tratados no atendimento, decidindo finalidades e meios desse tratamento.
               </li>
               <li>
-                <strong>Dados operacionais de atendimento (via integração WhatsApp):</strong> telefone/identificador
-                do contato ou grupo, nome/foto de perfil quando disponível, mensagens de entrada e saída,
-                metadados técnicos da mensagem e arquivos/mídias anexados (armazenados em bucket privado).
-              </li>
-              <li>
-                <strong>Dados de assinatura e faturamento:</strong> plano contratado, status da assinatura, ciclos,
-                faturas e identificadores de transação/pagamento processados via gateway de pagamento.
-              </li>
-              <li>
-                <strong>Logs técnicos e de auditoria:</strong> registros de eventos da demanda, auditoria
-                administrativa e logs de entrega/erros de webhook e integração para segurança, estabilidade e
-                prevenção a fraudes.
-              </li>
-              <li>
-                <strong>Feedback de produto (opcional):</strong> nota de 1 a 5, etiquetas selecionadas,
-                comentário livre (até 1.000 caracteres), resposta à pergunta de satisfação e a tela em que
-                você estava (sem identificadores de conversas). Associado à sua conta e organização apenas
-                para melhoria do produto; contato de follow-up somente com seu opt-in explícito.
+                O Flux atua como <strong>Controlador</strong> apenas dos dados estritamente necessários à gestão da conta,
+                autenticação, segurança e cobrança da assinatura.
               </li>
             </ul>
           </SectionCard>
 
-          <SectionCard icon={FileText} title="3. Finalidades e Bases Legais">
-            <p>Tratamos os dados para:</p>
-            <ul className="list-disc pl-5 space-y-2">
-              <li>
-                <strong>Execução do serviço / procedimentos preliminares (teste/validação):</strong> conectar o
-                canal, organizar demandas, manter histórico, distribuir atendimentos e aplicar regras de SLA e plano.
-              </li>
-              <li>
-                <strong>Cumprimento de obrigações legais e regulatórias:</strong> quando aplicável.
-              </li>
-              <li>
-                <strong>Legítimo interesse:</strong> garantir segurança da plataforma, prevenir abuso/fraude,
-                diagnosticar falhas e manter a integridade operacional.
-              </li>
-              <li>
-                <strong>Melhoria do produto (feedback):</strong> priorizar correções e funcionalidades a partir
-                da sua avaliação voluntária. Retenção de até 24 meses ou até pedido de exclusão (anonimização
-                dos agregados); você pode excluir seu feedback a qualquer momento pela própria conta.
-              </li>
+          <SectionCard id="dados" icon={Database} title="2. Dados que tratamos">
+            <ul className="list-disc space-y-2 pl-5">
+              <li><strong>Conta e acesso:</strong> nome, e-mail, identificador de usuário, histórico de login/status e vínculo com organizações e papéis.</li>
+              <li><strong>Operacionais de atendimento:</strong> telefone/identificador do contato ou grupo, nome e foto de perfil quando disponíveis, mensagens de entrada e saída, metadados técnicos e mídias anexadas (bucket privado). Inclui o CRM leve da organização (notas, etiquetas, empresa, e-mail do contato).</li>
+              <li><strong>Cobrança da organização:</strong> plano, status da assinatura, ciclos, faturas, identificadores de transação do gateway e a chave Pix cadastrada pela empresa para cobrança de seus clientes.</li>
+              <li><strong>Feedback de produto (opcional):</strong> nota de 1 a 5, etiquetas, comentário livre (até 1.000 caracteres), resposta de satisfação e a tela de origem (sem identificadores de conversas). Follow-up somente com opt-in explícito.</li>
+              <li><strong>Logs e auditoria:</strong> eventos da demanda, auditoria administrativa e logs de entrega/erros de webhook e integração, para segurança, estabilidade e prevenção a fraudes.</li>
             </ul>
           </SectionCard>
 
-          <SectionCard icon={Lock} title="4. Compartilhamento com Operadores / Suboperadores">
-            <p>
-              Para o funcionamento técnico do sistema, os dados podem transitar ou ficar armazenados em provedores
-              essenciais de infraestrutura e integração:
+          <SectionCard id="finalidades" icon={FileText} title="3. Finalidades e bases legais">
+            <DataTable head={["Finalidade", "Base legal (LGPD)"]} rows={FINALIDADES} />
+            <p className="text-xs">
+              Não vendemos dados pessoais e não os compartilhamos para publicidade de terceiros. O consentimento de
+              follow-up é revogável a qualquer momento, sem afetar o tratamento das demais finalidades.
             </p>
-            <ul className="list-disc pl-5 space-y-2">
-              <li>
-                <strong>Supabase</strong> (banco de dados PostgreSQL, autenticação, armazenamento de arquivos/mídias e
-                tempo real).
-              </li>
-              <li>
-                <strong>Provedor de hospedagem / runtime da aplicação</strong> (ex.: Vercel).
-              </li>
-              <li>
-                <strong>Evolution API</strong> (gateway de conexão/mensageria WhatsApp configurado para a instância).
-              </li>
-              <li>
-                <strong>Mercado Pago</strong> (processamento de assinaturas recorrentes e pagamentos).
-              </li>
+          </SectionCard>
+
+          <SectionCard id="suboperadores" icon={Lock} title="4. Compartilhamento e suboperadores">
+            <p>Os dados transitam ou ficam armazenados apenas nos provedores essenciais abaixo, sob obrigações contratuais de confidencialidade e segurança:</p>
+            <DataTable head={["Provedor", "Função", "Dados", "Local"]} rows={SUBOPERADORES} />
+          </SectionCard>
+
+          <SectionCard id="retencao" icon={Clock} title="5. Retenção e exclusão">
+            <DataTable head={["Categoria", "Retenção"]} rows={RETENCAO} />
+            <p className="text-xs">
+              Ao encerrar uma organização, os dados vinculados são removidos em cascata (conversas, contatos, mídias,
+              macros, tokens), respeitando registros obrigatórios e logs de segurança. Agregados de feedback são
+              anonimizados na exclusão.
+            </p>
+          </SectionCard>
+
+          <SectionCard id="seguranca" icon={ShieldCheck} title="6. Segurança e isolamento">
+            <ul className="list-disc space-y-2 pl-5">
+              <li><strong>Isolamento por organização:</strong> separação lógica por <code>org_id</code> com políticas de acesso no banco (RLS) e restrição por papel dentro da organização.</li>
+              <li><strong>Mídias privadas:</strong> armazenamento em bucket privado com URLs assinadas de validade curta; nenhum link público permanente.</li>
+              <li><strong>Integridade e auditoria:</strong> logs de auditoria administrativa imutáveis; webhooks de pagamento validados por assinatura HMAC.</li>
+              <li><strong>Criptografia:</strong> em trânsito (TLS) e em repouso nos provedores de infraestrutura; autenticação por token com expiração.</li>
             </ul>
           </SectionCard>
 
-          <SectionCard icon={Clock} title="5. Segurança, Isolamento e Retenção">
-            <ul className="list-disc pl-5 space-y-2">
-              <li>
-                <strong>Isolamento e controle de acesso:</strong> separação lógica por organização (
-                <code>org_id</code>), políticas de acesso no banco, autenticação via token e restrição por função/papel
-                dentro da organização.
-              </li>
-              <li>
-                <strong>Mídias:</strong> arquivos trafegados são armazenados em área privada com acesso
-                controlado/temporário.
-              </li>
-              <li>
-                <strong>Retenção e exclusão:</strong> os dados permanecem enquanto a conta/organização estiver ativa ou
-                conforme necessidade operacional e legal. Ao encerrar uma organização ou solicitar exclusão, os dados
-                vinculados à organização podem ser removidos em cascata, respeitando registros obrigatórios ou logs de
-                segurança quando aplicável.
-              </li>
-            </ul>
-          </SectionCard>
-
-          <SectionCard icon={Mail} title="6. Direitos dos Titulares">
+          <SectionCard id="transferencia" icon={Globe} title="7. Transferência internacional">
             <p>
-              Titulares de dados podem solicitar confirmação de tratamento, acesso, correção, anonimização ou exclusão
-              pelo canal <code>privacidade@flxapp.cloud</code>. Quando o pedido envolver dados de conversas de clientes
-              de uma empresa usuária, o Fluxo poderá direcionar ou coordenar a solicitação com a organização
-              controladora responsável.
+              Parte dos suboperadores opera fora do Brasil (EUA). A transferência ocorre apenas para provedores essenciais
+              à prestação do serviço, sob cláusulas contratuais e garantias de proteção compatíveis com a LGPD (art. 33).
+              Não realizamos transferência para fins publicitários.
+            </p>
+          </SectionCard>
+
+          <SectionCard id="direitos" icon={Scale} title="8. Direitos do titular e como exercer">
+            <p>Conforme o art. 18 da LGPD, você pode solicitar:</p>
+            <ul className="list-disc space-y-1.5 pl-5">
+              <li>Confirmação da existência de tratamento e acesso aos dados;</li>
+              <li>Correção de dados incompletos, inexatos ou desatualizados;</li>
+              <li>Anonimização, bloqueio ou eliminação de dados desnecessários ou excessivos;</li>
+              <li>Portabilidade, quando regulamentada;</li>
+              <li>Eliminação dos dados tratados com consentimento;</li>
+              <li>Informação sobre compartilhamento com suboperadores;</li>
+              <li>Revogação do consentimento e oposição a tratamento com base em legítimo interesse;</li>
+              <li>Revisão de decisões automatizadas que afetem seus interesses.</li>
+            </ul>
+            <p className="text-xs">
+              Canal: <a href={`mailto:${DPO_EMAIL}`} className="font-semibold text-primary underline underline-offset-2">{DPO_EMAIL}</a>.
+              Respondemos em até 15 dias. Pedidos sobre conversas de clientes de uma organização são coordenados com a
+              controladora responsável. Feedback pode ser excluído diretamente pela própria conta.
+            </p>
+          </SectionCard>
+
+          <SectionCard id="cookies" icon={Cookie} title="9. Cookies e tecnologias">
+            <ul className="list-disc space-y-2 pl-5">
+              <li><strong>Essenciais:</strong> sessão/autenticação e segurança da conta.</li>
+              <li><strong>Preferências:</strong> tema da interface (armazenamento local) e rascunho de feedback (sessão).</li>
+              <li><strong>Não utilizamos</strong> cookies de publicidade ou rastreadores de terceiros para perfilamento.</li>
+            </ul>
+          </SectionCard>
+
+          <SectionCard id="alteracoes" icon={FileText} title="10. Alterações desta política">
+            <p>
+              Mudanças relevantes são comunicadas in-app ou por e-mail e registradas com nova versão e data de vigência no
+              topo deste documento. A versão vigente é sempre a publicada nesta página. O uso continuado após a vigência
+              indica ciência da versão atualizada.
             </p>
           </SectionCard>
         </div>
 
-        {/* TERMOS DE USO */}
-        <div className="space-y-6 pt-8 border-t border-border">
-          <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <FileText className="h-5 w-5 text-primary" />
-            Termos de Uso — Fluxo
+        {/* TERMOS */}
+        <div className="space-y-6 border-t border-border pt-8">
+          <h2 id="termos" className="scroll-mt-24 flex items-center gap-2 text-2xl font-bold tracking-tight">
+            <FileText className="h-5 w-5 text-primary" /> Termos de Uso
           </h2>
 
-          <SectionCard icon={FileText} title="1. Objeto">
+          <SectionCard icon={FileText} title="1. Objeto e aceite">
             <p>
-              O <strong>Fluxo</strong> é uma plataforma web voltada à organização de atendimentos e demandas
-              operacionais vinculadas a canais de comunicação (como WhatsApp), incluindo fila, histórico, atribuição,
-              regras de SLA e gestão de assinatura.
+              O <strong>Flux</strong> é uma plataforma web de organização de atendimentos e demandas vinculadas a canais de
+              comunicação (como WhatsApp), incluindo fila compartilhada, histórico, atribuição, regras de SLA e gestão de
+              assinatura. Ao criar conta ou usar a plataforma, você concorda com estes Termos e com a Política de
+              Privacidade acima.
             </p>
           </SectionCard>
 
-          <SectionCard icon={Users} title="2. Cadastro, Conta e Fase de Validação">
-            <ul className="list-disc pl-5 space-y-2">
-              <li>
-                O usuário é responsável pela veracidade das informações de cadastro e pela confidencialidade de suas
-                credenciais.
-              </li>
-              <li>
-                Durante períodos de teste, validação ou planos gratuitos/avaliativos, funcionalidades, limites e
-                disponibilidades podem estar sujeitos a ajustes, cotas do plano ou alterações sem prejuízo da
-                transparência ao usuário.
-              </li>
+          <SectionCard icon={Users} title="2. Conta, cadastro e teste grátis">
+            <ul className="list-disc space-y-2 pl-5">
+              <li>O usuário responde pela veracidade dos dados de cadastro e pela confidencialidade de suas credenciais.</li>
+              <li>O teste grátis de 7 dias oferece acesso completo sem cartão; ao fim, a organização escolhe um plano ou entra nas regras de carência/suspensão abaixo.</li>
+              <li>Papéis (owner, admin, gerente, operador, agente de IA) definem permissões; a organização responde pelos atos de seus membros.</li>
             </ul>
           </SectionCard>
 
-          <SectionCard icon={ShieldCheck} title="3. Responsabilidade pelo Uso do WhatsApp e Base Legal">
-            <ul className="list-disc pl-5 space-y-2">
-              <li>
-                A organização usuária declara que possui <strong>base legal adequada</strong> para se comunicar com
-                seus contatos pelo WhatsApp e é a única responsável pelo conteúdo das mensagens, mídias e comunicações
-                enviadas por sua equipe.
-              </li>
-              <li>
-                É proibido utilizar o Fluxo para envio de spam, mensagens não solicitadas em massa, práticas ilícitas
-                ou violação de políticas da plataforma de mensageria e da legislação vigente (incluindo a LGPD).
-              </li>
+          <SectionCard id="planos-termos" icon={CreditCard} title="3. Planos, cotas, carência e suspensão">
+            <ul className="list-disc space-y-2 pl-5">
+              <li><strong>Cotas:</strong> cada plano define operadores e volume de mensagens do ciclo. O estouro da cota de mensagens pausa apenas o <strong>recebimento</strong> de novas mensagens; envio, respostas e histórico continuam liberados até o próximo ciclo. Não é suspensão da conta.</li>
+              <li><strong>Carência:</strong> falha de pagamento abre carência de 7 dias em modo leitura — a equipe responde conversas existentes, mas não recebe mensagens novas nem cria demandas. Regularizando, tudo volta.</li>
+              <li><strong>Suspensão:</strong> ao fim da carência sem regularização, o acesso é suspenso até a quitação.</li>
+              <li><strong>Cancelamento:</strong> mantém o acesso até o fim do período já pago; sem cobrança-surpresa posterior.</li>
+              <li><strong>Troca de plano:</strong> upgrade/downgrade preserva o acesso durante a migração; não há downgrade automático por falha de pagamento.</li>
             </ul>
           </SectionCard>
 
-          <SectionCard icon={Clock} title="4. Planos, Cotas, Carência e Suspensão">
-            <ul className="list-disc pl-5 space-y-2">
-              <li>
-                O uso da plataforma segue os limites do plano vigente (como quantidade de membros/operadores e volume
-                de mensagens do ciclo).
-              </li>
-              <li>
-                Atrasos ou falhas no pagamento podem levar a períodos de carência (com restrição de uso, como modo
-                somente leitura) ou suspensão do acesso, conforme as regras da assinatura.
-              </li>
+          <SectionCard id="responsabilidade" icon={AlertTriangle} title="4. Responsabilidade pelo uso do WhatsApp e base legal">
+            <ul className="list-disc space-y-2 pl-5">
+              <li>A organização declara possuir <strong>base legal adequada</strong> para se comunicar com seus contatos e é a única responsável pelo conteúdo das mensagens, mídias e comunicações enviadas por sua equipe.</li>
+              <li>É proibido usar o Flux para spam, mensagens não solicitadas em massa, práticas ilícitas ou violação de políticas da plataforma de mensageria e da legislação (incluindo a LGPD).</li>
+              <li>Recursos de alto volume (como atendimento em grupos) são opt-in: só entram se a organização ativar explicitamente, ciente do volume de mensagens e mídias.</li>
             </ul>
           </SectionCard>
 
-          <SectionCard icon={Database} title="5. Disponibilidade e Integrações de Terceiros">
-            <ul className="list-disc pl-5 space-y-2">
-              <li>
-                O Fluxo depende de serviços de terceiros (como infraestrutura de nuvem, gateway de WhatsApp e meio de
-                pagamento). Indisponibilidades, bloqueios ou mudanças de API de terceiros podem afetar temporariamente
-                o envio, o recebimento ou o carregamento de mídias.
-              </li>
-              <li>
-                O sistema é fornecido "no estado em que se encontra" (<em>as is</em>), com esforços contínuos de
-                estabilidade e segurança, sem garantia de operação ininterrupta livre de falhas externas.
-              </li>
+          <SectionCard icon={Globe} title="5. Disponibilidade e integrações de terceiros">
+            <ul className="list-disc space-y-2 pl-5">
+              <li>O Flux depende de provedores de nuvem, gateway de WhatsApp e meio de pagamento. Indisponibilidades, bloqueios ou mudanças de API de terceiros podem afetar temporariamente envio, recebimento ou carregamento de mídias.</li>
+              <li>A plataforma é fornecida "no estado em que se encontra", com esforço contínuo de estabilidade e segurança, sem garantia de operação ininterrupta livre de falhas externas.</li>
             </ul>
           </SectionCard>
 
-          <SectionCard icon={Lock} title="6. Propriedade Intelectual e Encerramento">
-            <ul className="list-disc pl-5 space-y-2">
-              <li>
-                Todo o código, layout, marca e estrutura do Fluxo pertencem aos seus criadores; os dados e conteúdos
-                inseridos pela organização permanecem sob responsabilidade/titularidade conforme a relação da
-                organização com seus contatos.
-              </li>
-              <li>
-                O usuário pode encerrar sua conta/organização, e o Fluxo pode suspender ou encerrar contas em caso de
-                violação destes Termos ou uso abusivo.
-              </li>
+          <SectionCard icon={Lock} title="6. Propriedade intelectual e conteúdo">
+            <ul className="list-disc space-y-2 pl-5">
+              <li>Código, layout, marca e estrutura do Flux pertencem aos seus criadores; é concedida licença de uso limitada, não exclusiva e intransferível durante a vigência da assinatura.</li>
+              <li>Os dados e conteúdos inseridos pela organização (conversas, contatos, macros, notas) permanecem de titularidade da organização, conforme sua relação com seus contatos.</li>
+            </ul>
+          </SectionCard>
+
+          <SectionCard icon={Scale} title="7. Limitação de responsabilidade">
+            <p>
+              Na máxima extensão permitida pela lei, o Flux não responde por danos indiretos, lucros cessantes ou perda de
+              dados decorrente de uso indevido, de falha de terceiros ou de caso fortuito/força maior. A responsabilidade
+              total, quando devida, limita-se ao valor efetivamente pago pela organização nos 12 meses anteriores ao evento.
+              Nada aqui exclui responsabilidade por dolo ou por violação de direitos do titular de dados.
+            </p>
+          </SectionCard>
+
+          <SectionCard id="encerramento" icon={Clock} title="8. Encerramento, exclusão e foro">
+            <ul className="list-disc space-y-2 pl-5">
+              <li>A organização pode encerrar a conta a qualquer momento; os dados vinculados são removidos em cascata conforme a Política de Privacidade.</li>
+              <li>O Flux pode suspender ou encerrar contas em caso de violação destes Termos ou uso abusivo, com aviso quando cabível.</li>
+              <li>Aplica-se a legislação da República Federativa do Brasil; fica eleito o foro do domicílio do usuário para dirimir controvérsias de consumo.</li>
             </ul>
           </SectionCard>
         </div>
 
-        {/* Footer da página */}
-        <div className="pt-8 border-t border-border text-center text-xs text-muted-foreground">
-          <p>
-            Esta página foi gerada com base nas melhores práticas de conformidade LGPD para SaaS B2B. Para dúvidas
-            jurídicas específicas, consulte um advogado especializado.
+        {/* Footer institucional */}
+        <footer className="border-t border-border pt-8">
+          <div className="flex flex-col items-start justify-between gap-4 text-xs text-muted-foreground sm:flex-row sm:items-center">
+            <span>© {new Date().getFullYear()} Flux — atendimento compartilhado para equipes.</span>
+            <div className="flex items-center gap-4">
+              <Link to="/ajuda" className="transition hover:text-foreground">Ajuda & Documentação</Link>
+              <a href="#privacidade" className="transition hover:text-foreground">Privacidade</a>
+              <a href="#termos" className="transition hover:text-foreground">Termos</a>
+              <a href={`mailto:${DPO_EMAIL}`} className="transition hover:text-foreground">DPO</a>
+            </div>
+          </div>
+          <p className="mt-3 text-[11px] text-muted-foreground/70">
+            Documento de conformidade LGPD (Lei 13.709/2018), versão {VERSION}, vigente desde {EFFECTIVE_DATE}.
+            Dúvidas sobre seus direitos: <a href={`mailto:${DPO_EMAIL}`} className="underline underline-offset-2">{DPO_EMAIL}</a>.
           </p>
-          <p className="mt-2">
-            © {new Date().getFullYear()} Flux — Atendimento compartilhado para equipes
-          </p>
-        </div>
+        </footer>
       </main>
     </div>
   );

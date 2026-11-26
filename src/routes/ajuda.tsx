@@ -333,9 +333,10 @@ function AjudaPage() {
                   apaga nada — as demandas só passam a esperar alguém assumir.
                 </>,
                 <>
-                  <strong className="text-foreground">Padrão e limites:</strong> toda empresa já
-                  nascem com a distribuição ligada no Revezamento. E a automação nunca troca o dono de uma demanda
-                  que já tem responsável — ela só atua em demandas novas sem dono.
+                  <strong className="text-foreground">Padrão e limites:</strong> empresas novas já
+                  nascem com a distribuição ligada no Revezamento; empresas que já existiam mantêm
+                  a escolha que tinham. A automação nunca troca o dono de uma demanda que já tem
+                  responsável — ela só atua em demandas novas sem dono.
                 </>,
               ]}
             />
@@ -424,6 +425,11 @@ function AjudaPage() {
                   Com chave Pix cadastrada (Configurações → Financeiro), o Chat monta a
                   mensagem de cobrança com a chave da empresa.
                 </>,
+                <>
+                  <strong className="text-foreground">Enviar feedback:</strong> no menu do avatar,
+                  “Enviar feedback” abre uma avaliação rápida (nota, etiquetas e comentário) usada
+                  para priorizar melhorias. O contato de retorno só acontece se você autorizar.
+                </>,
               ]}
             />
           </Section>
@@ -493,9 +499,10 @@ function AjudaPage() {
                   apaga histórico.
                 </>,
                 <>
-                  Grupos entram somente se a organização{" "}
-                  <strong className="text-foreground">ativar explicitamente</strong> (Configurações
-                  → Canais), com aviso de volume: grupo é fluxo alto de mensagens e mídia.
+                  Atendimento em grupos está <strong className="text-foreground">em preparação</strong>{" "}
+                  (opt-in). Quando liberado, só entra se a organização ativar explicitamente
+                  (Configurações → Canais), com aviso de volume: grupo é fluxo alto de mensagens e
+                  mídia.
                 </>,
                 <>
                   Mídias recebidas ficam em armazenamento privado com acesso temporário assinado —
@@ -523,6 +530,11 @@ function AjudaPage() {
                   Fatura vencida abre <strong className="text-foreground">carência de 7 dias</strong>:
                   a equipe continua respondendo conversas existentes, mas não recebe mensagens
                   novas nem cria demandas. Regularizando, tudo volta.
+                </>,
+                <>
+                  Estouro da <strong className="text-foreground">cota de mensagens</strong> do plano
+                  pausa apenas o recebimento de novas mensagens; envio, respostas e histórico
+                  continuam liberados até o próximo ciclo. Não é suspensão da conta.
                 </>,
                 <>
                   Em Configurações → Financeiro você vê plano ativo, próxima cobrança, histórico
