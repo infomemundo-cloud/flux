@@ -610,35 +610,49 @@ function FilaPage() {
             </div>
           )}
 
-          {/* Área Principal de Detalhes da Demanda */}
-          <div className={`${hasSelection ? "block" : "hidden sm:block"} flex-1 min-w-0 bg-card/20 overflow-hidden scrollbar-thin`}>
-            {hasSelection ? (
-              <Outlet />
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center gap-4 p-8 text-center">
-                <div className="relative">
-                  <div className="absolute inset-0 -z-10 translate-y-3 scale-90 rounded-3xl bg-primary/10 blur-2xl" />
-                  <div className="grid h-20 w-20 place-items-center rounded-3xl bg-card shadow-[var(--shadow-pop)] ring-1 ring-border/50">
-                    <MessageSquareText className="h-9 w-9 text-primary" strokeWidth={1.6} />
-                  </div>
-                </div>
-                <div className="flex flex-col items-center">
-                  <h2 className="text-lg font-semibold tracking-tight text-foreground">
-                    Selecione uma demanda para começar
-                  </h2>
-                                <p className="mx-auto mt-1.5 max-w-[300px] text-center text-sm leading-relaxed text-muted-foreground">
-                Escolha uma conversa na lista à esquerda para ver o histórico e responder com contexto.
-              </p>
-              <a
-                href="/ajuda#atendimento"
-                className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
-              >
-                Guia rápido de atendimento
-              </a>
-                </div>
-              </div>
-            )}
-          </div>
+          
+{/* Área Principal de Detalhes da Demanda */}
+<div
+  className={`${
+    hasSelection ? "block" : "hidden sm:flex"
+  } flex-1 min-w-0 bg-card/20 overflow-hidden scrollbar-thin`}
+>
+  {hasSelection ? (
+    <Outlet />
+  ) : (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-6 text-center">
+      {/* Ícone ilustrativo */}
+      <div className="mb-1 grid h-16 w-16 place-items-center rounded-2xl bg-card ring-1 ring-border/60 shadow-sm">
+        <MessageSquareText
+          className="h-8 w-8 text-primary/80"
+          strokeWidth={1.5}
+        />
+      </div>
+
+      {/* Mensagem principal */}
+      <div className="flex flex-col items-center gap-1.5">
+        <h2 className="text-base font-semibold tracking-tight text-foreground">
+          Vamos começar?
+        </h2>
+
+        <p className="max-w-[320px] text-sm leading-relaxed text-muted-foreground">
+          Selecione uma conversa na lista ao lado para visualizar o histórico
+          e continuar o atendimento.
+        </p>
+      </div>
+
+      {/* Ajuda contextual */}
+      <a
+        href="/ajuda#atendimento"
+        className="mt-2 inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      >
+        <MessageSquareText className="h-3.5 w-3.5" strokeWidth={1.7} />
+        Como funciona o atendimento?
+      </a>
+    </div>
+  )}
+</div>
+
 
           {showNew && org && <NewDemandaModal orgId={org.id} onClose={() => setShowNew(false)} />}
         </div>

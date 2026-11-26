@@ -39,6 +39,7 @@ const TOC = [
   { id: "onde", label: "Onde fazer o quê" },
   { id: "comeco", label: "Primeiros passos" },
   { id: "fila", label: "Fila & escopos" },
+  { id: "distribuicao", label: "Distribuição & órfãs" },
   { id: "estados", label: "Estados & prioridade" },
   { id: "sla", label: "SLA & alertas" },
   { id: "atendimento", label: "Atendimento" },
@@ -61,7 +62,8 @@ const ONDE_FAZER = [
   ["Mudar estado, prioridade, prazo ou responsável", "Demanda → trilho Propriedades", "Quem atende"],
   ["Editar notas, etiquetas, empresa e e-mail do contato", "Demanda → trilho → abas Contato / Notas", "Quem atende"],
   ["Ver alertas de SLA", "Sidebar → Alertas SLA", "Todos os membros"],
-  ["Definir regra de SLA e distribuição automática", "Configurações → Atendimento", "Owner/Admin"],
+  ["Definir a regra de SLA da empresa", "Configurações → Atendimento (card de SLA)", "Owner/Admin"],
+  ["Ligar/desligar a distribuição automática ou trocar o modo", "Configurações → Atendimento → Distribuição Automática de Demandas", "Owner/Admin"],
   ["Liberar atendimento em grupos", "Configurações → Canais & Integrações (com aviso de volume)", "Owner/Admin"],
   ["Cadastrar chave Pix da empresa", "Configurações → Financeiro → Cobranças Pix", "Owner/Admin"],
   ["Ver plano, faturas e próxima cobrança", "Configurações → Financeiro", "Owner/Admin"],
@@ -271,8 +273,15 @@ function AjudaPage() {
                   (demandas atribuídas a você).
                 </>,
                 <>
-                  <strong className="text-foreground">Órfãs:</strong> demandas sem responsável —
-                  o “mercado” de auto-atribuição. Abra e use “Atribuir pra mim”.
+                  <strong className="text-foreground">Órfãs:</strong> demandas que ainda não têm
+                  dono — estão na mesa, disponíveis para qualquer pessoa da equipe assumir. Abra
+                  e use “Atribuir pra mim”, ou um gestor atribui a alguém. Elas aparecem por
+                  motivos simples (distribuição desligada, equipe ainda sem operador, responsável
+                  removido…) — a seção{" "}
+                  <a href="#distribuicao" className="font-medium text-primary hover:underline">
+                    Distribuição & órfãs
+                  </a>{" "}
+                  explica cada caso.
                 </>,
                 <>
                   <strong className="text-foreground">Atrasadas:</strong> corte de SLA estourado
@@ -282,6 +291,51 @@ function AjudaPage() {
                 <>
                   Leitura rápida do card: borda colorida = estado; ponto azul no avatar = não
                   lida; chip à direita = SLA estourado, prioridade alta/urgente ou estado.
+                </>,
+              ]}
+            />
+          </Section>
+
+          <Section id="distribuicao" icon={Users} title="Distribuição automática & demandas órfãs">
+            <Bullets
+              items={[
+                <>
+                  <strong className="text-foreground">O que é:</strong> quando uma conversa nova
+                  chega pelo WhatsApp, o Flux pode entregá-la sozinha a um operador, sem ninguém
+                  precisar puxar. É a{" "}
+                  <strong className="text-foreground">Distribuição Automática de Demandas</strong>.
+                </>,
+                <>
+                  <strong className="text-foreground">Dois modos:</strong>{" "}
+                  <strong className="text-foreground">Revezamento</strong> (rodízio: cada demanda
+                  nova vai para o próximo operador da fila, um de cada vez) e{" "}
+                  <strong className="text-foreground">Menor carga</strong> (vai para quem tem menos
+                  demandas abertas no momento).
+                </>,
+                <>
+                  <strong className="text-foreground">Quem recebe:</strong> só quem tem o papel{" "}
+                  <strong className="text-foreground">Operador</strong>. Dono, administradores e
+                  gerentes não entram no rodízio — eles acompanham e distribuem.
+                </>,
+                <>
+                  <strong className="text-foreground">Por que uma demanda fica órfã:</strong>{" "}
+                  (1) a distribuição está desligada nas configurações; (2) está ligada, mas a
+                  equipe ainda não tem nenhum operador (empresa nova só com o dono, por exemplo);
+                  (3) alguém removeu o responsável manualmente; (4) demandas criadas à mão pelo
+                  botão + nascem sem dono — a automação cuida das chegadas do WhatsApp, nas
+                  manuais você atribui no trilho ou alguém puxa na aba Órfãs. Órfã não é erro: é
+                  o estado “disponível para assumir”.
+                </>,
+                <>
+                  <strong className="text-foreground">Onde mudar:</strong> Configurações →
+                  Atendimento → Distribuição Automática de Demandas (só dono/admin). Liga,
+                  desliga e troca o modo ali; vale na hora para as próximas chegadas. Desligar não
+                  apaga nada — as demandas só passam a esperar alguém assumir.
+                </>,
+                <>
+                  <strong className="text-foreground">Padrão e limites:</strong> toda empresa já
+                  nascem com a distribuição ligada no Revezamento. E a automação nunca troca o dono de uma demanda
+                  que já tem responsável — ela só atua em demandas novas sem dono.
                 </>,
               ]}
             />
