@@ -157,6 +157,12 @@ function PrivacyPage() {
                 administrativa e logs de entrega/erros de webhook e integração para segurança, estabilidade e
                 prevenção a fraudes.
               </li>
+              <li>
+                <strong>Feedback de produto (opcional):</strong> nota de 1 a 5, etiquetas selecionadas,
+                comentário livre (até 1.000 caracteres), resposta à pergunta de satisfação e a tela em que
+                você estava (sem identificadores de conversas). Associado à sua conta e organização apenas
+                para melhoria do produto; contato de follow-up somente com seu opt-in explícito.
+              </li>
             </ul>
           </SectionCard>
 
@@ -173,6 +179,11 @@ function PrivacyPage() {
               <li>
                 <strong>Legítimo interesse:</strong> garantir segurança da plataforma, prevenir abuso/fraude,
                 diagnosticar falhas e manter a integridade operacional.
+              </li>
+              <li>
+                <strong>Melhoria do produto (feedback):</strong> priorizar correções e funcionalidades a partir
+                da sua avaliação voluntária. Retenção de até 24 meses ou até pedido de exclusão (anonimização
+                dos agregados); você pode excluir seu feedback a qualquer momento pela própria conta.
               </li>
             </ul>
           </SectionCard>

@@ -92,3 +92,108 @@ export const submitFeedback = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+/** Memo 60s por (org, usuário) — elegibilidade não precisa de tempo real (§2.4). */
+const nudgeMemo = new Map<string, { at: number; value: NudgeState }>();
+interface NudgeState {
+  enabled: boolean;
+  eligible: boolean;
+  dismissed: boolean;
+  responded: boolean;
+}
+
+/**
+ * Estado do nudge (9.3). "Respondido" deriva da existência de linha própria em
+ * product_feedbacks (zero coluna extra); dismiss persiste em feedback_nudge_state.
+ * Marcos: ≥5 demandas concluídas COMO responsável OU ≥3 dias distintos de
+ * atividade em demanda_events. Supressões de acesso/onboarding ficam no client
+ * (hierarquia de banners da Fase 10), aqui só elegibilidade + flag.
+ */
+export const getFeedbackNudgeState = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ orgId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const userId = context.userId;
+    await assertMember(supabaseAdmin, data.orgId, userId);
+
+    const key = `${data.orgId}:${userId}`;
+    const cached = nudgeMemo.get(key);
+    if (cached && Date.now() - cached.at < 60_000) return cached.value;
+
+    const { data: flag } = await supabaseAdmin
+      .from("feature_flags")
+      .select("id, key, description, default_state, rollout_percent, enabled_for_tags, active")
+      .eq("key", "product_feedback")
+      .maybeSingle();
+    let enabled = false;
+    if (flag) {
+      const { data: org } = await supabaseAdmin
+        .from("organizations")
+        .select("tags")
+        .eq("id", data.orgId)
+        .maybeSingle();
+      const { data: ov } = await supabaseAdmin
+        .from("feature_flag_overrides")
+        .select("flag_id, enabled")
+        .eq("org_id", data.orgId);
+      const ctx: FlagContext = {
+        orgId: data.orgId,
+        orgTags: Array.isArray(org?.tags) ? (org!.tags as string[]) : [],
+        overridesByFlagId: Object.fromEntries((ov ?? []).map((o) => [o.flag_id, o.enabled])),
+      };
+      enabled = evaluateFlag(flag as FlagDefinition, ctx).enabled;
+    }
+
+    const { count: respondedCount } = await supabaseAdmin
+      .from("product_feedbacks")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId);
+    const { data: st } = await supabaseAdmin
+      .from("feedback_nudge_state")
+      .select("dismissed_at")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const { count: doneCount } = await supabaseAdmin
+      .from("demandas")
+      .select("id", { count: "exact", head: true })
+      .eq("org_id", data.orgId)
+      .eq("assignee_id", userId)
+      .eq("state", "concluido");
+
+    let activeDays = 0;
+    if ((doneCount ?? 0) < 5) {
+      const { data: ev } = await supabaseAdmin
+        .from("demanda_events")
+        .select("created_at")
+        .eq("org_id", data.orgId)
+        .eq("actor_id", userId)
+        .limit(500);
+      activeDays = new Set((ev ?? []).map((e) => e.created_at.slice(0, 10))).size;
+    }
+
+    const value: NudgeState = {
+      enabled,
+      eligible: (doneCount ?? 0) >= 5 || activeDays >= 3,
+      dismissed: !!st?.dismissed_at,
+      responded: (respondedCount ?? 0) > 0,
+    };
+    nudgeMemo.set(key, { at: Date.now(), value });
+    return value;
+  });
+
+/** Dismiss persistente (máx. 1 vez por usuário). Idempotente. */
+export const dismissFeedbackNudge = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin
+      .from("feedback_nudge_state")
+      .upsert(
+        { user_id: context.userId, dismissed_at: new Date().toISOString() },
+        { onConflict: "user_id" },
+      );
+    if (error) throw new Error(error.message);
+    nudgeMemo.clear();
+    return { ok: true };
+  });

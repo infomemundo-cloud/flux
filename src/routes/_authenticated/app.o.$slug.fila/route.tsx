@@ -32,6 +32,7 @@ import { resolveContactName } from "@/lib/demandas/resolve-contact-name";
 import { ContactAvatar } from "@/components/contact-avatar";
 import { FilaHeaderToolbar, type FilaTab } from "./-components/fila-header-toolbar";
 import { AccountAccessBanner } from "@/components/account-access-banner";
+import { FeedbackNudgeBanner } from "@/components/feedback-nudge-banner";
 import { getAccountAccess } from "@/lib/billing/account-access";
 
 export const Route = createFileRoute("/_authenticated/app/o/$slug/fila")({
@@ -445,6 +446,13 @@ function FilaPage() {
     <FilaSidebarContext.Provider value={{ collapsed, setCollapsed }}>
       <div className="flex h-[calc(100dvh-8rem)] sm:h-screen flex-col overflow-hidden">
         <AccountAccessBanner orgId={org?.id ?? null} slug={slug} />
+        {/* Nudge no FIM da hierarquia (access > quota > onboarding > nudge):
+            suprimido com onboarding ativo (setup card / WhatsApp desconectado)
+            — regra anti-conflito registrada na Fase 10. */}
+        <FeedbackNudgeBanner
+          orgId={org?.id ?? null}
+          suppressed={showSetupCard || waStatus !== "connected"}
+        />
         <div className="relative flex flex-1 overflow-hidden">
           {/* Botão flutuante pra reabrir — só existe quando a fila está recolhida. */}
           {collapsed && (
