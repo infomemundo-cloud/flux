@@ -716,6 +716,24 @@ export type Database = {
         }
         Relationships: []
       }
+      feedback_nudge_state: {
+        Row: {
+          created_at: string
+          dismissed_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          dismissed_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          dismissed_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       invites: {
         Row: {
           approved_at: string | null
@@ -1029,6 +1047,72 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      product_feedbacks: {
+        Row: {
+          allow_followup: boolean
+          comment: string | null
+          consent_accepted_at: string
+          created_at: string
+          current_route: string | null
+          followed_up_at: string | null
+          id: string
+          org_id: string | null
+          pmf_score: string | null
+          rating: number
+          surface: string
+          tags: string[]
+          tier_code: string | null
+          user_id: string | null
+        }
+        Insert: {
+          allow_followup?: boolean
+          comment?: string | null
+          consent_accepted_at?: string
+          created_at?: string
+          current_route?: string | null
+          followed_up_at?: string | null
+          id?: string
+          org_id?: string | null
+          pmf_score?: string | null
+          rating: number
+          surface?: string
+          tags?: string[]
+          tier_code?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          allow_followup?: boolean
+          comment?: string | null
+          consent_accepted_at?: string
+          created_at?: string
+          current_route?: string | null
+          followed_up_at?: string | null
+          id?: string
+          org_id?: string | null
+          pmf_score?: string | null
+          rating?: number
+          surface?: string
+          tags?: string[]
+          tier_code?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_feedbacks_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "org_access_effective"
+            referencedColumns: ["org_id"]
+          },
+          {
+            foreignKeyName: "product_feedbacks_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {

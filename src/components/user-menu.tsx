@@ -12,9 +12,25 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { useTheme, THEMES, type Theme } from "@/lib/theme";
-import { useLocation } from "@tanstack/react-router";
-import { BookOpen, ChevronsUpDown, LogOut, Settings, Sun, Moon, Building2, Check } from "lucide-react";
+import { useLocation, useParams } from "@tanstack/react-router";
+import {
+  BookOpen,
+  ChevronsUpDown,
+  LogOut,
+  MessageSquareHeart,
+  Settings,
+  Sun,
+  Moon,
+  Building2,
+  Check,
+} from "lucide-react";
+import { getOrgBySlug } from "@/lib/orgs.functions";
+import { evaluateFeatureFlags } from "@/lib/feature-flag.functions";
+import { FeedbackDialog } from "@/components/feedback-dialog";
 
 const THEME_ICON: Record<Theme, typeof Sun> = { light: Sun, dark: Moon, corporate: Building2 };
 
@@ -89,6 +105,31 @@ export function UserMenu({
 }) {
   const { theme } = useTheme();
   const location = useLocation();
+  // Feedback (Fase 9.2): org vem do cache compartilhado ["org", slug] —
+  // mesma queryKey do layout/da fila, zero fetch extra e zero prop nova
+  // nos callers (sidebar desktop + header mobile). Fora de rota de org,
+  // slug é undefined → query desabilitada → item não existe.
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const { slug } = useParams({ strict: false }) as { slug?: string };
+  const orgFn = useServerFn(getOrgBySlug);
+  const { data: org } = useQuery({
+    queryKey: ["org", slug],
+    queryFn: () => orgFn({ data: { slug: slug! } }),
+    enabled: !!slug,
+  });
+  const orgId = org?.id ?? null;
+  // Gate da flag (9.5): mesma serverFn do portal/simulador; memo 60s no
+  // servidor + staleTime 5min aqui = propagação documentada da Fase 1.9.
+  const evalFn = useServerFn(evaluateFeatureFlags);
+  const { data: flagEval } = useQuery({
+    queryKey: ["feature-flags", orgId],
+    queryFn: () => evalFn({ data: { orgId: orgId! } }),
+    enabled: !!orgId,
+    staleTime: 5 * 60_000,
+  });
+  const canFeedback =
+    !!orgId &&
+    (flagEval?.flags ?? []).some((f) => f.key === "product_feedback" && f.enabled);
   const initials = name
     .split(/[\s._@-]+/)
     .filter(Boolean)
@@ -175,6 +216,17 @@ export function UserMenu({
           </a>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
+        {canFeedback && (
+          <>
+            <DropdownMenuItem
+              onClick={() => setFeedbackOpen(true)}
+              className="cursor-pointer"
+            >
+              <MessageSquareHeart className="h-4 w-4" /> Enviar feedback
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         {settingsTo && (
           <>
             <DropdownMenuItem asChild>
@@ -192,6 +244,16 @@ export function UserMenu({
           <LogOut className="h-4 w-4" /> Sair
         </DropdownMenuItem>
       </DropdownMenuContent>
+      {/* Dialog portalizado: vive no root do DropdownMenu (provider),
+          não dentro do Content — sobrevive ao fechar do menu. */}
+      {canFeedback && orgId && (
+        <FeedbackDialog
+          open={feedbackOpen}
+          onOpenChange={setFeedbackOpen}
+          orgId={orgId}
+          surface="menu"
+        />
+      )}
     </DropdownMenu>
   );
 }

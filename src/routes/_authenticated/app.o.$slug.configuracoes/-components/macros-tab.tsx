@@ -196,10 +196,16 @@ export function MacrosTab({ orgId }: { orgId: string }) {
                   </span>
                   <div>
                     <div className="text-xs font-semibold">Nenhuma macro ainda</div>
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      Crie a primeira resposta rápida pra equipe ganhar velocidade.
-                    </p>
-                  </div>
+                                    <p className="mt-1 text-[11px] text-muted-foreground">
+                  Crie a primeira resposta rápida pra equipe ganhar velocidade.
+                </p>
+                <a
+                  href="/ajuda#atendimento"
+                  className="mt-2 inline-block text-[11px] font-semibold text-primary hover:underline"
+                >
+                  Ver como as macros funcionam no atendimento
+                </a>
+              </div>
                   <button
                     type="button"
                     onClick={startCreate}

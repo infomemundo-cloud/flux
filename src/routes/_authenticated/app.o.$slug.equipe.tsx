@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { friendlyError } from "@/lib/friendly-error";
 import { Copy, Check, X, Trash2, UserPlus, Bot, Users, MailPlus, AlertTriangle } from "lucide-react";
 import { SectionTitle, StatCard } from "@/components/section-ui";
+import { InfoTip } from "@/components/info-tip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 // 👇 NOVAS IMPORTAÇÕES PARA GATE DE OPERADORES
 import { getAccountAccess } from "@/lib/billing/account-access";
@@ -211,6 +212,7 @@ function EquipePage() {
     <div className="p-4 sm:p-6 pb-24 sm:pb-6 max-w-4xl">
       <h1 className="flex items-center gap-2 text-xl sm:text-2xl font-bold tracking-tight">
         <Users className="h-5 w-5 text-primary" strokeWidth={2.2} /> Gestão de Equipe
+        <InfoTip text="Owner/Admin: tudo, inclusive Configurações e exclusão de demandas. Gerente: convida, aprova e distribui, sem entrar em Configurações. Operador: atende pela fila (suas + órfãs). Agente de IA: automações; não conclui demandas." />
       </h1>
       <p className="text-xs sm:text-sm text-muted-foreground">Convide pessoas, aprove solicitações e defina papéis.</p>
 
@@ -285,7 +287,14 @@ function EquipePage() {
         <section className="mt-6">
           <SectionTitle icon={MailPlus} title="Convites" hint="Links gerados e solicitações aguardando aprovação." />
           <div className="card-elevated overflow-hidden">
-            {(invites ?? []).length === 0 && <div className="p-4 text-sm text-muted-foreground">Nenhum convite.</div>}
+            {(invites ?? []).length === 0 && (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 p-4 text-sm text-muted-foreground">
+            Nenhum convite ainda.
+            <a href="/ajuda#equipe" className="text-xs font-semibold text-primary hover:underline">
+              Como funcionam convites, papéis e a cota do plano
+            </a>
+          </div>
+        )}
             {invites?.map((inv: any) => {
               const link = `${origin}/convite/${inv.token}`;
               return (

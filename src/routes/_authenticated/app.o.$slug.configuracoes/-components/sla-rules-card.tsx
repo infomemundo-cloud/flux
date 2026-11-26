@@ -92,7 +92,7 @@ export function SlaRulesCard({
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <h3 className="text-sm font-semibold">Prazos de Inatividade (SLA)</h3>
-              <InfoTip text="O SLA mede o tempo máximo que uma demanda pode ficar sem nenhuma atualização (mensagem ou ação da equipe). Ao ultrapassar o limite, ela é tratada como atrasada em todo o painel." />
+              <InfoTip text="SLA de inatividade = regra da organização: tempo máximo que uma demanda fica sem nenhuma movimentação da equipe; estourou, entra nos Alertas e na aba Atrasadas. É diferente do Prazo individual de cada demanda (campo Prazo no trilho), que é a data combinada de resolução daquela conversa. Um não substitui o outro." />
             </div>
             <p className="mt-0.5 text-[11px] text-muted-foreground">
               Defina o tempo limite para uma demanda ser considerada estourada no painel e nos alertas da equipe.

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { AlertTriangle, Gauge } from "lucide-react";
+import { InfoTip } from "@/components/info-tip";
 import { getAccountAccess } from "@/lib/billing/account-access";
 import { getMessageQuota } from "@/lib/billing/quota";
 
@@ -72,13 +73,18 @@ export function MessageQuotaBanner({ orgId, slug }: { orgId: string | null; slug
             ({fmt(quota.current)} de {fmt(quota.limit ?? 0)}). No limite, o recebimento de mensagens no WhatsApp pausa até o próximo ciclo.
 
           </>
-        )}{" "}
-        <button
-          type="button"
-          onClick={() => {
-            // Mesmo padrão do CTA de upgrade em equipe.tsx (TeamCapacityIndicator).
-            window.location.href = `/app/o/${slug}/configuracoes?tab=financeiro`;
-          }}
+      )}{" "}
+      {/* Wrapper inline-flex: o button raiz do InfoTip é display:grid e
+          quebraria a linha do texto se entrasse nu no fluxo. */}
+      <span className="inline-flex align-middle">
+        <InfoTip text="A cota soma mensagens recebidas e enviadas dentro do ciclo de cobrança atual (ou do período do trial). Em 100%, o recebimento de mensagens novas pausa até o próximo ciclo — envios, respostas e histórico continuam liberados. Não é suspensão da conta: é limite de volume do plano." />
+      </span>{" "}
+      <button
+        type="button"
+        onClick={() => {
+          // Mesmo padrão do CTA de upgrade em equipe.tsx (TeamCapacityIndicator).
+          window.location.href = `/app/o/${slug}/configuracoes?tab=financeiro`;
+        }}
           className="font-semibold underline underline-offset-2 hover:opacity-80"
         >
           Ver planos

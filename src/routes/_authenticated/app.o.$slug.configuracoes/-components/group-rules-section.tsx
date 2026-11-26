@@ -117,7 +117,7 @@ export function GroupRulesSection({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <h3 className="text-sm font-semibold">Atendimento em Grupos do WhatsApp</h3>
-            <InfoTip text="Quando ativado, conversas de grupos criam chamados com o nome do grupo e identificam o cliente que enviou a mensagem." />
+            <InfoTip text="Grupos ficam desligados por padrão de propósito: cada mensagem de grupo vira demanda na fila, com volume alto de mídias. Quando ativado, os chamados chegam com o nome do grupo e identificam quem enviou. Dá para desativar a qualquer momento sem perder histórico." />
 
             {/* Pill "Em breve" (neutro, idioma do UpcomingChannels) enquanto a
                 fase trava todos os tiers. O Badge violeta + Lock só volta se a
