@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
+  ArrowLeft,
   Banknote,
   Copy,
   Lock,
@@ -12,6 +13,7 @@ import {
   Search,
   Send,
   Slash,
+  Smile,
   Square,
   Trash2,
   X,
@@ -26,7 +28,7 @@ import {
   type QuickReply,
 } from "@/lib/quick-replies.functions";
 import { getOrgBySlug } from "@/lib/orgs.functions";
-import { EmojiPicker } from "./EmojiPicker";
+import { EmojiGrid, EmojiPicker } from "./EmojiPicker";
 import { MessageQuotaBanner } from "./MessageQuotaBanner";
 import { cn } from "@/lib/utils";
 
@@ -79,6 +81,7 @@ type DemandaComposerProps = {
   isPending: boolean;
   isUploading: boolean;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
+  onMobileFocus?: () => void;
 };
 
 /**
@@ -119,7 +122,33 @@ export function DemandaComposer({
   isPending,
   isUploading,
   textareaRef,
+  onMobileFocus,
 }: DemandaComposerProps) {
+  const [isMobile, setIsMobile] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    const sync = () => {
+      const mobile = mq.matches;
+      setIsMobile(mobile);
+      if (!mobile) {
+        setKeyboardOpen(false);
+        return;
+      }
+      const vv = window.visualViewport;
+      setKeyboardOpen(!!vv && vv.height < window.innerHeight - 100);
+    };
+    sync();
+    const vv = window.visualViewport;
+    mq.addEventListener("change", sync);
+    vv?.addEventListener("resize", sync);
+    return () => {
+      mq.removeEventListener("change", sync);
+      vv?.removeEventListener("resize", sync);
+    };
+  }, []);
+
   // Estado local reativo instantâneo para alternância de canais (0ms de latência)
   const [currentViaWhatsapp, setCurrentViaWhatsapp] = useState(viaWhatsapp);
   useEffect(() => {
@@ -145,6 +174,8 @@ export function DemandaComposer({
   const [macroCreating, setMacroCreating] = useState(false);
   const [macroLabel, setMacroLabel] = useState("");
   const [macroContent, setMacroContent] = useState("");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileTool, setMobileTool] = useState<"menu" | "macros" | "pix" | "emoji">("menu");
 
   const { data: macros } = useQuery({
     queryKey: ["quick-replies", orgId],
@@ -209,6 +240,8 @@ export function DemandaComposer({
   const pickMacro = (m: QuickReply) => {
     insertAtCursor(m.content);
     setMacroOpen(false);
+    setMobileMenuOpen(false);
+    setMobileTool("menu");
     setMacroQuery("");
   };
 
@@ -238,7 +271,21 @@ export function DemandaComposer({
     if (!pixKey) return;
     insertAtCursor(pixText);
     setPixOpen(false);
+    setMobileMenuOpen(false);
+    setMobileTool("menu");
   };
+
+  // Ajusta altura do textarea quando o texto muda programaticamente (envio/macro/Pix)
+  useEffect(() => {
+    const t = textareaRef.current;
+    if (!t) return;
+    if (!comment) {
+      t.style.height = "";
+      return;
+    }
+    t.style.height = "auto";
+    t.style.height = `${Math.min(t.scrollHeight, isMobile ? 116 : 160)}px`;
+  }, [comment, isMobile, textareaRef]);
 
   // ── Gravador ────────────────────────────────────────────────────
   const [recState, setRecState] = useState<"idle" | "recording">("idle");
@@ -373,14 +420,163 @@ export function DemandaComposer({
     input.click();
   };
 
+  const macroPopoverBody = macroCreating ? (
+    <div className="space-y-1.5">
+      <input
+        autoFocus
+        value={macroLabel}
+        onChange={(e) => setMacroLabel(e.target.value)}
+        placeholder="Nome da macro (ex.: boas-vindas)"
+        maxLength={60}
+        className="h-8 w-full rounded-md border border-border/60 bg-background px-2 text-[11px] outline-none transition focus:border-primary/50"
+      />
+      <textarea
+        value={macroContent}
+        onChange={(e) => setMacroContent(e.target.value)}
+        placeholder="Texto que será inserido no composer..."
+        rows={3}
+        maxLength={4000}
+        className="w-full resize-none rounded-md border border-border/60 bg-background p-2 text-[11px] outline-none transition focus:border-primary/50"
+      />
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => setMacroCreating(false)}
+          className="text-[10px] text-muted-foreground transition hover:text-foreground"
+        >
+          Voltar
+        </button>
+        <button
+          type="button"
+          disabled={!macroLabel.trim() || !macroContent.trim() || createMacro.isPending}
+          onClick={() =>
+            createMacro.mutate({
+              label: macroLabel.trim(),
+              content: macroContent.trim(),
+            })
+          }
+          className="h-7 rounded-md bg-primary px-2.5 text-[10px] font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-50"
+        >
+          {createMacro.isPending ? "Salvando..." : "Salvar macro"}
+        </button>
+      </div>
+    </div>
+  ) : (
+    <>
+      <div className="relative mb-1">
+        <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+        <input
+          autoFocus
+          value={macroQuery}
+          onChange={(e) => setMacroQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && filteredMacros[0]) {
+              e.preventDefault();
+              pickMacro(filteredMacros[0]);
+            }
+          }}
+          placeholder="Buscar macro..."
+          className="h-8 w-full rounded-md border border-border/60 bg-background pl-7 pr-2 text-[11px] outline-none transition focus:border-primary/50"
+        />
+      </div>
+      <div className="max-h-48 overflow-y-auto scrollbar-thin">
+        {filteredMacros.map((m) => (
+          <div
+            key={m.id}
+            className="group/macro flex items-start gap-2 rounded-md px-2 py-1.5 transition hover:bg-secondary"
+          >
+            <button
+              type="button"
+              onClick={() => pickMacro(m)}
+              className="min-w-0 flex-1 text-left"
+            >
+              <div className="truncate text-[11px] font-semibold text-foreground">{m.label}</div>
+              <div className="line-clamp-2 text-[10px] text-muted-foreground">{m.content}</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => deleteMacro.mutate(m.id)}
+              title="Excluir macro"
+              aria-label="Excluir macro"
+              className="mt-0.5 hidden h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground/70 transition hover:bg-destructive/10 hover:text-destructive group-hover/macro:grid"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          </div>
+        ))}
+        {filteredMacros.length === 0 && (
+          <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+            Nenhuma macro encontrada.
+          </div>
+        )}
+      </div>
+      <div className="mt-1 border-t border-border/50 pt-1">
+        <button
+          type="button"
+          onClick={openCreate}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] font-medium text-primary transition hover:bg-secondary"
+        >
+          <Plus className="h-3 w-3 shrink-0" />
+          Criar resposta rápida
+          {macroQuery.trim() ? ` “${macroQuery.trim()}”` : ""}
+        </button>
+      </div>
+    </>
+  );
+
+  const pixPopoverBody = !pixKey ? (
+    <div className="text-[11px] text-muted-foreground">
+      Nenhuma chave Pix cadastrada. Um gestor cadastra em Configurações → Financeiro → Cobranças
+      Pix.
+    </div>
+  ) : (
+    <>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[11px] font-semibold text-foreground">Cobrança Pix</div>
+        <button
+          type="button"
+          onClick={() => {
+            void navigator.clipboard.writeText(pixKey);
+            toast.success("Chave Pix copiada.");
+          }}
+          className="inline-flex items-center gap-1 rounded-md border border-border/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+        >
+          <Copy className="h-3 w-3" /> Copiar chave
+        </button>
+      </div>
+      <input
+        value={pixValue}
+        onChange={(e) => setPixValue(e.target.value)}
+        placeholder="Valor (opcional, livre): 55,00"
+        className="h-8 w-full rounded-md border border-border/60 bg-background px-2 text-[11px] outline-none transition focus:border-primary/50"
+      />
+      <button
+        type="button"
+        onClick={insertPix}
+        className="h-7 w-full rounded-md bg-primary text-[10px] font-semibold text-primary-foreground transition hover:brightness-110"
+      >
+        Inserir mensagem no composer
+      </button>
+      <div className="whitespace-pre-line rounded-md bg-secondary/50 p-2 text-[10px] text-muted-foreground">
+        {pixText}
+      </div>
+    </>
+  );
+
   return (
-    <div className="relative z-20 shrink-0 border-t border-border/50 bg-card p-2.5 sm:p-3">
+    <div
+      className={cn(
+        "relative z-20 shrink-0 border-t border-border/50 bg-card px-2 py-2 transition-shadow duration-150 sm:p-3 sm:shadow-none",
+        keyboardOpen ? "pb-2" : "pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]",
+        isFocused && "shadow-[var(--shadow-card)]",
+      )}
+    >
       {/* DT-09 Parte 2: banner escalonado de cota (80/95/100) — só conta full */}
       <MessageQuotaBanner orgId={orgId} slug={slug} />
 
       {/* Banner de reply (citação) */}
       {replyTo && (
-        <div className="mb-2 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+        <div className="mb-1.5 sm:mb-2 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-1.5 sm:px-3 sm:py-2">
           <div className="min-w-0 flex-1">
             <div className="text-[11px] font-semibold text-primary">Respondendo a {replyTo.author}</div>
             <div className="truncate text-[11px] text-muted-foreground">{replyTo.content}</div>
@@ -388,6 +584,8 @@ export function DemandaComposer({
           <button
             type="button"
             onClick={onCancelReply}
+            title="Cancelar resposta"
+            aria-label="Cancelar resposta"
             className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
           >
             <X className="h-3 w-3" />
@@ -397,7 +595,7 @@ export function DemandaComposer({
 
       {/* Preview do anexo — áudio ganha card com player + duração + KB */}
       {attachment && attachment.kind === "audio" && attachment.previewUrl ? (
-        <div className="mb-2 rounded-lg border border-border/60 bg-secondary/40 p-2.5">
+        <div className="mb-1.5 sm:mb-2 rounded-lg border border-border/60 bg-secondary/40 p-2 sm:p-2.5">
           <div className="flex items-center gap-2">
             <Mic className="h-3.5 w-3.5 shrink-0 text-primary" />
             <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground">
@@ -429,11 +627,11 @@ export function DemandaComposer({
           />
         </div>
       ) : attachment ? (
-        <div className="mb-2 flex items-center gap-2 rounded-lg border border-border/60 bg-secondary/40 px-3 py-2">
+        <div className="mb-1.5 sm:mb-2 flex items-center gap-2 rounded-lg border border-border/60 bg-secondary/40 px-2.5 py-1.5 sm:px-3 sm:py-2">
           {attachment.kind === "image" && attachment.previewUrl ? (
-            <img src={attachment.previewUrl} alt="" className="h-10 w-10 rounded-md object-cover" />
+            <img src={attachment.previewUrl} alt="" className="h-9 w-9 sm:h-10 sm:w-10 rounded-md object-cover" />
           ) : (
-            <div className="grid h-10 w-10 place-items-center rounded-md bg-primary/10 text-primary">
+            <div className="grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-md bg-primary/10 text-primary">
               <Paperclip className="h-4 w-4" />
             </div>
           )}
@@ -446,6 +644,8 @@ export function DemandaComposer({
           <button
             type="button"
             onClick={onRemoveAttachment}
+            title="Remover anexo"
+            aria-label="Remover anexo"
             className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
           >
             <X className="h-3 w-3" />
@@ -453,9 +653,44 @@ export function DemandaComposer({
         </div>
       ) : null}
 
-      {/* Painel do gravador SUBSTITUI o textarea enquanto grava */}
-      {recState === "recording" ? (
-        <div className="flex items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3">
+      {/* Mobile (< sm): faixa compacta de gravação acoplada acima da linha única */}
+      {recState === "recording" && (
+        <div className="sm:hidden mb-1.5 flex items-center gap-2.5 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2">
+          <span className="relative flex h-2.5 w-2.5 shrink-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive opacity-60" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-destructive" />
+          </span>
+          <span className="font-mono text-xs font-bold tabular-nums text-destructive">
+            {fmtRec(recSeconds)}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+            Gravando áudio…
+          </span>
+          <button
+            type="button"
+            onClick={cancelRecording}
+            title="Cancelar gravação"
+            aria-label="Cancelar gravação"
+            className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-[11px] font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={finishRecording}
+            title="Parar e gerar preview"
+            aria-label="Parar e gerar preview"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-destructive text-destructive-foreground transition hover:brightness-110"
+          >
+            <Square className="h-3.5 w-3.5" fill="currentColor" />
+          </button>
+        </div>
+      )}
+
+      {/* Desktop (>= sm): painel do gravador SUBSTITUI o textarea enquanto grava */}
+      {recState === "recording" && (
+        <div className="hidden sm:flex items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3">
           <span className="relative flex h-3 w-3 shrink-0">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive opacity-60" />
             <span className="relative inline-flex h-3 w-3 rounded-full bg-destructive" />
@@ -463,7 +698,7 @@ export function DemandaComposer({
           <span className="font-mono text-sm font-bold tabular-nums text-destructive">
             {fmtRec(recSeconds)}
           </span>
-          <span className="hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block">
+          <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
             Gravando… pare pra revisar o preview ou cancele pra descartar.
           </span>
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
@@ -487,301 +722,349 @@ export function DemandaComposer({
             </button>
           </div>
         </div>
-      ) : (
-        <>
-          {/* Toggle WhatsApp / Interno */}
-          <div className="relative z-10 mb-2 flex flex-wrap items-center gap-1.5 sm:gap-2">
-            <button
-              type="button"
-              data-state={currentViaWhatsapp ? "active" : "inactive"}
-              onClick={() => handleSelectChannel(true)}
-              className={cn(
-                "inline-flex cursor-pointer select-none items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors sm:px-3 sm:py-1.5",
-                currentViaWhatsapp
-                  ? "bg-[var(--pill-green-bg)] text-[var(--pill-green-fg)] shadow-xs font-semibold"
-                  : "bg-secondary/70 text-muted-foreground hover:bg-secondary hover:text-foreground",
-                !hasWhatsapp && "opacity-60 cursor-not-allowed",
-              )}
-            >
-              <MessageCircle className="h-3.5 w-3.5 shrink-0" />
-              WhatsApp
-            </button>
-            <button
-              type="button"
-              data-state={!currentViaWhatsapp ? "active" : "inactive"}
-              onClick={() => handleSelectChannel(false)}
-              className={cn(
-                "inline-flex cursor-pointer select-none items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors sm:px-3 sm:py-1.5",
-                !currentViaWhatsapp
-                  ? "bg-primary/10 text-primary shadow-xs font-semibold"
-                  : "bg-secondary/70 text-muted-foreground hover:bg-secondary hover:text-foreground",
-              )}
-            >
-              <Lock className="h-3.5 w-3.5 shrink-0" />
-              Nota interna
-            </button>
-          </div>
+      )}
 
-          {/* Textarea + ações */}
-          <div className="flex flex-col sm:flex-row sm:items-end gap-2">
-            <div className="w-full sm:flex-1 min-w-0">
-              <textarea
-                ref={textareaRef}
-                value={comment}
-                onChange={(e) => onCommentChange(e.target.value)}
-                onInput={(e) => {
-                  const t = e.currentTarget;
-                  t.style.height = "auto";
-                  t.style.height = `${Math.min(t.scrollHeight, 160)}px`;
-                }}
-                onKeyDown={(e) => {
-                  // Gatilho de macros: "/" com textarea vazio abre o picker
-                  // SEM inserir a barra no texto.
-                  if (e.key === "/" && comment === "") {
-                    e.preventDefault();
-                    setMacroOpen(true);
-                    return;
-                  }
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    onSend();
-                  }
-                }}
-                placeholder={
-                  currentViaWhatsapp ? "Digite uma mensagem...  ( / abre macros )" : "Adicione uma nota interna..."
+      {/* Desktop (>= sm): Toggle WhatsApp / Interno em abas superiores */}
+      {recState !== "recording" && (
+        <div className="hidden sm:flex relative z-10 mb-2 flex-wrap items-center gap-2">
+          <button
+            type="button"
+            data-state={currentViaWhatsapp ? "active" : "inactive"}
+            onClick={() => handleSelectChannel(true)}
+            className={cn(
+              "inline-flex cursor-pointer select-none items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+              currentViaWhatsapp
+                ? "bg-[var(--pill-green-bg)] text-[var(--pill-green-fg)] shadow-xs font-semibold"
+                : "bg-secondary/70 text-muted-foreground hover:bg-secondary hover:text-foreground",
+              !hasWhatsapp && "opacity-60 cursor-not-allowed",
+            )}
+          >
+            <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+            WhatsApp
+          </button>
+          <button
+            type="button"
+            data-state={!currentViaWhatsapp ? "active" : "inactive"}
+            onClick={() => handleSelectChannel(false)}
+            className={cn(
+              "inline-flex cursor-pointer select-none items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+              !currentViaWhatsapp
+                ? "bg-primary/10 text-primary shadow-xs font-semibold"
+                : "bg-secondary/70 text-muted-foreground hover:bg-secondary hover:text-foreground",
+            )}
+          >
+            <Lock className="h-3.5 w-3.5 shrink-0" />
+            Nota interna
+          </button>
+        </div>
+      )}
+
+      {/* Barra do Composer: 1 linha compacta no mobile (< sm), layout original no desktop (>= sm) */}
+      <div
+        className={cn(
+          "flex items-end gap-1.5",
+          recState === "recording" ? "opacity-55 pointer-events-none sm:hidden" : "sm:gap-2",
+        )}
+      >
+        {/* Mobile (< sm): Toggle compacto de modo à esquerda */}
+        <button
+          type="button"
+          onClick={() => handleSelectChannel(!currentViaWhatsapp)}
+          title={
+            currentViaWhatsapp
+              ? "Modo WhatsApp (toque para Nota interna)"
+              : "Modo Nota interna (toque para WhatsApp)"
+          }
+          aria-label={
+            currentViaWhatsapp
+              ? "Canal WhatsApp — alternar para Nota interna"
+              : "Nota interna — alternar para WhatsApp"
+          }
+          className={cn(
+            "grid sm:hidden h-9 w-9 shrink-0 place-items-center rounded-full border transition active:scale-95",
+            currentViaWhatsapp
+              ? "border-[color-mix(in_oklch,var(--pill-green-fg)_28%,transparent)] bg-[var(--pill-green-bg)] text-[var(--pill-green-fg)]"
+              : "border-[color-mix(in_oklch,var(--pill-amber-fg)_35%,transparent)] bg-[var(--pill-amber-bg)] text-[var(--pill-amber-fg)]",
+          )}
+        >
+          {currentViaWhatsapp ? (
+            <MessageCircle className="h-4 w-4" />
+          ) : (
+            <Lock className="h-4 w-4" />
+          )}
+        </button>
+
+        {/* Centro: textarea único auto-expansível */}
+        <div className="min-w-0 flex-1">
+          <textarea
+            ref={textareaRef}
+            value={comment}
+            onChange={(e) => onCommentChange(e.target.value)}
+            onFocus={() => {
+              setIsFocused(true);
+              if (isMobile) onMobileFocus?.();
+            }}
+            onBlur={() => setIsFocused(false)}
+            onInput={(e) => {
+              const t = e.currentTarget;
+              t.style.height = "auto";
+              t.style.height = `${Math.min(t.scrollHeight, isMobile ? 116 : 160)}px`;
+            }}
+            onKeyDown={(e) => {
+              // Gatilho de macros: "/" com textarea vazio abre o picker
+              // SEM inserir a barra no texto.
+              if (e.key === "/" && comment === "") {
+                e.preventDefault();
+                if (isMobile) {
+                  setMobileTool("macros");
+                  setMobileMenuOpen(true);
+                } else {
+                  setMacroOpen(true);
                 }
-                rows={1}
-                className="w-full resize-none rounded-xl border border-border/60 bg-background px-3.5 py-2.5 text-sm outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
-              />
-            </div>
-            <div className="flex items-center justify-between sm:justify-end gap-1 shrink-0">
-              <div className="flex items-center gap-0.5 sm:gap-1">
-                {/* Emoji: picker próprio, inserção no caret, popover persistente */}
-                <EmojiPicker
-                  onPick={insertAtCursor}
-                  triggerClass="grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-                />
-                {/* Macros / respostas rápidas */}
-                <Popover
-                  open={macroOpen}
-                  onOpenChange={(o) => {
-                    setMacroOpen(o);
-                    if (!o) {
-                      setMacroQuery("");
-                      setMacroCreating(false);
-                    }
-                  }}
-                >
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      title="Respostas rápidas (/)"
-                      aria-label="Respostas rápidas"
-                      className="grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-                    >
-                      <Slash className="h-4 w-4" />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" className="w-72 rounded-xl p-1.5">
-                    {macroCreating ? (
-                      <div className="space-y-1.5">
-                        <input
-                          autoFocus
-                          value={macroLabel}
-                          onChange={(e) => setMacroLabel(e.target.value)}
-                          placeholder="Nome da macro (ex.: boas-vindas)"
-                          maxLength={60}
-                          className="h-8 w-full rounded-md border border-border/60 bg-background px-2 text-[11px] outline-none transition focus:border-primary/50"
-                        />
-                        <textarea
-                          value={macroContent}
-                          onChange={(e) => setMacroContent(e.target.value)}
-                          placeholder="Texto que será inserido no composer..."
-                          rows={3}
-                          maxLength={4000}
-                          className="w-full resize-none rounded-md border border-border/60 bg-background p-2 text-[11px] outline-none transition focus:border-primary/50"
-                        />
-                        <div className="flex items-center justify-between">
-                          <button
-                            type="button"
-                            onClick={() => setMacroCreating(false)}
-                            className="text-[10px] text-muted-foreground transition hover:text-foreground"
-                          >
-                            Voltar
-                          </button>
-                          <button
-                            type="button"
-                            disabled={
-                              !macroLabel.trim() || !macroContent.trim() || createMacro.isPending
-                            }
-                            onClick={() =>
-                              createMacro.mutate({
-                                label: macroLabel.trim(),
-                                content: macroContent.trim(),
-                              })
-                            }
-                            className="h-7 rounded-md bg-primary px-2.5 text-[10px] font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-50"
-                          >
-                            {createMacro.isPending ? "Salvando..." : "Salvar macro"}
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="relative mb-1">
-                          <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
-                          <input
-                            autoFocus
-                            value={macroQuery}
-                            onChange={(e) => setMacroQuery(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" && filteredMacros[0]) {
-                                e.preventDefault();
-                                pickMacro(filteredMacros[0]);
-                              }
-                            }}
-                            placeholder="Buscar macro..."
-                            className="h-8 w-full rounded-md border border-border/60 bg-background pl-7 pr-2 text-[11px] outline-none transition focus:border-primary/50"
-                          />
-                        </div>
-                        <div className="max-h-48 overflow-y-auto scrollbar-thin">
-                          {filteredMacros.map((m) => (
-                            <div
-                              key={m.id}
-                              className="group/macro flex items-start gap-2 rounded-md px-2 py-1.5 transition hover:bg-secondary"
-                            >
-                              <button
-                                type="button"
-                                onClick={() => pickMacro(m)}
-                                className="min-w-0 flex-1 text-left"
-                              >
-                                <div className="truncate text-[11px] font-semibold text-foreground">
-                                  {m.label}
-                                </div>
-                                <div className="line-clamp-2 text-[10px] text-muted-foreground">
-                                  {m.content}
-                                </div>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => deleteMacro.mutate(m.id)}
-                                title="Excluir macro"
-                                aria-label="Excluir macro"
-                                className="mt-0.5 hidden h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground/70 transition hover:bg-destructive/10 hover:text-destructive group-hover/macro:grid"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            </div>
-                          ))}
-                          {filteredMacros.length === 0 && (
-                            <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
-                              Nenhuma macro encontrada.
-                            </div>
-                          )}
-                        </div>
-                        <div className="mt-1 border-t border-border/50 pt-1">
-                          <button
-                            type="button"
-                            onClick={openCreate}
-                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] font-medium text-primary transition hover:bg-secondary"
-                          >
-                            <Plus className="h-3 w-3 shrink-0" />
-                            Criar resposta rápida
-                            {macroQuery.trim() ? ` “${macroQuery.trim()}”` : ""}
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </PopoverContent>
-                </Popover>
-                {/* Pix: UMA bolha com a chave bruta da org + valor livre */}
-                <Popover open={pixOpen} onOpenChange={setPixOpen}>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      title="Cobrança Pix"
-                      aria-label="Cobrança Pix"
-                      className="grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-                    >
-                      <Banknote className="h-4 w-4" />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" className="w-72 rounded-xl p-3 space-y-2">
-                    {!pixKey ? (
-                      <div className="text-[11px] text-muted-foreground">
-                        Nenhuma chave Pix cadastrada. Um gestor cadastra em Configurações →
-                        Financeiro → Cobranças Pix.
-                      </div>
-                    ) : (
-                      <>
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-[11px] font-semibold text-foreground">
-                            Cobrança Pix
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              void navigator.clipboard.writeText(pixKey);
-                              toast.success("Chave Pix copiada.");
-                            }}
-                            className="inline-flex items-center gap-1 rounded-md border border-border/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-                          >
-                            <Copy className="h-3 w-3" /> Copiar chave
-                          </button>
-                        </div>
-                        <input
-                          value={pixValue}
-                          onChange={(e) => setPixValue(e.target.value)}
-                          placeholder="Valor (opcional, livre): 55,00"
-                          className="h-8 w-full rounded-md border border-border/60 bg-background px-2 text-[11px] outline-none transition focus:border-primary/50"
-                        />
-                        <button
-                          type="button"
-                          onClick={insertPix}
-                          className="h-7 w-full rounded-md bg-primary text-[10px] font-semibold text-primary-foreground transition hover:brightness-110"
-                        >
-                          Inserir mensagem no composer
-                        </button>
-                        <div className="whitespace-pre-line rounded-md bg-secondary/50 p-2 text-[10px] text-muted-foreground">
-                          {pixText}
-                        </div>
-                      </>
-                    )}
-                  </PopoverContent>
-                </Popover>
-                <button
-                  type="button"
-                  onClick={handleAttach}
-                  title="Anexar arquivo"
-                  aria-label="Anexar arquivo"
-                  className="grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-                >
-                  <Paperclip className="h-4 w-4" />
-                </button>
-                {currentViaWhatsapp && (
-                  <button
-                    type="button"
-                    onClick={startRecording}
-                    title="Gravar áudio"
-                    aria-label="Gravar áudio"
-                    className="grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-                  >
-                    <Mic className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
+                return;
+              }
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                onSend();
+              }
+            }}
+            placeholder={
+              isMobile
+                ? currentViaWhatsapp
+                  ? "Mensagem no WhatsApp..."
+                  : "Nota interna..."
+                : currentViaWhatsapp
+                  ? "Digite uma mensagem...  ( / abre macros )"
+                  : "Adicione uma nota interna..."
+            }
+            rows={1}
+            className={cn(
+              "block w-full resize-none rounded-2xl border px-3 py-2 text-sm leading-5 outline-none transition max-h-[116px] sm:max-h-[160px] sm:rounded-xl sm:px-3.5 sm:py-2.5 sm:border-solid sm:border-border/60 sm:bg-background sm:focus:border-primary/50 sm:focus:ring-2 sm:focus:ring-primary/15",
+              currentViaWhatsapp
+                ? "border-border/70 bg-background focus:border-[var(--pill-green-fg)]/50 focus:ring-2 focus:ring-[var(--pill-green-fg)]/15"
+                : "border-dashed border-[color-mix(in_oklch,var(--pill-amber-fg)_40%,transparent)] bg-[color-mix(in_oklch,var(--pill-amber-bg)_45%,var(--background))] focus:border-[var(--pill-amber-fg)]/60 focus:ring-2 focus:ring-[var(--pill-amber-fg)]/20",
+            )}
+          />
+        </div>
+
+        {/* Mobile (< sm): Menu + e ação principal (Microfone / Enviar) */}
+        <div className="flex sm:hidden items-center gap-1 shrink-0">
+          <Popover
+            open={mobileMenuOpen}
+            onOpenChange={(o) => {
+              setMobileMenuOpen(o);
+              if (!o) {
+                setMobileTool("menu");
+                setMacroQuery("");
+                setMacroCreating(false);
+              }
+            }}
+          >
+            <PopoverTrigger asChild>
               <button
                 type="button"
-                onClick={onSend}
-                disabled={isPending || isUploading || (!comment.trim() && !attachment)}
-                className="grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-lg bg-primary text-primary-foreground transition hover:brightness-110 disabled:opacity-50 ml-auto sm:ml-0"
+                title="Mais ações"
+                aria-label="Mais ações"
+                className="grid h-9 w-9 place-items-center rounded-full border border-border/60 bg-secondary/60 text-muted-foreground transition hover:bg-secondary hover:text-foreground active:scale-95"
               >
-                <Send className="h-4 w-4" />
+                <Plus
+                  className={cn(
+                    "h-4 w-4 transition-transform duration-150",
+                    mobileMenuOpen && "rotate-45",
+                  )}
+                />
               </button>
-            </div>
+            </PopoverTrigger>
+            <PopoverContent
+              side="top"
+              align="end"
+              sideOffset={8}
+              className={cn("rounded-2xl p-2", mobileTool === "menu" ? "w-56" : "w-72")}
+            >
+              {mobileTool === "menu" ? (
+                <div className="space-y-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setMobileTool("macros")}
+                    className="flex h-10 w-full items-center gap-2.5 rounded-xl px-2.5 text-xs font-medium text-foreground transition hover:bg-secondary"
+                  >
+                    <Slash className="h-4 w-4 shrink-0 text-primary" />
+                    <span className="flex-1 text-left">Macros</span>
+                    <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                      /
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      handleAttach();
+                    }}
+                    className="flex h-10 w-full items-center gap-2.5 rounded-xl px-2.5 text-xs font-medium text-foreground transition hover:bg-secondary"
+                  >
+                    <Paperclip className="h-4 w-4 shrink-0 text-primary" />
+                    <span className="flex-1 text-left">Anexar arquivo</span>
+                  </button>
+                  {pixKey && (
+                    <button
+                      type="button"
+                      onClick={() => setMobileTool("pix")}
+                      className="flex h-10 w-full items-center gap-2.5 rounded-xl px-2.5 text-xs font-medium text-foreground transition hover:bg-secondary"
+                    >
+                      <Banknote className="h-4 w-4 shrink-0 text-[var(--pill-green-fg)]" />
+                      <span className="flex-1 text-left">Cobrança Pix</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setMobileTool("emoji")}
+                    className="flex h-10 w-full items-center gap-2.5 rounded-xl px-2.5 text-xs font-medium text-foreground transition hover:bg-secondary"
+                  >
+                    <Smile className="h-4 w-4 shrink-0 text-[var(--pill-amber-fg)]" />
+                    <span className="flex-1 text-left">Emoji</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between border-b border-border/50 pb-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileTool("menu");
+                        setMacroQuery("");
+                        setMacroCreating(false);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                    >
+                      <ArrowLeft className="h-3 w-3" />
+                      {mobileTool === "macros"
+                        ? "Macros"
+                        : mobileTool === "pix"
+                          ? "Cobrança Pix"
+                          : "Emojis"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMobileMenuOpen(false)}
+                      aria-label="Fechar"
+                      className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  {mobileTool === "macros" && macroPopoverBody}
+                  {mobileTool === "pix" && <div className="space-y-2">{pixPopoverBody}</div>}
+                  {mobileTool === "emoji" && (
+                    <div className="max-h-[220px] overflow-y-auto scrollbar-thin">
+                      <EmojiGrid onPick={insertAtCursor} />
+                    </div>
+                  )}
+                </div>
+              )}
+            </PopoverContent>
+          </Popover>
+
+          {currentViaWhatsapp && !comment.trim() && !attachment ? (
+            <button
+              type="button"
+              onClick={startRecording}
+              title="Gravar áudio"
+              aria-label="Gravar áudio"
+              className="grid h-9 w-9 place-items-center rounded-full bg-primary text-primary-foreground shadow-xs transition hover:brightness-110 active:scale-95"
+            >
+              <Mic className="h-4 w-4" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onSend}
+              disabled={isPending || isUploading || (!comment.trim() && !attachment)}
+              title="Enviar"
+              aria-label="Enviar"
+              className="grid h-9 w-9 place-items-center rounded-full bg-primary text-primary-foreground shadow-xs transition hover:brightness-110 active:scale-95 disabled:opacity-50"
+            >
+              <Send className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+
+        {/* Desktop (>= sm): barra de ações original intacta */}
+        <div className="hidden sm:flex items-center justify-end gap-1 shrink-0">
+          <div className="flex items-center gap-1">
+            <EmojiPicker
+              onPick={insertAtCursor}
+              triggerClass="grid h-10 w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+            />
+            <Popover
+              open={macroOpen}
+              onOpenChange={(o) => {
+                setMacroOpen(o);
+                if (!o) {
+                  setMacroQuery("");
+                  setMacroCreating(false);
+                }
+              }}
+            >
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  title="Respostas rápidas (/)"
+                  aria-label="Respostas rápidas"
+                  className="grid h-10 w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                >
+                  <Slash className="h-4 w-4" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-72 rounded-xl p-1.5">
+                {macroPopoverBody}
+              </PopoverContent>
+            </Popover>
+            <Popover open={pixOpen} onOpenChange={setPixOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  title="Cobrança Pix"
+                  aria-label="Cobrança Pix"
+                  className="grid h-10 w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                >
+                  <Banknote className="h-4 w-4" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-72 rounded-xl p-3 space-y-2">
+                {pixPopoverBody}
+              </PopoverContent>
+            </Popover>
+            <button
+              type="button"
+              onClick={handleAttach}
+              title="Anexar arquivo"
+              aria-label="Anexar arquivo"
+              className="grid h-10 w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+            >
+              <Paperclip className="h-4 w-4" />
+            </button>
+            {currentViaWhatsapp && (
+              <button
+                type="button"
+                onClick={startRecording}
+                title="Gravar áudio"
+                aria-label="Gravar áudio"
+                className="grid h-10 w-10 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+              >
+                <Mic className="h-4 w-4" />
+              </button>
+            )}
           </div>
-        </>
-      )}
+          <button
+            type="button"
+            onClick={onSend}
+            disabled={isPending || isUploading || (!comment.trim() && !attachment)}
+            className="grid h-10 w-10 place-items-center rounded-lg bg-primary text-primary-foreground transition hover:brightness-110 disabled:opacity-50"
+          >
+            <Send className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

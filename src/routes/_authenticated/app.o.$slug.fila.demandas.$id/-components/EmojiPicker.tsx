@@ -58,6 +58,33 @@ const EMOJI_GROUPS: { label: string; emojis: string[] }[] = [
   },
 ];
 
+export function EmojiGrid({ onPick }: { onPick: (emoji: string) => void }) {
+  return (
+    <>
+      {EMOJI_GROUPS.map((g) => (
+        <div key={g.label} className="mb-2 last:mb-0">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            {g.label}
+          </div>
+          <div className="grid grid-cols-8 gap-0.5">
+            {g.emojis.map((e, idx) => (
+              <button
+                key={`${e}-${idx}`}
+                type="button"
+                onClick={() => onPick(e)}
+                title={e}
+                className="grid h-7 w-7 place-items-center rounded-md text-base transition hover:bg-secondary"
+              >
+                {e}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
 export function EmojiPicker({
   onPick,
   triggerClass,
@@ -78,26 +105,7 @@ export function EmojiPicker({
         sideOffset={8}
         className="w-[268px] max-h-[240px] overflow-y-auto scrollbar-thin p-2"
       >
-        {EMOJI_GROUPS.map((g) => (
-          <div key={g.label} className="mb-2 last:mb-0">
-            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-              {g.label}
-            </div>
-            <div className="grid grid-cols-8 gap-0.5">
-              {g.emojis.map((e, idx) => (
-                <button
-                  key={`${e}-${idx}`}
-                  type="button"
-                  onClick={() => onPick(e)}
-                  title={e}
-                  className="grid h-7 w-7 place-items-center rounded-md text-base transition hover:bg-secondary"
-                >
-                  {e}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
+        <EmojiGrid onPick={onPick} />
       </PopoverContent>
     </Popover>
   );

@@ -102,6 +102,7 @@ function DemandaDetail() {
   const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
   const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [mobileFocusSignal, setMobileFocusSignal] = useState(0);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
   // Estado de paginação do histórico (sobrevive a Realtime appends).
@@ -499,8 +500,8 @@ function DemandaDetail() {
   const handleToggleFila = () => filaSidebar?.setCollapsed(!filaCollapsed);
 
   return (
-    <div className="relative flex h-full">
-      <div className="flex flex-col min-w-0 flex-1 pb-24 lg:pb-0">
+    <div className="relative flex h-full min-h-0">
+      <div className="flex flex-col min-w-0 flex-1 min-h-0 pb-0 sm:pb-24 lg:pb-0">
         <DemandaHeader
           contactName={contactName}
           contactAvatarUrl={d.contacts?.avatar_url ?? null}
@@ -528,6 +529,7 @@ function DemandaDetail() {
           olderCursor={olderCursor}
           onLoadMore={loadMore}
           loadingMore={loadingMore}
+          scrollToBottomSignal={mobileFocusSignal}
         />
         <DemandaComposer
           orgId={org?.id ?? null}
@@ -546,6 +548,7 @@ function DemandaDetail() {
           isPending={send.isPending}
           isUploading={isUploading}
           textareaRef={composerRef}
+          onMobileFocus={() => setMobileFocusSignal((n) => n + 1)}
         />
       </div>
       {!railCollapsed && (

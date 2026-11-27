@@ -174,6 +174,7 @@ function OrgLayout() {
 
   const roleLabel = ROLE_LABEL[org.role] ?? org.role;
   const isOwnerOrAdmin = org.role === "owner" || org.role === "admin";
+  const inDemandaDetail = location.pathname.includes("/fila/demandas/");
 
   return (
     <div
@@ -194,19 +195,27 @@ function OrgLayout() {
       {/*
        * main: pb-20 sm:pb-0 cria a safe area inferior no mobile para que
        * conteúdo final (botões de envio, formulários) nunca fique soterrado
-       * pela bottom nav fixa. No desktop (sm+) o padding some.
+       * pela bottom nav fixa. Dentro da conversa (/fila/demandas/$id), o
+       * header e a bottom nav mobile são ocultados (padrão WhatsApp 100dvh).
+       * No desktop (sm+) o padding some.
        */}
-       <main className="min-w-0 overflow-auto scrollbar-thin bg-surface pb-20 sm:pb-0">
-          {/* Camada 1 do lockup mobile: barra de marca sticky (some em sm+) */}
-          <MobileAppHeader
-            slug={slug}
-            orgName={org.name}
-            newCount={newCount}
-            user={user}
-            roleLabel={roleLabel}
-            isOwnerOrAdmin={isOwnerOrAdmin}
-            onSignOut={signOut}
-          />
+       <main
+         className={`min-w-0 overflow-auto scrollbar-thin bg-surface ${
+           inDemandaDetail ? "pb-0" : "pb-20"
+         } sm:pb-0`}
+       >
+          {/* Camada 1 do lockup mobile: barra de marca sticky (some em sm+ e na conversa) */}
+          {!inDemandaDetail && (
+            <MobileAppHeader
+              slug={slug}
+              orgName={org.name}
+              newCount={newCount}
+              user={user}
+              roleLabel={roleLabel}
+              isOwnerOrAdmin={isOwnerOrAdmin}
+              onSignOut={signOut}
+            />
+          )}
           <TopProgressBar />
         <PageFade key={location.pathname}>
           <OrgSidebarContext.Provider value={{ collapsed, setCollapsed, resetToPref }}>
@@ -215,8 +224,10 @@ function OrgLayout() {
         </PageFade>
       </main>
 
-      {/* Bottom nav fora do main → não participa do scroll container */}
-      <OrgMobileNav slug={slug} activePath={location.pathname} newCount={newCount} />
+      {/* Bottom nav fora do main → não participa do scroll container (oculta na conversa no mobile) */}
+      {!inDemandaDetail && (
+        <OrgMobileNav slug={slug} activePath={location.pathname} newCount={newCount} />
+      )}
     </div>
   );
 }

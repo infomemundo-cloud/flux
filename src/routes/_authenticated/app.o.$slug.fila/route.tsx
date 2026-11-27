@@ -354,6 +354,50 @@ function FilaPage() {
   const [collapsed, setCollapsed] = useState(false);
   const orgSidebar = useOrgSidebar();
 
+  // Mobile (< sm) na conversa: acompanha window.visualViewport (iOS Safari + Android)
+  // para que o header fique fixo no topo e o composer suba colado no teclado virtual.
+  const [mobileViewportStyle, setMobileViewportStyle] = useState<{
+    height: string;
+    top: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!hasSelection) {
+      setMobileViewportStyle(null);
+      return;
+    }
+    const mq = window.matchMedia("(max-width: 639px)");
+    const syncViewport = () => {
+      if (!mq.matches) {
+        setMobileViewportStyle(null);
+        return;
+      }
+      const vv = window.visualViewport;
+      if (!vv) {
+        setMobileViewportStyle({ height: "100dvh", top: "0px" });
+        return;
+      }
+      setMobileViewportStyle({
+        height: `${Math.round(vv.height)}px`,
+        top: `${Math.round(vv.offsetTop)}px`,
+      });
+    };
+
+    syncViewport();
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", syncViewport);
+    vv?.addEventListener("scroll", syncViewport);
+    mq.addEventListener("change", syncViewport);
+    window.addEventListener("orientationchange", syncViewport);
+
+    return () => {
+      vv?.removeEventListener("resize", syncViewport);
+      vv?.removeEventListener("scroll", syncViewport);
+      mq.removeEventListener("change", syncViewport);
+      window.removeEventListener("orientationchange", syncViewport);
+    };
+  }, [hasSelection]);
+
   // Estado 2 (foco no atendimento): abrir uma demanda recolhe a sidebar
   // principal (ícones) e a fila junto. Estado 3 (retorno): fechar restaura as duas.
   useEffect(() => {
@@ -444,7 +488,14 @@ function FilaPage() {
 
   return (
     <FilaSidebarContext.Provider value={{ collapsed, setCollapsed }}>
-      <div className="flex h-[calc(100dvh-8rem)] sm:h-screen flex-col overflow-hidden">
+      <div
+        style={mobileViewportStyle ?? undefined}
+        className={`flex ${
+          hasSelection
+            ? "fixed inset-x-0 top-0 z-30 h-[100dvh] transition-[height] duration-150 ease-out sm:static sm:inset-auto sm:z-auto sm:transition-none"
+            : "h-[calc(100dvh-8rem)]"
+        } sm:h-screen flex-col overflow-hidden bg-surface`}
+      >
         <AccountAccessBanner orgId={org?.id ?? null} slug={slug} />
         {/* Nudge no FIM da hierarquia (access > quota > onboarding > nudge):
             suprimido com onboarding ativo (setup card / WhatsApp desconectado)
@@ -453,14 +504,14 @@ function FilaPage() {
           orgId={org?.id ?? null}
           suppressed={showSetupCard || waStatus !== "connected"}
         />
-        <div className="relative flex flex-1 overflow-hidden">
-          {/* Botão flutuante pra reabrir — só existe quando a fila está recolhida. */}
+        <div className="relative flex flex-1 min-h-0 overflow-hidden">
+          {/* Botão flutuante pra reabrir — só existe no desktop quando a fila está recolhida. */}
           {collapsed && (
             <button
               onClick={() => setCollapsed(false)}
               title="Expandir fila"
               aria-label="Expandir fila"
-              className="absolute top-3 left-3 z-10 grid place-items-center h-8 w-8 rounded-xl bg-card text-muted-foreground/70 shadow-[var(--shadow-card)] ring-1 ring-border/40 transition hover:text-foreground hover:shadow-[var(--shadow-pop)]"
+              className="hidden sm:grid absolute top-3 left-3 z-10 place-items-center h-8 w-8 rounded-xl bg-card text-muted-foreground/70 shadow-[var(--shadow-card)] ring-1 ring-border/40 transition hover:text-foreground hover:shadow-[var(--shadow-pop)]"
             >
               <PanelLeftOpen className="h-4 w-4" />
             </button>
@@ -622,8 +673,8 @@ function FilaPage() {
 {/* Área Principal de Detalhes da Demanda */}
 <div
   className={`${
-    hasSelection ? "block" : "hidden sm:flex"
-  } flex-1 min-w-0 bg-card/20 overflow-hidden scrollbar-thin`}
+    hasSelection ? "flex flex-col sm:block" : "hidden sm:flex"
+  } flex-1 min-w-0 min-h-0 bg-card/20 overflow-hidden scrollbar-thin`}
 >
   {hasSelection ? (
     <Outlet />

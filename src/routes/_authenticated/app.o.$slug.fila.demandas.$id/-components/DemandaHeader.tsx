@@ -1,4 +1,4 @@
-import { MessageCircle, PanelLeftClose, PanelLeftOpen, PanelRightOpen, SlidersHorizontal, Users, X } from "lucide-react";
+import { ArrowLeft, MessageCircle, PanelLeftClose, PanelLeftOpen, PanelRightOpen, SlidersHorizontal, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { ContactAvatar } from "@/components/contact-avatar";
 
@@ -45,14 +45,25 @@ export function DemandaHeader({
   };
 
   return (
-    <header className="h-12 shrink-0 border-b border-border/50 bg-card px-3 flex items-center gap-2">
-      {/* Toggle da fila — sempre visível, antes do avatar */}
+    <header className="h-[calc(3rem+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)] sm:h-12 sm:pt-0 shrink-0 border-b border-border/50 bg-card px-2.5 sm:px-3 flex items-center gap-2">
+      {/* Mobile (< sm): voltar explícito para a Fila (estilo WhatsApp) */}
+      <button
+        type="button"
+        onClick={onClose}
+        title="Voltar para a fila"
+        aria-label="Voltar para a fila"
+        className="grid sm:hidden h-8 w-8 -ml-0.5 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground active:scale-95"
+      >
+        <ArrowLeft className="h-4 w-4" />
+      </button>
+
+      {/* Desktop (>= sm): toggle da fila — sempre visível, antes do avatar */}
       <button
         type="button"
         onClick={onToggleFila}
         title={filaCollapsed ? "Expandir fila" : "Recolher fila"}
         aria-label={filaCollapsed ? "Expandir fila" : "Recolher fila"}
-        className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+        className="hidden sm:grid h-7 w-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
       >
         {filaCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
       </button>
@@ -64,7 +75,7 @@ export function DemandaHeader({
           <span className="truncate font-bold text-foreground">{contactName}</span>
           {phone && (
             <>
-              <span className="shrink-0 text-muted-foreground/50">·</span>
+              <span className="hidden sm:inline shrink-0 text-muted-foreground/50">·</span>
               <button
                 type="button"
                 onClick={handleCopyPhone}
@@ -117,7 +128,7 @@ export function DemandaHeader({
           onClick={onClose}
           title="Fechar demanda"
           aria-label="Fechar demanda"
-          className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+          className="hidden sm:grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
         >
           <X className="h-4 w-4" />
         </button>

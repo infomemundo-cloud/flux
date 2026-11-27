@@ -50,6 +50,8 @@ type DemandaHistoryProps = {
   onLoadMore: () => void;
   /** True enquanto o lote anterior está sendo buscado. */
   loadingMore: boolean;
+  /** Incrementado no mobile ao focar o composer para acompanhar o fim com teclado virtual. */
+  scrollToBottomSignal?: number;
 };
 
 /**
@@ -125,6 +127,7 @@ export function DemandaHistory({
   olderCursor,
   onLoadMore,
   loadingMore,
+  scrollToBottomSignal,
 }: DemandaHistoryProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -139,9 +142,16 @@ export function DemandaHistory({
   // Router cuida disso).
   const [mounted, setMounted] = useState(false);
 
-  function scrollToBottom() {
+  function scrollToBottom(smooth = false) {
     const el = scrollRef.current;
     if (!el) return;
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (smooth && !reduceMotion) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      return;
+    }
     el.scrollTop = el.scrollHeight;
     // Segundo passe no próximo frame: pega altura que chega tarde
     // (layout de pill/emoji/mídia) e garante o fim real da conversa.
@@ -180,17 +190,44 @@ export function DemandaHistory({
     lastCountRef.current = events.length;
   }, [events, mounted]);
 
-  // Mídia (e qualquer conteúdo assíncrono) muda a altura depois do load:
-  // ResizeObserver no conteúdo re-pina ao fundo se estávamos lá.
+  // Mídia (e qualquer conteúdo assíncrono) muda a altura depois do load,
+  // e no mobile o teclado virtual ou expansão do composer reduzem scroller:
+  // ResizeObserver no conteúdo + scroller e listener de visualViewport
+  // re-pinam ao fundo quando estávamos lá.
   useEffect(() => {
     const content = contentRef.current;
-    if (!content) return;
+    const scroller = scrollRef.current;
+    if (!content || !scroller) return;
     const ro = new ResizeObserver(() => {
       if (pinnedRef.current) scrollToBottom();
     });
     ro.observe(content);
-    return () => ro.disconnect();
+    ro.observe(scroller);
+
+    const vv = window.visualViewport;
+    const onViewportResize = () => {
+      if (pinnedRef.current) scrollToBottom(true);
+    };
+    vv?.addEventListener("resize", onViewportResize);
+
+    return () => {
+      ro.disconnect();
+      vv?.removeEventListener("resize", onViewportResize);
+    };
   }, []);
+
+  // Ao focar o campo no mobile, acompanha suavemente o final da conversa durante a abertura do teclado.
+  useEffect(() => {
+    if (!scrollToBottomSignal) return;
+    pinnedRef.current = true;
+    scrollToBottom(true);
+    const t1 = window.setTimeout(() => scrollToBottom(true), 140);
+    const t2 = window.setTimeout(() => scrollToBottom(true), 320);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, [scrollToBottomSignal]);
 
   // Âncora de scroll: após prepend (events.length menor que o esperado),
   // ajusta scrollTop pelo delta pra manter a posição visual do usuário.
@@ -254,7 +291,7 @@ export function DemandaHistory({
     <div
       ref={scrollRef}
       onScroll={handleScroll}
-      className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3"
+      className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-3 sm:px-4 py-3"
     >
       <div ref={contentRef} className="space-y-1">
         {/* Pill clicável + indicador de carregamento/fim do histórico */}
