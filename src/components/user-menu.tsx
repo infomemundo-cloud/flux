@@ -170,9 +170,11 @@ export function UserMenu({
         <TooltipProvider delayDuration={200}>
           <Tooltip>
             <TooltipTrigger asChild>{trigger}</TooltipTrigger>
-            <TooltipContent side="top" sideOffset={6}>
-              <p className="font-medium">{name}</p>
-              <p className="text-xs text-muted-foreground">{email ?? role ?? ""}</p>
+            <TooltipContent side="top" sideOffset={6} className="space-y-0.5">
+              <p className="text-xs font-semibold leading-tight text-current">{name}</p>
+              {(email ?? role) && (
+                <p className="text-[11px] leading-tight text-current/80">{email ?? role}</p>
+              )}
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>

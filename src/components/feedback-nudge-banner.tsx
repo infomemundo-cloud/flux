@@ -11,10 +11,8 @@ import { evaluateFeatureFlags } from "@/lib/feature-flag.functions";
 import { FeedbackDialog } from "@/components/feedback-dialog";
 
 /**
- * Nudge de feedback (9.3) — não-bloqueante, no FIM da hierarquia de superfícies
- * (access > quota > onboarding > nudge). Só renderiza com access full, sem
- * onboarding ativo (suppressed vindo da fila) e com marco de uso real atingido.
- * Máx. 1 vez por usuário: dismiss persistido; "respondido" deriva do banco.
+ * Nudge de feedback — não-bloqueante, no fim da hierarquia de superfícies.
+ * Só renderiza com acesso full, sem onboarding ativo e com marco de uso atingido.
  */
 export function FeedbackNudgeBanner({
   orgId,
@@ -35,21 +33,25 @@ export function FeedbackNudgeBanner({
     queryFn: () => accessFn({ data: { orgId: orgId! } }),
     enabled: !!orgId,
   });
+
   const { data: flags } = useQuery({
     queryKey: ["feature-flags", orgId],
     queryFn: () => evalFn({ data: { orgId: orgId! } }),
     enabled: !!orgId,
     staleTime: 5 * 60_000,
   });
+
   const enabled = (flags?.flags ?? []).some(
-    (f) => f.key === "product_feedback" && f.enabled,
+    (f) => f.key === "product_feedback" && f.enabled
   );
+
   const { data: nudge } = useQuery({
     queryKey: ["feedback-nudge", orgId],
     queryFn: () => stateFn({ data: { orgId: orgId! } }),
     enabled: !!orgId && enabled && !suppressed && access?.access_level === "full",
     staleTime: 60_000,
   });
+
   const dismiss = useMutation({
     mutationFn: () => dismissFn(),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["feedback-nudge", orgId] }),
@@ -60,14 +62,16 @@ export function FeedbackNudgeBanner({
 
   return (
     <>
-      <div className="mx-2 mt-2 flex items-center gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2">
-        <MessageSquareHeart className="h-3.5 w-3.5 shrink-0 text-primary" />
-        <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-foreground/85">
-          Você já usou o Flux de verdade — como está sendo a experiência?{" "}
+      <div className="mx-2 mt-2 flex items-center gap-2.5 rounded-lg border border-primary/20 bg-primary/[0.04] px-3 py-2">
+        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
+          <MessageSquareHeart className="h-3.5 w-3.5" />
+        </span>
+        <p className="min-w-0 flex-1 text-xs leading-snug text-foreground/85">
+          Você já usou o Fluxo na prática — como está a experiência?{" "}
           <button
             type="button"
             onClick={() => setOpen(true)}
-            className="font-semibold text-primary underline underline-offset-2 hover:opacity-80"
+            className="font-semibold text-primary underline underline-offset-2 transition hover:opacity-80"
           >
             Avaliar (15s)
           </button>
@@ -77,9 +81,9 @@ export function FeedbackNudgeBanner({
           onClick={() => dismiss.mutate()}
           disabled={dismiss.isPending}
           aria-label="Dispensar convite de feedback"
-          className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+          className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:opacity-50"
         >
-          <X className="h-3 w-3" />
+          <X className="h-3.5 w-3.5" />
         </button>
       </div>
       <FeedbackDialog open={open} onOpenChange={setOpen} orgId={orgId} surface="nudge" />
